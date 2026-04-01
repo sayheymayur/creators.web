@@ -105,7 +105,7 @@ export function ProfileEditor() {
 								className="w-full bg-white/5 border border-white/10 rounded-xl pl-8 pr-4 py-3 text-sm text-white focus:outline-none focus:border-rose-500/50"
 							/>
 						</div>
-						<p className="text-xs text-white/30 mt-1">Platform takes 20% — you keep ${((parseFloat(price) || 0) * 0.8).toFixed(2)}/subscriber</p>
+						<p className="text-xs text-white/30 mt-1">Platform fee 20%. You receive ${((parseFloat(price) || 0) * 0.8).toFixed(2)} per subscriber.</p>
 					</div>
 
 					<Button variant="primary" fullWidth isLoading={isSaving} onClick={handleSave} leftIcon={<Save className="w-4 h-4" />}>

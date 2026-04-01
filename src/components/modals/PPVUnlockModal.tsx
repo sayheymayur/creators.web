@@ -89,7 +89,7 @@ export function PPVUnlockModal({ isOpen, onClose, post }: PPVUnlockModalProps) {
 							Unlock for ${price.toFixed(2)}
 						</Button>
 						{balance < price && (
-							<p className="text-center text-xs text-rose-400 mt-2">Insufficient balance — add funds in your wallet</p>
+							<p className="text-center text-xs text-rose-400 mt-2">Insufficient balance. Add funds in your wallet.</p>
 						)}
 					</>
 				)}

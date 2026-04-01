@@ -162,7 +162,7 @@ export const mockNotifications: Notification[] = [
 		userId: 'fan-1',
 		type: 'message',
 		title: 'New message from Luna Rose',
-		body: 'Thanks for the tip! New workout video dropping tonight 🔥',
+		body: 'Thanks for the tip. A new workout video will be available tonight.',
 		isRead: false,
 		createdAt: '2026-03-26T09:30:00Z',
 		fromAvatar: 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&fit=crop',

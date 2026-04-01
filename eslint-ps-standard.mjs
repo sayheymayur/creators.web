@@ -1,5 +1,5 @@
 /**
- * Pokemon Showdown standard style
+ * sayHey coding standards follows Pokemon Showdown standard style but with some modifications to fit our needs.
  *
  * This is Showdown's shared ESLint configuration. Each project overrides
  * at least a little of it here and there, but these are the rules we use

@@ -89,13 +89,13 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 								<Lock className="w-8 h-8 text-rose-400 mx-auto mb-2" />
 								{post.isPPV ? (
 									<>
-										<p className="text-white font-semibold text-sm mb-1">Pay-Per-View</p>
+										<p className="text-white font-semibold text-sm mb-1">Pay-per-view</p>
 										<p className="text-white/50 text-xs mb-3">Unlock this post for ${post.ppvPrice?.toFixed(2)}</p>
 										<button
 											onClick={() => setShowPPVModal(true)}
 											className="w-full bg-rose-500 hover:bg-rose-600 text-white text-sm font-semibold py-2 rounded-lg transition-colors"
 										>
-											Unlock — ${post.ppvPrice?.toFixed(2)}
+											Unlock for ${post.ppvPrice?.toFixed(2)}
 										</button>
 									</>
 								) : (

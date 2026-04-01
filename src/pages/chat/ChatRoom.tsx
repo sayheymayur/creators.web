@@ -97,11 +97,11 @@ export function ChatRoom() {
 	}
 
 	const replies = [
-		'Thanks so much! Really appreciate the support 💕',
-		'That\'s amazing to hear! More content coming soon 🔥',
-		'You\'re the best! Let me know if you have any requests',
-		'Love connecting with my subscribers! Stay tuned for new stuff',
-		'Haha yes! That one took me forever to make 😄',
+		'Thank you for the message.',
+		'I appreciate the feedback. New content is planned.',
+		'Thanks for the support. Let me know if you have any requests.',
+		'I appreciate you being here.',
+		'That took some time to prepare, glad you noticed.',
 	];
 	let replyIdx = 0;
 	function getAutoReply() {
@@ -162,8 +162,8 @@ export function ChatRoom() {
 											<div className="px-4 py-3 flex items-center gap-2">
 												<Lock className="w-4 h-4 text-rose-400 shrink-0" />
 												<div className="flex-1">
-													<p className="text-xs text-white/60">Paid message — ${msg.price?.toFixed(2)}</p>
-													<p className="text-[10px] text-white/30">Click to unlock this exclusive message</p>
+													<p className="text-xs text-white/60">Paid message (${msg.price?.toFixed(2)})</p>
+													<p className="text-[10px] text-white/30">Select to unlock and view this message.</p>
 												</div>
 												{!isMe && (
 													<button

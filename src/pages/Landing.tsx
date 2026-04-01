@@ -1,9 +1,20 @@
 import { useNavigate } from 'react-router-dom';
+import { useRef } from 'react';
 import { Star, Shield, Zap, Users, TrendingUp, Lock, Play, ArrowRight, CheckCircle } from '../components/icons';
 import { mockCreators } from '../data/users';
 
 export function Landing() {
 	const navigate = useNavigate();
+	const featuredRef = useRef<HTMLDivElement | null>(null);
+
+	function scrollFeatured(direction: 'left' | 'right') {
+		const container = featuredRef.current;
+		if (!container) return;
+		const card = container.querySelector<HTMLElement>('button[data-featured-card]');
+		const baseWidth = card?.offsetWidth || 240;
+		const amount = baseWidth * (direction === 'right' ? 1 : -1);
+		container.scrollBy({ left: amount, behavior: 'smooth' });
+	}
 
 	return (
 		<div className="min-h-screen bg-[#0d0d0d] text-white overflow-x-hidden">
@@ -47,12 +58,12 @@ export function Landing() {
 					<h1 className="text-4xl sm:text-6xl md:text-7xl font-black mb-6 leading-[1.05]">
 						Create. Share.
 						<br />
-						<span className="text-rose-400">Earn Freely.</span>
+						<span className="text-rose-400">Earn from your content.</span>
 					</h1>
 
 					<p className="text-base sm:text-xl text-white/50 max-w-2xl mx-auto mb-10 leading-relaxed">
-						Build a loyal fanbase, monetize your content with subscriptions and tips,
-						and connect directly with your audience — all in one premium platform.
+						Build a loyal audience, offer subscriptions and tips,
+						and manage your content in a single platform.
 					</p>
 
 					<div className="flex flex-col sm:flex-row gap-3 justify-center mb-16">
@@ -60,7 +71,7 @@ export function Landing() {
 							onClick={() => navigate('/register')}
 							className="flex items-center justify-center gap-2 bg-rose-500 hover:bg-rose-600 text-white font-bold px-8 py-3.5 rounded-2xl transition-all active:scale-95 shadow-2xl shadow-rose-500/30 text-base"
 						>
-							Start Creating — Free
+							Create account
 							<ArrowRight className="w-4 h-4" />
 						</button>
 						<button
@@ -89,29 +100,66 @@ export function Landing() {
 
 			<section className="py-16 px-4">
 				<div className="max-w-6xl mx-auto">
-					<div className="text-center mb-10">
+					<div className="text-center mb-6 md:mb-8">
 						<h2 className="text-2xl sm:text-3xl font-bold mb-2">Featured Creators</h2>
-						<p className="text-white/40 text-sm">Join thousands of creators already earning</p>
+						<p className="text-white/40 text-sm">Browse a selection of highlighted creators</p>
 					</div>
-					<div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-						{mockCreators.slice(0, 5).map(creator => (
-							<div
-								key={creator.id}
-								onClick={() => navigate('/explore')}
-								className="bg-[#161616] border border-white/5 rounded-2xl overflow-hidden cursor-pointer hover:border-rose-500/30 transition-all group"
+					<div className="relative space-y-3 md:space-y-4">
+						<div
+							ref={featuredRef}
+							className="flex gap-3 md:gap-4 overflow-x-auto pb-2 md:pb-4 scrollbar-hide -mx-4 px-4"
+						>
+							{mockCreators.slice(0, 8).map(creator => (
+								<button
+									type="button"
+									key={creator.id}
+									data-featured-card
+									onClick={() => navigate('/explore')}
+									className="bg-[#161616] border border-white/5 rounded-2xl overflow-hidden cursor-pointer hover:border-rose-500/30 transition-all group flex-shrink-0 w-44 sm:w-52 md:w-60"
+								>
+									<div className="relative h-28 sm:h-32 md:h-40">
+										<img src={creator.banner} alt="" className="w-full h-full object-cover" />
+										<div className="absolute inset-0 bg-gradient-to-b from-transparent to-[#161616]" />
+									</div>
+									<div className="px-3 pb-3 pt-2">
+										<div className="flex items-center gap-2 mb-1.5">
+											<img
+												src={creator.avatar}
+												alt={creator.name}
+												className="w-10 h-10 sm:w-11 sm:h-11 md:w-12 md:h-12 rounded-full border-2 border-[#161616] object-cover"
+											/>
+											<div className="min-w-0">
+												<p className="text-sm md:text-base font-semibold text-white truncate group-hover:text-rose-400 transition-colors">
+													{creator.name}
+												</p>
+												<p className="text-[11px] md:text-xs text-white/40 truncate">{creator.category}</p>
+											</div>
+										</div>
+										<p className="text-[11px] md:text-xs text-rose-400 font-semibold mt-1">
+											${creator.subscriptionPrice}/month
+										</p>
+									</div>
+								</button>
+							))}
+						</div>
+						<div className="flex justify-center gap-3 md:gap-4">
+							<button
+								type="button"
+								onClick={() => scrollFeatured('left')}
+								className="px-3 py-1.5 md:px-4 md:py-2 rounded-full border border-white/10 bg-white/5 text-xs md:text-sm text-white/70 hover:bg-white/10 hover:text-white transition-colors"
+								aria-label="Scroll featured creators left"
 							>
-								<div className="relative h-20">
-									<img src={creator.banner} alt="" className="w-full h-full object-cover" />
-									<div className="absolute inset-0 bg-gradient-to-b from-transparent to-[#161616]" />
-								</div>
-								<div className="px-2.5 pb-3">
-									<img src={creator.avatar} alt="" className="w-9 h-9 rounded-full border-2 border-[#161616] -mt-4 mb-1 object-cover" />
-									<p className="text-xs font-semibold text-white truncate group-hover:text-rose-400 transition-colors">{creator.name}</p>
-									<p className="text-[10px] text-white/40 truncate">{creator.category}</p>
-									<p className="text-[10px] text-rose-400 font-semibold mt-0.5">${creator.subscriptionPrice}/mo</p>
-								</div>
-							</div>
-						))}
+								←
+							</button>
+							<button
+								type="button"
+								onClick={() => scrollFeatured('right')}
+								className="px-3 py-1.5 md:px-4 md:py-2 rounded-full border border-white/10 bg-white/5 text-xs md:text-sm text-white/70 hover:bg-white/10 hover:text-white transition-colors"
+								aria-label="Scroll featured creators right"
+							>
+								→
+							</button>
+						</div>
 					</div>
 				</div>
 			</section>
@@ -145,8 +193,8 @@ export function Landing() {
 
 			<section className="py-16 px-4">
 				<div className="max-w-2xl mx-auto text-center">
-					<h2 className="text-2xl sm:text-3xl font-bold mb-3">Try the Demo</h2>
-					<p className="text-white/40 mb-8 text-sm">Explore all features instantly — no credit card needed</p>
+					<h2 className="text-2xl sm:text-3xl font-bold mb-3">Demo access</h2>
+					<p className="text-white/40 mb-8 text-sm">Explore the demo environment. No credit card required.</p>
 					<div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8">
 						{[
 							{ role: 'Fan', email: 'fan@demo.com', desc: 'Browse, subscribe, tip', color: 'border-blue-500/30 bg-blue-500/5' },
@@ -159,7 +207,7 @@ export function Landing() {
 									<span className="text-sm font-semibold text-white">{role} Account</span>
 								</div>
 								<p className="text-xs text-white/50 mb-1">{email}</p>
-								<p className="text-xs text-white/30">Password: demo123</p>
+								<p className="text-xs text-white/30">Password: demo123 (demo only)</p>
 								<p className="text-xs text-white/40 mt-2">{desc}</p>
 							</div>
 						))}
@@ -168,7 +216,7 @@ export function Landing() {
 						onClick={() => navigate('/login')}
 						className="bg-rose-500 hover:bg-rose-600 text-white font-bold px-10 py-3.5 rounded-2xl transition-all active:scale-95 shadow-xl shadow-rose-500/25 text-base"
 					>
-						Login Now — It's Free
+						Sign in to demo
 					</button>
 				</div>
 			</section>

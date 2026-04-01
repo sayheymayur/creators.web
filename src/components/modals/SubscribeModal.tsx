@@ -120,11 +120,11 @@ export function SubscribeModal({ isOpen, onClose, creator }: SubscribeModalProps
 							onClick={handleSubscribe}
 							disabled={balance < creator.subscriptionPrice}
 						>
-							Subscribe for ${creator.subscriptionPrice}/mo
+							Subscribe for ${creator.subscriptionPrice}/month
 						</Button>
 						{balance < creator.subscriptionPrice && (
 							<p className="text-center text-xs text-rose-400 mt-2">
-								Insufficient balance — add funds in wallet
+								Insufficient balance. Add funds in your wallet.
 							</p>
 						)}
 						<p className="text-center text-xs text-white/30 mt-2">Auto-renews monthly. Cancel anytime.</p>

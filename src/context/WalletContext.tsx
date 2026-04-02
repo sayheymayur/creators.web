@@ -2,6 +2,7 @@ import React, { createContext, useContext, useReducer, useCallback } from 'react
 import type { Transaction, Subscription } from '../types';
 import { mockTransactions, mockSubscriptions } from '../data/transactions';
 import { useAuth } from './AuthContext';
+import { openRazorpayCheckout, isPaymentCancelled, usdToInr } from '../services/razorpay';
 
 interface WalletState {
 	transactions: Transaction[];
@@ -47,7 +48,9 @@ function walletReducer(state: WalletState, action: WalletAction): WalletState {
 interface WalletContextValue {
 	state: WalletState;
 	addFunds: (amount: number) => void;
+	addFundsViaRazorpay: (amountUSD: number) => Promise<boolean>;
 	deductFunds: (amount: number, type: Transaction['type'], description: string, recipientId?: string, recipientName?: string) => boolean;
+	payViaRazorpay: (amountUSD: number, type: Transaction['type'], description: string, recipientId?: string, recipientName?: string) => Promise<{ ok: boolean, cancelled?: boolean, error?: string }>;
 	cancelSubscription: (subscriptionId: string) => void;
 	toggleAutoRenew: (subscriptionId: string) => void;
 	addSubscription: (subscription: Subscription) => void;
@@ -115,6 +118,80 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 		dispatch({ type: 'ADD_SUBSCRIPTION', payload: subscription });
 	}, []);
 
+	const addFundsViaRazorpay = useCallback((amountUSD: number): Promise<boolean> => {
+		const user = authState.user;
+		if (!user) return Promise.resolve(false);
+		const inr = usdToInr(amountUSD);
+
+		return openRazorpayCheckout({
+			amountINR: inr,
+			description: `Add $${amountUSD.toFixed(2)} to wallet`,
+			userName: user.name,
+			userEmail: user.email,
+			notes: { type: 'deposit', userId: user.id },
+		}).then(() => {
+			const newBalance = user.walletBalance + amountUSD;
+			updateWallet(newBalance);
+			const tx: Transaction = {
+				id: `tx-${Date.now()}`,
+				userId: user.id,
+				type: 'deposit',
+				amount: amountUSD,
+				createdAt: new Date().toISOString(),
+				description: 'Wallet top-up via Razorpay',
+				status: 'completed',
+			};
+			dispatch({ type: 'ADD_TRANSACTION', payload: tx });
+			return true;
+		}).catch(err => {
+			if (!isPaymentCancelled(err)) {
+				console.error('[wallet] addFundsViaRazorpay failed:', err);
+			}
+			return false;
+		});
+	}, [authState.user, updateWallet]);
+
+	const payViaRazorpay = useCallback((
+		amountUSD: number,
+		type: Transaction['type'],
+		description: string,
+		recipientId?: string,
+		recipientName?: string
+	): Promise<{ ok: boolean, cancelled?: boolean, error?: string }> => {
+		const user = authState.user;
+		if (!user) return Promise.resolve({ ok: false, error: 'Not authenticated' });
+		const inr = usdToInr(amountUSD);
+
+		return openRazorpayCheckout({
+			amountINR: inr,
+			description,
+			userName: user.name,
+			userEmail: user.email,
+			notes: { type, userId: user.id, recipientId: recipientId ?? '' },
+		}).then(resp => {
+			const tx: Transaction = {
+				id: `tx-${Date.now()}-${resp.razorpay_payment_id}`,
+				userId: user.id,
+				type,
+				amount: -amountUSD,
+				createdAt: new Date().toISOString(),
+				description,
+				recipientId,
+				recipientName,
+				status: 'completed',
+			};
+			dispatch({ type: 'ADD_TRANSACTION', payload: tx });
+			return { ok: true };
+		}).catch(err => {
+			if (isPaymentCancelled(err)) {
+				return { ok: false, cancelled: true };
+			}
+			const msg = err instanceof Error ? err.message : 'Payment failed';
+			console.error('[wallet] payViaRazorpay failed:', msg);
+			return { ok: false, error: msg };
+		});
+	}, [authState.user]);
+
 	const getUserTransactions = useCallback((userId: string) => {
 		return state.transactions.filter(t => t.userId === userId);
 	}, [state.transactions]);
@@ -125,7 +202,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
 	return (
 		<WalletContext.Provider value={{
-			state, addFunds, deductFunds, cancelSubscription,
+			state, addFunds, addFundsViaRazorpay, deductFunds, payViaRazorpay, cancelSubscription,
 			toggleAutoRenew, addSubscription, getUserTransactions, getUserSubscriptions,
 		}}
 		>

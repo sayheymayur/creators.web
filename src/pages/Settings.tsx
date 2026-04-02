@@ -5,6 +5,7 @@ import { Layout } from '../components/layout/Layout';
 import { Button } from '../components/ui/Button';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
+import { delayMs } from '../utils/delay';
 
 export function Settings() {
 	const { state: authState, logout, updateUser } = useAuth();
@@ -26,23 +27,25 @@ export function Settings() {
 		system: true,
 	});
 
-	async function handleSaveProfile() {
+	function handleSaveProfile() {
 		setIsSaving(true);
-		await new Promise(r => setTimeout(r, 700));
-		updateUser({ name });
-		showToast('Profile updated!');
-		setIsSaving(false);
+		void delayMs(700).then(() => {
+			updateUser({ name });
+			showToast('Profile updated!');
+			setIsSaving(false);
+		});
 	}
 
-	async function handleChangePassword() {
+	function handleChangePassword() {
 		if (!currentPassword || !newPassword) { showToast('Please fill in both fields', 'error'); return; }
 		if (newPassword.length < 8) { showToast('New password must be at least 8 characters', 'error'); return; }
 		setIsSaving(true);
-		await new Promise(r => setTimeout(r, 700));
-		showToast('Password changed successfully!');
-		setCurrentPassword('');
-		setNewPassword('');
-		setIsSaving(false);
+		void delayMs(700).then(() => {
+			showToast('Password changed successfully!');
+			setCurrentPassword('');
+			setNewPassword('');
+			setIsSaving(false);
+		});
 	}
 
 	function handleLogout() {
@@ -78,7 +81,13 @@ export function Settings() {
 							className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-rose-500/50"
 						/>
 					</div>
-					<Button variant="primary" size="sm" onClick={handleSaveProfile} isLoading={isSaving} leftIcon={<Save className="w-3.5 h-3.5" />}>
+					<Button
+						variant="primary"
+						size="sm"
+						onClick={() => { handleSaveProfile(); }}
+						isLoading={isSaving}
+						leftIcon={<Save className="w-3.5 h-3.5" />}
+					>
 						Save
 					</Button>
 				</section>
@@ -119,7 +128,7 @@ export function Settings() {
 								</button>
 							</div>
 						</div>
-						<Button variant="outline" size="sm" onClick={handleChangePassword} isLoading={isSaving}>
+						<Button variant="outline" size="sm" onClick={() => { handleChangePassword(); }} isLoading={isSaving}>
 							Change Password
 						</Button>
 					</div>

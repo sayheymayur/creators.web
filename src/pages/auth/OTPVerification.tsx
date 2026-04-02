@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Mail, RefreshCw, CheckCircle } from '../../components/icons';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../../components/ui/Button';
+import { delayMs } from '../../utils/delay';
 
 export function OTPVerification() {
 	const navigate = useNavigate();
@@ -19,7 +20,11 @@ export function OTPVerification() {
 		inputRefs.current[0]?.focus();
 		const timer = setInterval(() => {
 			setCountdown(prev => {
-				if (prev <= 1) { setCanResend(true); clearInterval(timer); return 0; }
+				if (prev <= 1) {
+					setCanResend(true);
+					clearInterval(timer);
+					return 0;
+				}
 				return prev - 1;
 			});
 		}, 1000);
@@ -49,19 +54,19 @@ export function OTPVerification() {
 		}
 	}
 
-	async function handleVerify() {
+	function handleVerify() {
 		const code = otp.join('');
 		if (code.length < 6) { setError('Please enter the 6-digit code'); return; }
 		setIsLoading(true);
-		await new Promise(r => setTimeout(r, 1000));
-		if (code === '123456' || code === '000000') {
-			setSuccess(true);
-			await new Promise(r => setTimeout(r, 1000));
-			navigate('/login');
-		} else {
-			setError('Invalid code. Use 123456 for demo.');
-		}
-		setIsLoading(false);
+		void delayMs(1000).then(() => {
+			if (code === '123456' || code === '000000') {
+				setSuccess(true);
+				void delayMs(1000).then(() => { void navigate('/login'); });
+			} else {
+				setError('Invalid code. Use 123456 for demo.');
+			}
+			setIsLoading(false);
+		});
 	}
 
 	function handleResend() {
@@ -72,7 +77,14 @@ export function OTPVerification() {
 		setError('');
 		inputRefs.current[0]?.focus();
 		const timer = setInterval(() => {
-			setCountdown(prev => { if (prev <= 1) { setCanResend(true); clearInterval(timer); return 0; } return prev - 1; });
+			setCountdown(prev => {
+				if (prev <= 1) {
+					setCanResend(true);
+					clearInterval(timer);
+					return 0;
+				}
+				return prev - 1;
+			});
 		}, 1000);
 	}
 
@@ -123,7 +135,7 @@ export function OTPVerification() {
 						</div>
 						{error && <p className="text-rose-400 text-sm text-center mb-4">{error}</p>}
 
-						<Button variant="primary" fullWidth size="lg" onClick={handleVerify} isLoading={isLoading}>
+						<Button variant="primary" fullWidth size="lg" onClick={() => { handleVerify(); }} isLoading={isLoading}>
 							Verify Code
 						</Button>
 

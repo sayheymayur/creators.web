@@ -54,7 +54,7 @@ export function TimedChatRoom() {
 			senderId: session.creatorId,
 			senderName: session.creatorName,
 			senderAvatar: session.creatorAvatar,
-			text: `Hey! Your ${session.durationMinutes}-minute chat session has started. Let\'s talk!`,
+			text: `Hey! Your ${session.durationMinutes}-minute chat session has started. Let's talk!`,
 			createdAt: new Date().toISOString(),
 		};
 		setMessages([welcome]);
@@ -90,7 +90,7 @@ export function TimedChatRoom() {
 				createdAt: new Date().toISOString(),
 			};
 			setMessages(prev => [...prev, ended]);
-			setTimeout(() => navigate(-1), 2500);
+			setTimeout(() => { void navigate(-1); }, 2500);
 		}
 	}, [session]);
 
@@ -125,7 +125,7 @@ export function TimedChatRoom() {
 
 	function handleEndEarly() {
 		endSessionEarly();
-		navigate(-1);
+		void navigate(-1);
 	}
 
 	const isWarning = session && sessionState.secondsRemaining <= 60 && sessionState.secondsRemaining > 0;
@@ -134,7 +134,7 @@ export function TimedChatRoom() {
 	return (
 		<div className="fixed inset-0 z-[100] bg-[#0d0d0d] flex flex-col">
 			<div className="bg-[#0d0d0d]/95 backdrop-blur-xl border-b border-white/5 px-4 h-14 flex items-center gap-3 shrink-0">
-				<button onClick={() => navigate(-1)} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors">
+				<button type="button" onClick={() => { void navigate(-1); }} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors">
 					<ArrowLeft className="w-5 h-5 text-white/60" />
 				</button>
 				<Avatar src={session?.creatorAvatar ?? creator?.avatar ?? ''} alt={session?.creatorName ?? ''} size="sm" />

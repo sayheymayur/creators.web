@@ -6,6 +6,7 @@ import { Button } from '../../components/ui/Button';
 import { useAuth } from '../../context/AuthContext';
 import { useWallet } from '../../context/WalletContext';
 import { formatDate, formatCurrency } from '../../utils/date';
+import { delayMs } from '../../utils/delay';
 import type { Transaction } from '../../types';
 
 const ADD_FUND_PRESETS = [10, 25, 50, 100, 200, 500];
@@ -56,12 +57,13 @@ function TransactionItem({ tx }: { tx: Transaction }) {
 
 export function Wallet() {
 	const { state: authState } = useAuth();
-	const { addFunds, getUserTransactions, getUserSubscriptions, cancelSubscription, toggleAutoRenew } = useWallet();
+	const { addFundsViaRazorpay, getUserTransactions, getUserSubscriptions, cancelSubscription, toggleAutoRenew } = useWallet();
 	const [showAddFunds, setShowAddFunds] = useState(false);
 	const [addAmount, setAddAmount] = useState(50);
 	const [customAmount, setCustomAmount] = useState('');
 	const [isLoading, setIsLoading] = useState(false);
 	const [addSuccess, setAddSuccess] = useState(false);
+	const [payError, setPayError] = useState('');
 	const [activeTab, setActiveTab] = useState<'transactions' | 'subscriptions'>('transactions');
 
 	const user = authState.user;
@@ -73,15 +75,27 @@ export function Wallet() {
 	const totalSpent = transactions.filter(t => t.amount < 0).reduce((sum, t) => sum + Math.abs(t.amount), 0);
 	const totalDeposited = transactions.filter(t => t.type === 'deposit').reduce((sum, t) => sum + t.amount, 0);
 
-	async function handleAddFunds() {
+	function handleAddFunds() {
 		const amount = customAmount ? parseFloat(customAmount) : addAmount;
 		if (!amount || amount <= 0) return;
 		setIsLoading(true);
-		await new Promise(r => setTimeout(r, 1000));
-		addFunds(amount);
-		setAddSuccess(true);
-		setIsLoading(false);
-		setTimeout(() => { setAddSuccess(false); setShowAddFunds(false); setCustomAmount(''); }, 1500);
+		void delayMs(1000).then(() => {
+			setPayError('');
+			void addFundsViaRazorpay(amount).then(ok => {
+				if (ok) {
+					setAddSuccess(true);
+					setTimeout(() => {
+						setAddSuccess(false);
+						setShowAddFunds(false);
+						setCustomAmount('');
+						setPayError('');
+					}, 1500);
+				} else {
+					setPayError('');
+				}
+				setIsLoading(false);
+			});
+		});
 	}
 
 	return (
@@ -201,8 +215,13 @@ export function Wallet() {
 						<>
 							<div className="flex items-center gap-2 bg-white/5 rounded-xl p-3 mb-4">
 								<CreditCard className="w-4 h-4 text-white/40" />
-								<span className="text-sm text-white/40">Simulated payment — no real charges</span>
+								<span className="text-sm text-white/40">Secure payment via Razorpay</span>
 							</div>
+							{payError && (
+								<div className="bg-rose-500/10 border border-rose-500/20 rounded-xl p-3 mb-3">
+									<p className="text-xs text-rose-400">{payError}</p>
+								</div>
+							)}
 
 							<p className="text-xs text-white/40 font-medium mb-2 uppercase tracking-wide">Select Amount</p>
 							<div className="grid grid-cols-3 gap-2 mb-3">
@@ -225,7 +244,7 @@ export function Wallet() {
 								placeholder="Custom amount..."
 								className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/25 focus:outline-none focus:border-rose-500/50 mb-4"
 							/>
-							<Button variant="primary" fullWidth isLoading={isLoading} onClick={handleAddFunds}>
+							<Button variant="primary" fullWidth isLoading={isLoading} onClick={() => { void handleAddFunds(); }}>
 								Add ${(customAmount ? parseFloat(customAmount) || 0 : addAmount).toFixed(2)}
 							</Button>
 						</>

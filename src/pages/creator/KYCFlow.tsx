@@ -6,6 +6,7 @@ import { Button } from '../../components/ui/Button';
 import { useCurrentCreator } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { mockCreators } from '../../data/users';
+import { delayMs } from '../../utils/delay';
 
 export function KYCFlow() {
 	const creator = useCurrentCreator();
@@ -29,21 +30,22 @@ export function KYCFlow() {
 					</div>
 					<h2 className="text-xl font-bold text-white mb-2">Identity Verified</h2>
 					<p className="text-white/40 mb-6">Your account is fully verified and you can monetize your content.</p>
-					<Button variant="primary" onClick={() => navigate('/creator-dashboard')}>Go to Dashboard</Button>
+					<Button variant="primary" onClick={() => { void navigate('/creator-dashboard'); }}>Go to Dashboard</Button>
 				</div>
 			</Layout>
 		);
 	}
 
-	async function handleSubmit() {
+	function handleSubmit() {
 		if (!idFront || !idBack || !selfie) {
 			showToast('Please upload all required documents', 'error'); return;
 		}
 		setIsSubmitting(true);
-		await new Promise(r => setTimeout(r, 1500));
-		setSubmitted(true);
-		setIsSubmitting(false);
-		showToast('KYC submitted! Review takes 1-2 business days.');
+		void delayMs(1500).then(() => {
+			setSubmitted(true);
+			setIsSubmitting(false);
+			showToast('KYC submitted! Review takes 1-2 business days.');
+		});
 	}
 
 	if (submitted || creatorData.kycStatus === 'pending') {
@@ -64,7 +66,7 @@ export function KYCFlow() {
 							</div>
 						))}
 					</div>
-					<Button variant="outline" onClick={() => navigate('/creator-dashboard')}>Back to Dashboard</Button>
+					<Button variant="outline" onClick={() => { void navigate('/creator-dashboard'); }}>Back to Dashboard</Button>
 				</div>
 			</Layout>
 		);
@@ -114,7 +116,8 @@ export function KYCFlow() {
 					<p className="text-white/40 text-sm mb-4">Upload a clear photo of your {currentStep.title.toLowerCase()}</p>
 
 					<button
-						onClick={() => setUploadedMap[currentStep.key](true)}
+						type="button"
+						onClick={() => { setUploadedMap[currentStep.key](true); }}
 						className={`w-full border-2 border-dashed rounded-2xl py-10 flex flex-col items-center gap-3 transition-all ${
 							uploadedMap[currentStep.key] ?
 								'border-emerald-500/50 bg-emerald-500/5' :
@@ -156,7 +159,7 @@ export function KYCFlow() {
 							variant="primary"
 							fullWidth
 							isLoading={isSubmitting}
-							onClick={handleSubmit}
+							onClick={() => { void handleSubmit(); }}
 						>
 							Submit for Verification
 						</Button>

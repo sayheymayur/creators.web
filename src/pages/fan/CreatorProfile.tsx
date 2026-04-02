@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Star, Grid3x3, MessageCircle, Zap, Share2, MoreHorizontal, Lock, Image, Type, Phone, Video } from '../../components/icons';
+import { Star, Grid3x3, MessageCircle, Zap, Share2, MoreHorizontal, Lock, Image, Type, Phone, Video, ArrowLeft } from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';
 import { PostCard } from '../../components/ui/PostCard';
 import { TipModal } from '../../components/modals/TipModal';
@@ -13,7 +13,7 @@ import { useChat } from '../../context/ChatContext';
 import { useCall } from '../../context/CallContext';
 import { useSession } from '../../context/SessionContext';
 import { useWallet } from '../../context/WalletContext';
-import { SessionPickerModal } from '../../components/modals/SessionPickerModal';
+import { SessionPickerModal, type SessionPayMode } from '../../components/modals/SessionPickerModal';
 import type { SessionType } from '../../types';
 
 export function CreatorProfile() {
@@ -21,11 +21,11 @@ export function CreatorProfile() {
 	const navigate = useNavigate();
 	const { state: authState } = useAuth();
 	const { state: contentState, isSubscribed } = useContent();
-	useNotifications();
+	const { showToast } = useNotifications();
 	const { addConversation, getConversationForUser } = useChat();
 	const { startCall } = useCall();
 	const { startSession } = useSession();
-	useWallet();
+	const { deductFunds, payViaRazorpay } = useWallet();
 	const [showTipModal, setShowTipModal] = useState(false);
 	const [showSubscribeModal, setShowSubscribeModal] = useState(false);
 	const [showSessionModal, setShowSessionModal] = useState(false);
@@ -55,15 +55,58 @@ export function CreatorProfile() {
 			return true;
 		});
 
-	function handleStartSession(type: SessionType, durationMinutes: number, _totalCost: number) {
+	function handleStartSession(type: SessionType, durationMinutes: number, totalCost: number, payMode: SessionPayMode) {
 		if (!authState.user) return;
-		startSession(type, creator.id, creator.name, creator.avatar, authState.user.id, authState.user.name, durationMinutes, creator.perMinuteRate);
-		if (type === 'chat') {
-			navigate(`/session/chat/${creator.id}`);
-		} else {
+
+		const userId = authState.user.id;
+		const userName = authState.user.name;
+
+		const startAndNavigate = () => {
+			startSession(
+				type,
+				creator.id,
+				creator.name,
+				creator.avatar,
+				userId,
+				userName,
+				durationMinutes,
+				creator.perMinuteRate
+			);
+
+			if (type === 'chat') {
+				void navigate(`/session/chat/${creator.id}`);
+				return;
+			}
+
 			startCall(creator.id, creator.name, creator.avatar, type);
-			navigate('/call');
+			void navigate('/call');
+		};
+
+		if (payMode === 'razorpay') {
+			void payViaRazorpay(
+				totalCost,
+				'session',
+				`${type} session with ${creator.name} (${durationMinutes}min)`,
+				creator.id,
+				creator.name
+			).then(result => {
+				if (!result.ok) {
+					if (!result.cancelled) showToast(result.error || 'Payment failed.', 'error');
+					return;
+				}
+
+				startAndNavigate();
+			});
+			return;
 		}
+
+		const ok = deductFunds(totalCost, 'session', `Session with ${creator.name}`, creator.id, creator.name);
+		if (!ok) {
+			showToast('Insufficient wallet balance.', 'error');
+			return;
+		}
+
+		startAndNavigate();
 	}
 
 	function handleMessage() {
@@ -90,13 +133,24 @@ export function CreatorProfile() {
 	return (
 		<Layout>
 			<div className="max-w-2xl mx-auto">
-				<div className="relative">
+				<div className="relative z-0">
 					<div className="h-40 sm:h-52">
 						<img src={creator.banner} alt="" className="w-full h-full object-cover" />
 						<div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-[#0d0d0d]" />
 					</div>
 
-					<div className="absolute top-3 right-3 flex gap-2">
+					<div className="absolute top-3 left-3 z-20">
+						<button
+							type="button"
+							onClick={() => { void navigate(-1); }}
+							className="w-8 h-8 sm:w-9 sm:h-9 bg-black/50 backdrop-blur-sm rounded-full flex items-center justify-center text-white/80 hover:text-white hover:bg-black/70 transition-colors"
+							aria-label="Go back"
+						>
+							<ArrowLeft className="w-4 h-4" />
+						</button>
+					</div>
+
+					<div className="absolute top-3 right-3 z-10 flex gap-2">
 						<button className="w-8 h-8 bg-black/40 backdrop-blur-sm rounded-full flex items-center justify-center text-white hover:bg-black/60 transition-colors">
 							<Share2 className="w-4 h-4" />
 						</button>
@@ -106,7 +160,7 @@ export function CreatorProfile() {
 					</div>
 				</div>
 
-				<div className="px-4 -mt-12 pb-4">
+				<div className="px-4 -mt-12 pb-4 relative z-10">
 					<div className="flex items-end justify-between mb-3">
 						<div className="relative">
 							<img
@@ -169,7 +223,7 @@ export function CreatorProfile() {
 
 						{isOwner && (
 							<button
-								onClick={() => navigate('/creator-dashboard/profile')}
+								onClick={() => { void navigate('/creator-dashboard/profile'); }}
 								className="bg-white/10 hover:bg-white/15 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-all mt-4"
 							>
 								Edit Profile

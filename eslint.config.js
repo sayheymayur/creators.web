@@ -3,6 +3,9 @@
 import { configs, configure, globals } from './eslint-ps-standard.mjs';
 
 export default configure(
+	{
+		ignores: ['dist/**', 'node_modules/**']
+	},
 	// TypeScript / TSX (React) – PS standard ES3 + TS rules
 	{
 		files: ['**/*.{ts,tsx}'],
@@ -18,6 +21,8 @@ export default configure(
 			}
 		},
 		rules: {
+			// Long Tailwind className lines and image URLs are common in this UI codebase
+			"@stylistic/max-len": ["warn", { code: 250, tabWidth: 1, ignoreUrls: true }],
 			// temporary
 			"prefer-const": "off",
 			// we use these for grouping

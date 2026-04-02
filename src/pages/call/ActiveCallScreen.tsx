@@ -190,7 +190,7 @@ export function ActiveCallScreen() {
 
 					<div className="flex justify-center mt-6">
 						<button
-							onClick={() => navigate(-1)}
+							onClick={() => { void navigate(-1); }}
 							className="flex items-center gap-1.5 text-white/40 hover:text-white/70 text-xs transition-colors"
 						>
 							<Minimize2 className="w-3.5 h-3.5" />

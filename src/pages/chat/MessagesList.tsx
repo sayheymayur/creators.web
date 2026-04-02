@@ -125,7 +125,7 @@ export function MessagesList() {
 							return (
 								<button
 									key={conv.id}
-									onClick={() => navigate(`/messages/${conv.id}`)}
+									onClick={() => { void navigate(`/messages/${conv.id}`); }}
 									className="w-full flex items-center gap-3 p-3 hover:bg-white/5 rounded-2xl transition-colors text-left"
 								>
 									<Avatar src={other.avatar} alt={other.name} size="lg" isOnline={conv.isOnline} />

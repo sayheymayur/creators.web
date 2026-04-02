@@ -5,6 +5,7 @@ import { useLiveStream, VIRTUAL_GIFTS } from '../../context/LiveStreamContext';
 import { useAuth } from '../../context/AuthContext';
 import { useWallet } from '../../context/WalletContext';
 import { useNotifications } from '../../context/NotificationContext';
+import { usdToInr, formatINR } from '../../services/razorpay';
 import type { VirtualGift } from '../../types';
 
 function formatElapsed(startedAt: string): string {
@@ -20,7 +21,7 @@ export function LiveStreamRoom() {
 	const navigate = useNavigate();
 	const { getStream, sendChatMessage, sendGift } = useLiveStream();
 	const { state: authState } = useAuth();
-	const { deductFunds } = useWallet();
+	const { deductFunds, payViaRazorpay } = useWallet();
 	const { showToast } = useNotifications();
 	const [text, setText] = useState('');
 	const [showGifts, setShowGifts] = useState(false);
@@ -59,15 +60,46 @@ export function LiveStreamRoom() {
 		setText('');
 	}
 
+	const [giftLoading, setGiftLoading] = useState(false);
+
 	function handleGift(gift: VirtualGift) {
-		if (!authState.user) return;
-		const ok = deductFunds(gift.value, 'gift', `Gift "${gift.name}" to ${stream!.creatorName}`, stream!.creatorId, stream!.creatorName);
-		if (!ok) { showToast('Insufficient balance', 'error'); return; }
-		sendGift(stream!.id, authState.user.id, authState.user.name, authState.user.avatar, gift);
-		setShowGifts(false);
-		setFloatingGift({ emoji: gift.emoji, name: gift.name });
-		setTimeout(() => setFloatingGift(null), 2500);
-		showToast(`Sent ${gift.emoji} ${gift.name}!`);
+		const user = authState.user;
+		if (!user || giftLoading) return;
+		setGiftLoading(true);
+
+		const balance = user.walletBalance ?? 0;
+		let ok = false;
+
+		if (balance >= gift.value) {
+			ok = deductFunds(gift.value, 'gift', `Gift "${gift.name}" to ${stream!.creatorName}`, stream!.creatorId, stream!.creatorName);
+			if (ok) {
+				sendGift(stream!.id, user.id, user.name, user.avatar, gift);
+				setShowGifts(false);
+				setFloatingGift({ emoji: gift.emoji, name: gift.name });
+				setTimeout(() => setFloatingGift(null), 2500);
+				showToast(`Sent ${gift.emoji} ${gift.name}!`);
+			}
+			setGiftLoading(false);
+			return;
+		}
+
+		void payViaRazorpay(gift.value, 'gift', `Gift "${gift.name}" to ${stream!.creatorName}`, stream!.creatorId, stream!.creatorName).then(result => {
+			ok = result.ok;
+			if (!ok && !result.cancelled) {
+				showToast(result.error || 'Payment failed', 'error');
+				setGiftLoading(false);
+				return;
+			}
+
+			if (ok) {
+				sendGift(stream!.id, user.id, user.name, user.avatar, gift);
+				setShowGifts(false);
+				setFloatingGift({ emoji: gift.emoji, name: gift.name });
+				setTimeout(() => setFloatingGift(null), 2500);
+				showToast(`Sent ${gift.emoji} ${gift.name}!`);
+			}
+			setGiftLoading(false);
+		});
 	}
 
 	return (
@@ -82,7 +114,7 @@ export function LiveStreamRoom() {
 
 				<div className="absolute top-0 left-0 right-0 flex items-center gap-3 p-4 pt-12">
 					<button
-						onClick={() => navigate(-1)}
+						onClick={() => { void navigate(-1); }}
 						className="w-8 h-8 rounded-xl bg-black/40 backdrop-blur-sm flex items-center justify-center text-white"
 					>
 						<ArrowLeft className="w-4 h-4" />
@@ -187,11 +219,12 @@ export function LiveStreamRoom() {
 							<button
 								key={gift.id}
 								onClick={() => handleGift(gift)}
-								className="flex flex-col items-center gap-1.5 bg-white/5 hover:bg-white/10 border border-white/8 rounded-2xl p-3 transition-all active:scale-95"
+								disabled={giftLoading}
+								className="flex flex-col items-center gap-1.5 bg-white/5 hover:bg-white/10 border border-white/8 rounded-2xl p-3 transition-all active:scale-95 disabled:opacity-50"
 							>
 								<span className="text-2xl">{gift.emoji}</span>
 								<span className="text-xs text-white font-medium">{gift.name}</span>
-								<span className="text-[10px] text-amber-400 font-semibold">${gift.value.toFixed(2)}</span>
+								<span className="text-[10px] text-amber-400 font-semibold">{formatINR(usdToInr(gift.value))}</span>
 							</button>
 						))}
 					</div>

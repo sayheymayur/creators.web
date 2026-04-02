@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { CheckCircle, XCircle, Eye, Clock, Shield } from '../../components/icons';
 import { Navbar } from '../../components/layout/Navbar';
-import { ToastContainer } from '../../components/ui/Toast';
-import { Modal } from '../../components/ui/Toast';
+import { ToastContainer, Modal } from '../../components/ui/Toast';
 import { Button } from '../../components/ui/Button';
 import { useNotifications } from '../../context/NotificationContext';
 import { mockKYCApplications } from '../../data/transactions';

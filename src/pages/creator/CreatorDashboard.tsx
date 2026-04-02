@@ -1,6 +1,19 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { TrendingUp, Users, Zap, DollarSign, ArrowRight, Star, Eye, Radio, MessageCircle, Phone, Video, Clock } from '../../components/icons';
+import {
+	TrendingUp,
+	Users,
+	Zap,
+	DollarSign,
+	ArrowRight,
+	Star,
+	Eye,
+	Radio,
+	MessageCircle,
+	Phone,
+	Video,
+	Clock,
+} from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';
 import { useCurrentCreator } from '../../context/AuthContext';
 import { useContent } from '../../context/ContentContext';
@@ -74,7 +87,8 @@ export function CreatorDashboard() {
 								'Verify your identity to start earning on creators.web.'}
 					</p>
 					<button
-						onClick={() => navigate('/creator-dashboard/kyc')}
+						type="button"
+						onClick={() => { void navigate('/creator-dashboard/kyc'); }}
 						className="bg-rose-500 hover:bg-rose-600 text-white font-semibold px-6 py-2.5 rounded-xl transition-all"
 					>
 						{creatorData.kycStatus === 'rejected' ? 'Resubmit KYC' : 'Submit KYC Documents'}
@@ -98,14 +112,16 @@ export function CreatorDashboard() {
 					</div>
 					<div className="flex items-center gap-2">
 						<button
-							onClick={() => navigate('/go-live')}
+							type="button"
+							onClick={() => { void navigate('/go-live'); }}
 							className="bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-400 text-sm font-semibold px-3 py-2 rounded-xl transition-all flex items-center gap-1.5"
 						>
 							<Radio className="w-4 h-4" />
 							Go Live
 						</button>
 						<button
-							onClick={() => navigate('/creator-dashboard/content')}
+							type="button"
+							onClick={() => { void navigate('/creator-dashboard/content'); }}
 							className="bg-rose-500 hover:bg-rose-600 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-all"
 						>
 							+ New Post
@@ -120,7 +136,7 @@ export function CreatorDashboard() {
 						sub={`+${earningsGrowth}% vs last month`}
 						icon={<DollarSign className="w-5 h-5 text-emerald-400" />}
 						color="bg-emerald-500/15"
-						onClick={() => navigate('/creator-dashboard/earnings')}
+						onClick={() => { void navigate('/creator-dashboard/earnings'); }}
 					/>
 					<StatCard
 						label="Subscribers"
@@ -128,7 +144,7 @@ export function CreatorDashboard() {
 						sub="Active this month"
 						icon={<Users className="w-5 h-5 text-blue-400" />}
 						color="bg-blue-500/15"
-						onClick={() => navigate('/creator-dashboard/subscribers')}
+						onClick={() => { void navigate('/creator-dashboard/subscribers'); }}
 					/>
 					<StatCard
 						label="Session Earnings"
@@ -300,8 +316,9 @@ export function CreatorDashboard() {
 								{ label: 'Edit Profile', path: '/creator-dashboard/profile', color: 'bg-amber-500/15 text-amber-400' },
 							].map(({ label, path, color }) => (
 								<button
+									type="button"
 									key={label}
-									onClick={() => navigate(path)}
+									onClick={() => { void navigate(path); }}
 									className={`${color} rounded-xl py-2.5 text-xs font-semibold transition-all hover:opacity-80`}
 								>
 									{label}

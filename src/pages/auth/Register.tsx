@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { User, Mail, Lock, Eye, EyeOff, Camera, Video, ArrowRight } from '../../components/icons';
+import { User, Mail, Lock, Eye, EyeOff, Camera, Video, ArrowRight, Chrome } from '../../components/icons';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../../components/ui/Button';
+import { delayMs } from '../../utils/delay';
 
 export function Register() {
 	const navigate = useNavigate();
-	const { setPendingEmail } = useAuth();
+	const { setPendingEmail, loginWithGoogle, state } = useAuth();
 	const [step, setStep] = useState<1 | 2>(1);
 	const [role, setRole] = useState<'fan' | 'creator'>('fan');
 	const [name, setName] = useState('');
@@ -15,20 +16,31 @@ export function Register() {
 	const [showPassword, setShowPassword] = useState(false);
 	const [isLoading, setIsLoading] = useState(false);
 
-	async function handleContinue(e: React.FormEvent) {
+	function handleContinue(e: React.FormEvent) {
 		e.preventDefault();
 		if (step === 1) { setStep(2); return; }
 		setIsLoading(true);
-		await new Promise(r => setTimeout(r, 1000));
-		setPendingEmail(email);
-		navigate('/otp');
-		setIsLoading(false);
+		void delayMs(1000).then(() => {
+			setPendingEmail(email);
+			void navigate('/otp');
+			setIsLoading(false);
+		});
+	}
+
+	function handleGoogleSignup() {
+		setIsLoading(true);
+		void loginWithGoogle(role).then(user => {
+			setIsLoading(false);
+			if (user) {
+				void navigate(user.role === 'admin' ? '/admin' : user.role === 'creator' ? '/creator-dashboard' : '/feed');
+			}
+		});
 	}
 
 	return (
 		<div className="min-h-screen bg-[#0d0d0d] flex items-center justify-center px-4 py-8">
 			<div className="w-full max-w-sm">
-				<button onClick={() => navigate('/')} className="flex items-center gap-2 mb-8">
+				<button type="button" onClick={() => { void navigate('/'); }} className="flex items-center gap-2 mb-8">
 					<div className="w-8 h-8 bg-rose-500 rounded-xl flex items-center justify-center">
 						<span className="text-white font-black text-sm">cw</span>
 					</div>
@@ -98,7 +110,10 @@ export function Register() {
 						</Button>
 					</div>
 				) : (
-					<form onSubmit={handleContinue} className="space-y-4">
+					<form
+						onSubmit={e => { handleContinue(e); }}
+						className="space-y-4"
+					>
 						<div>
 							<label className="block text-sm font-medium text-white/60 mb-1.5">Full Name</label>
 							<div className="relative">
@@ -150,10 +165,24 @@ export function Register() {
 							<span className="text-rose-400 cursor-pointer">Terms of Service</span>{' '}
 							and confirm you are 18+.
 						</p>
+						{state.loginError && (
+							<p className="text-rose-400 text-sm bg-rose-500/10 border border-rose-500/20 rounded-xl px-3 py-2">
+								{state.loginError}
+							</p>
+						)}
 						<Button variant="primary" fullWidth size="lg" type="submit" isLoading={isLoading}>
 							Send Verification Code
 							<ArrowRight className="w-4 h-4" />
 						</Button>
+						<button
+							type="button"
+							onClick={() => { handleGoogleSignup(); }}
+							disabled={isLoading}
+							className="w-full flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl py-3 text-sm font-medium text-white/70 hover:text-white transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+						>
+							<Chrome className="w-4 h-4" />
+							Continue with Google
+						</button>
 						<button type="button" onClick={() => setStep(1)} className="w-full text-center text-sm text-white/30 hover:text-white/50 transition-colors">
 							Back
 						</button>

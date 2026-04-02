@@ -21,7 +21,7 @@ export function Navbar() {
 
 	function handleLogout() {
 		logout();
-		navigate('/');
+		void navigate('/');
 		setShowUserMenu(false);
 	}
 
@@ -34,7 +34,8 @@ export function Navbar() {
 		<nav className="fixed top-0 left-0 right-0 z-40 bg-[#0d0d0d]/90 backdrop-blur-xl border-b border-white/5">
 			<div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
 				<button
-					onClick={() => navigate(isAdmin ? '/admin' : isCreator ? '/creator-dashboard' : '/feed')}
+					type="button"
+					onClick={() => { void navigate(isAdmin ? '/admin' : isCreator ? '/creator-dashboard' : '/feed'); }}
 					className="flex items-center gap-2 shrink-0"
 				>
 					<div className="w-7 h-7 bg-rose-500 rounded-lg flex items-center justify-center">
@@ -47,17 +48,54 @@ export function Navbar() {
 					<div className="hidden md:flex items-center gap-1">
 						{!isCreator && (
 							<>
-								<NavLink label="Feed" path="/feed" current={location.pathname} onClick={() => navigate('/feed')} />
-								<NavLink label="Explore" path="/explore" current={location.pathname} onClick={() => navigate('/explore')} />
-								<NavLink label="Messages" path="/messages" current={location.pathname} onClick={() => navigate('/messages')} badge={totalUnread} />
+								<NavLink
+									label="Feed"
+									path="/feed"
+									current={location.pathname}
+									onClick={() => { void navigate('/feed'); }}
+								/>
+								<NavLink
+									label="Explore"
+									path="/explore"
+									current={location.pathname}
+									onClick={() => { void navigate('/explore'); }}
+								/>
+								<NavLink
+									label="Messages"
+									path="/messages"
+									current={location.pathname}
+									onClick={() => { void navigate('/messages'); }}
+									badge={totalUnread}
+								/>
 							</>
 						)}
 						{isCreator && (
 							<>
-								<NavLink label="Dashboard" path="/creator-dashboard" current={location.pathname} onClick={() => navigate('/creator-dashboard')} />
-								<NavLink label="Content" path="/creator-dashboard/content" current={location.pathname} onClick={() => navigate('/creator-dashboard/content')} />
-								<NavLink label="Messages" path="/messages" current={location.pathname} onClick={() => navigate('/messages')} badge={totalUnread} />
-								<NavLink label="Earnings" path="/creator-dashboard/earnings" current={location.pathname} onClick={() => navigate('/creator-dashboard/earnings')} />
+								<NavLink
+									label="Dashboard"
+									path="/creator-dashboard"
+									current={location.pathname}
+									onClick={() => { void navigate('/creator-dashboard'); }}
+								/>
+								<NavLink
+									label="Content"
+									path="/creator-dashboard/content"
+									current={location.pathname}
+									onClick={() => { void navigate('/creator-dashboard/content'); }}
+								/>
+								<NavLink
+									label="Messages"
+									path="/messages"
+									current={location.pathname}
+									onClick={() => { void navigate('/messages'); }}
+									badge={totalUnread}
+								/>
+								<NavLink
+									label="Earnings"
+									path="/creator-dashboard/earnings"
+									current={location.pathname}
+									onClick={() => { void navigate('/creator-dashboard/earnings'); }}
+								/>
 							</>
 						)}
 					</div>
@@ -65,18 +103,44 @@ export function Navbar() {
 
 				{isAdmin && (
 					<div className="hidden md:flex items-center gap-1">
-						<NavLink label="Dashboard" path="/admin" current={location.pathname} onClick={() => navigate('/admin')} />
-						<NavLink label="KYC Queue" path="/admin/creators" current={location.pathname} onClick={() => navigate('/admin/creators')} />
-						<NavLink label="Users" path="/admin/users" current={location.pathname} onClick={() => navigate('/admin/users')} />
-						<NavLink label="Moderation" path="/admin/moderation" current={location.pathname} onClick={() => navigate('/admin/moderation')} />
-						<NavLink label="reports" path="/admin/reports" current={location.pathname} onClick={() => navigate('/admin/reports')} />
+						<NavLink
+							label="Dashboard"
+							path="/admin"
+							current={location.pathname}
+							onClick={() => { void navigate('/admin'); }}
+						/>
+						<NavLink
+							label="KYC Queue"
+							path="/admin/creators"
+							current={location.pathname}
+							onClick={() => { void navigate('/admin/creators'); }}
+						/>
+						<NavLink
+							label="Users"
+							path="/admin/users"
+							current={location.pathname}
+							onClick={() => { void navigate('/admin/users'); }}
+						/>
+						<NavLink
+							label="Moderation"
+							path="/admin/moderation"
+							current={location.pathname}
+							onClick={() => { void navigate('/admin/moderation'); }}
+						/>
+						<NavLink
+							label="reports"
+							path="/admin/reports"
+							current={location.pathname}
+							onClick={() => { void navigate('/admin/reports'); }}
+						/>
 					</div>
 				)}
 
 				<div className="flex items-center gap-2 shrink-0">
 					{!isAdmin && !isCreator && (
 						<button
-							onClick={() => navigate('/wallet')}
+							type="button"
+							onClick={() => { void navigate('/wallet'); }}
 							className="hidden sm:flex items-center gap-1.5 bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-xl transition-colors"
 						>
 							<Wallet className="w-3.5 h-3.5 text-emerald-400" />
@@ -86,12 +150,18 @@ export function Navbar() {
 
 					<div className="relative">
 						<button
+							type="button"
 							onClick={() => { setShowNotifications(v => !v); setShowUserMenu(false); }}
 							className="relative p-2 rounded-xl hover:bg-white/10 transition-colors"
 						>
 							<Bell className="w-5 h-5 text-white/70" />
 							{unreadNotifs > 0 && (
-								<span className="absolute top-0.5 right-0.5 w-4 h-4 bg-rose-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+								<span
+									className={
+										'absolute top-0.5 right-0.5 w-4 h-4 bg-rose-500 text-white text-[9px] ' +
+										'font-bold rounded-full flex items-center justify-center'
+									}
+								>
 									{unreadNotifs > 9 ? '9+' : unreadNotifs}
 								</span>
 							)}
@@ -101,36 +171,89 @@ export function Navbar() {
 
 					<div className="relative">
 						<button
+							type="button"
 							onClick={() => { setShowUserMenu(v => !v); setShowNotifications(false); }}
-							className="flex items-center gap-2 hover:bg-white/10 pl-1 pr-2 py-1 rounded-xl transition-colors"
+							className={
+								'flex items-center gap-2 hover:bg-white/10 pl-1 pr-2 py-1 ' +
+								'rounded-xl transition-colors'
+							}
 						>
 							<Avatar src={user.avatar} alt={user.name} size="sm" />
 							<ChevronDown className="w-3.5 h-3.5 text-white/40 hidden sm:block" />
 						</button>
 
 						{showUserMenu && (
-							<div className="absolute right-0 top-full mt-2 w-52 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl py-1.5 z-50">
+							<div
+								className={
+									'absolute right-0 top-full mt-2 w-52 bg-[#1a1a1a] border ' +
+									'border-white/10 rounded-2xl shadow-2xl py-1.5 z-50'
+								}
+							>
 								<div className="px-3 py-2 border-b border-white/5 mb-1">
 									<p className="text-sm font-semibold text-white truncate">{user.name}</p>
 									<p className="text-xs text-white/40 truncate">{user.email}</p>
-									{!isAdmin && <p className="text-xs text-white/30 mt-0.5">Balance: ${user.walletBalance.toFixed(2)}</p>}
+									{!isAdmin && (
+										<p className="text-xs text-white/30 mt-0.5">
+											Balance: ${user.walletBalance.toFixed(2)}
+										</p>
+									)}
 								</div>
 
 								{!isAdmin && (
-									<MenuItem icon={<User className="w-4 h-4" />} label="Profile" onClick={() => { navigate(isCreator ? `/creator/${user.id}` : '/settings'); setShowUserMenu(false); }} />
+									<MenuItem
+										icon={<User className="w-4 h-4" />}
+										label="Profile"
+										onClick={() => {
+											void navigate(isCreator ? '/creator-dashboard/profile' : '/settings');
+											setShowUserMenu(false);
+										}}
+									/>
 								)}
 								{!isCreator && !isAdmin && (
-									<MenuItem icon={<Wallet className="w-4 h-4" />} label="Wallet" onClick={() => { navigate('/wallet'); setShowUserMenu(false); }} />
+									<MenuItem
+										icon={<Wallet className="w-4 h-4" />}
+										label="Wallet"
+										onClick={() => {
+											void navigate('/wallet');
+											setShowUserMenu(false);
+										}}
+									/>
 								)}
 								{isCreator && (
-									<MenuItem icon={<LayoutDashboard className="w-4 h-4" />} label="Dashboard" onClick={() => { navigate('/creator-dashboard'); setShowUserMenu(false); }} />
+									<MenuItem
+										icon={<LayoutDashboard className="w-4 h-4" />}
+										label="Dashboard"
+										onClick={() => {
+											void navigate('/creator-dashboard');
+											setShowUserMenu(false);
+										}}
+									/>
 								)}
 								{isAdmin && (
-									<MenuItem icon={<Shield className="w-4 h-4" />} label="Admin Panel" onClick={() => { navigate('/admin'); setShowUserMenu(false); }} />
+									<MenuItem
+										icon={<Shield className="w-4 h-4" />}
+										label="Admin Panel"
+										onClick={() => {
+											void navigate('/admin');
+											setShowUserMenu(false);
+										}}
+									/>
 								)}
-								<MenuItem icon={<Settings className="w-4 h-4" />} label="Settings" onClick={() => { navigate('/settings'); setShowUserMenu(false); }} />
+								<MenuItem
+									icon={<Settings className="w-4 h-4" />}
+									label="Settings"
+									onClick={() => {
+										void navigate('/settings');
+										setShowUserMenu(false);
+									}}
+								/>
 								<div className="border-t border-white/5 mt-1 pt-1">
-									<MenuItem icon={<LogOut className="w-4 h-4" />} label="Sign Out" onClick={handleLogout} danger />
+									<MenuItem
+										icon={<LogOut className="w-4 h-4" />}
+										label="Sign Out"
+										onClick={handleLogout}
+										danger
+									/>
 								</div>
 							</div>
 						)}
@@ -141,18 +264,32 @@ export function Navbar() {
 	);
 }
 
-function NavLink({ label, path, current, onClick, badge }: { label: string, path: string, current: string, onClick: () => void, badge?: number }) {
+function NavLink({ label, path, current, onClick, badge }: {
+	label: string,
+	path: string,
+	current: string,
+	onClick: () => void,
+	badge?: number,
+}) {
 	const isActive = current === path || (path !== '/' && current.startsWith(path));
 	return (
 		<button
+			type="button"
 			onClick={onClick}
 			className={`relative px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-				isActive ? 'text-white bg-white/10' : 'text-white/50 hover:text-white hover:bg-white/5'
+				isActive ?
+					'text-white bg-white/10' :
+					'text-white/50 hover:text-white hover:bg-white/5'
 			}`}
 		>
 			{label}
 			{badge && badge > 0 ? (
-				<span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-rose-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+				<span
+					className={
+						'absolute -top-0.5 -right-0.5 w-4 h-4 bg-rose-500 text-white text-[9px] ' +
+						'font-bold rounded-full flex items-center justify-center'
+					}
+				>
 					{badge > 9 ? '9+' : badge}
 				</span>
 			) : null}
@@ -160,12 +297,20 @@ function NavLink({ label, path, current, onClick, badge }: { label: string, path
 	);
 }
 
-function MenuItem({ icon, label, onClick, danger }: { icon: React.ReactNode, label: string, onClick: () => void, danger?: boolean }) {
+function MenuItem({ icon, label, onClick, danger }: {
+	icon: React.ReactNode,
+	label: string,
+	onClick: () => void,
+	danger?: boolean,
+}) {
 	return (
 		<button
+			type="button"
 			onClick={onClick}
 			className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm transition-colors rounded-lg mx-1 ${
-				danger ? 'text-rose-400 hover:bg-rose-500/10' : 'text-white/70 hover:text-white hover:bg-white/10'
+				danger ?
+					'text-rose-400 hover:bg-rose-500/10' :
+					'text-white/70 hover:text-white hover:bg-white/10'
 			}`}
 			style={{ width: 'calc(100% - 8px)' }}
 		>

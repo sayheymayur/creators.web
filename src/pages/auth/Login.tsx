@@ -7,27 +7,38 @@ import { DEMO_ACCOUNTS } from '../../data/users';
 
 export function Login() {
 	const navigate = useNavigate();
-	const { login, state } = useAuth();
+	const { login, loginWithGoogle, state } = useAuth();
 	const [email, setEmail] = useState('');
 	const [password, setPassword] = useState('');
 	const [showPassword, setShowPassword] = useState(false);
 	const [isLoading, setIsLoading] = useState(false);
 
-	async function handleLogin(e: React.FormEvent) {
+	function handleLogin(e: React.FormEvent) {
 		e.preventDefault();
 		setIsLoading(true);
-		const success = await login(email, password);
-		setIsLoading(false);
-		if (success) {
-			const role = email.toLowerCase() === DEMO_ACCOUNTS.admin.email ? 'admin' :
-				email.toLowerCase() === DEMO_ACCOUNTS.creator.email ? 'creator' : 'fan';
-			navigate(role === 'admin' ? '/admin' : role === 'creator' ? '/creator-dashboard' : '/feed');
-		}
+		void login(email, password).then(success => {
+			setIsLoading(false);
+			if (success) {
+				const role = email.toLowerCase() === DEMO_ACCOUNTS.admin.email ? 'admin' :
+					email.toLowerCase() === DEMO_ACCOUNTS.creator.email ? 'creator' : 'fan';
+				void navigate(role === 'admin' ? '/admin' : role === 'creator' ? '/creator-dashboard' : '/feed');
+			}
+		});
 	}
 
 	function fillDemo(type: keyof typeof DEMO_ACCOUNTS) {
 		setEmail(DEMO_ACCOUNTS[type].email);
 		setPassword(DEMO_ACCOUNTS[type].password);
+	}
+
+	function handleGoogleLogin() {
+		setIsLoading(true);
+		void loginWithGoogle('fan').then(user => {
+			setIsLoading(false);
+			if (user) {
+				void navigate(user.role === 'admin' ? '/admin' : user.role === 'creator' ? '/creator-dashboard' : '/feed');
+			}
+		});
 	}
 
 	return (
@@ -48,7 +59,7 @@ export function Login() {
 
 			<div className="flex-1 flex items-center justify-center px-4 py-8">
 				<div className="w-full max-w-sm">
-					<button onClick={() => navigate('/')} className="flex items-center gap-2 mb-8">
+					<button type="button" onClick={() => { void navigate('/'); }} className="flex items-center gap-2 mb-8">
 						<div className="w-8 h-8 bg-rose-500 rounded-xl flex items-center justify-center">
 							<span className="text-white font-black text-sm">cw</span>
 						</div>
@@ -80,7 +91,10 @@ export function Login() {
 						<div className="flex-1 h-px bg-white/10" />
 					</div>
 
-					<form onSubmit={handleLogin} className="space-y-4">
+					<form
+						onSubmit={e => { handleLogin(e); }}
+						className="space-y-4"
+					>
 						<div>
 							<label className="block text-sm font-medium text-white/60 mb-1.5">Email</label>
 							<div className="relative">
@@ -136,7 +150,12 @@ export function Login() {
 						<div className="flex-1 h-px bg-white/10" />
 					</div>
 
-					<button className="w-full flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl py-3 text-sm font-medium text-white/70 hover:text-white transition-all">
+					<button
+						type="button"
+						onClick={() => { handleGoogleLogin(); }}
+						disabled={isLoading}
+						className="w-full flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl py-3 text-sm font-medium text-white/70 hover:text-white transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+					>
 						<Chrome className="w-4 h-4" />
 						Continue with Google
 					</button>

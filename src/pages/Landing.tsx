@@ -5,7 +5,7 @@ import { useDragScroll } from '../hooks/useDragScroll';
 
 export function Landing() {
 	const navigate = useNavigate();
-	const featuredRef = useDragScroll<HTMLDivElement>();
+	const featuredRef = useDragScroll();
 
 	function scrollFeatured(direction: 'left' | 'right') {
 		const container = featuredRef.current;

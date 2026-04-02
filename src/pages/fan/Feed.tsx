@@ -11,7 +11,7 @@ export function Feed() {
 	const { state: contentState, isSubscribed } = useContent();
 	const navigate = useNavigate();
 	const [filter, setFilter] = useState<'all' | 'subscribed'>('all');
-	const followingRef = useDragScroll<HTMLDivElement>();
+	const followingRef = useDragScroll();
 
 	const posts = contentState.posts.filter(p => {
 		if (filter === 'subscribed') return isSubscribed(p.creatorId);
@@ -26,8 +26,8 @@ export function Feed() {
 				{subscribedCreators.length > 0 && (
 					<div className="mb-6">
 						<p className="text-xs text-white/30 font-medium uppercase tracking-wider mb-3">Following</p>
-					<div ref={followingRef} className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-						{subscribedCreators.map(creator => (
+						<div ref={followingRef} className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+							{subscribedCreators.map(creator => (
 								<button
 									key={creator.id}
 									onClick={() => { void navigate(`/creator/${creator.id}`); }}

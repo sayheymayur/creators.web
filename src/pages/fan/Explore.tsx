@@ -16,9 +16,9 @@ export function Explore() {
 	const [sortBy, setSortBy] = useState<'popular' | 'new' | 'price'>('popular');
 	const { getLiveStreams } = useLiveStream();
 	const liveStreams = getLiveStreams();
-	const liveRef = useDragScroll<HTMLDivElement>();
-	const trendingRef = useDragScroll<HTMLDivElement>();
-	const allRef = useDragScroll<HTMLDivElement>();
+	const liveRef = useDragScroll();
+	const trendingRef = useDragScroll();
+	const allRef = useDragScroll();
 
 	const approvedCreators = mockCreators.filter(c => c.isKYCVerified);
 
@@ -77,26 +77,27 @@ export function Explore() {
 							</div>
 							<h2 className="font-semibold text-white text-sm">Live Now</h2>
 						</div>
-				<div ref={liveRef} className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4 mb-8">
-					{liveStreams.map(stream => (
-							<button
-								key={stream.id}
-								onClick={() => navigate(`/live/${stream.id}`)}
-								className="relative bg-[#161616] border border-white/5 rounded-2xl overflow-hidden hover:border-white/10 transition-all group flex-shrink-0 w-64 sm:w-72"
-							>
-								<div className="relative h-28">
-									<img src={stream.creatorAvatar} alt={stream.creatorName} className="w-full h-full object-cover scale-105 blur-sm brightness-50" />
-									<div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/60" />
-									<div className="absolute top-2 left-2 flex items-center gap-1.5 bg-rose-500 rounded-lg px-2 py-0.5">
-										<div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
-										<span className="text-white text-[10px] font-bold">LIVE</span>
-									</div>
-									<div className="absolute top-2 right-2 flex items-center gap-1 bg-black/50 rounded-lg px-2 py-0.5">
-										<Eye className="w-3 h-3 text-white/70" />
-										<span className="text-white text-[10px] font-semibold">{stream.viewerCount.toLocaleString()}</span>
-									</div>
-									<div className="px-3 py-2.5">
-										<p className="text-white/70 text-xs truncate">{stream.title}</p>
+						<div ref={liveRef} className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4 mb-8">
+							{liveStreams.map(stream => (
+								<button
+									key={stream.id}
+									onClick={() => { void navigate(`/live/${stream.id}`); }}
+									className="relative bg-[#161616] border border-white/5 rounded-2xl overflow-hidden hover:border-white/10 transition-all group flex-shrink-0 w-64 sm:w-72"
+								>
+									<div className="relative h-28">
+										<img src={stream.creatorAvatar} alt={stream.creatorName} className="w-full h-full object-cover scale-105 blur-sm brightness-50" />
+										<div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/60" />
+										<div className="absolute top-2 left-2 flex items-center gap-1.5 bg-rose-500 rounded-lg px-2 py-0.5">
+											<div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+											<span className="text-white text-[10px] font-bold">LIVE</span>
+										</div>
+										<div className="absolute top-2 right-2 flex items-center gap-1 bg-black/50 rounded-lg px-2 py-0.5">
+											<Eye className="w-3 h-3 text-white/70" />
+											<span className="text-white text-[10px] font-semibold">{stream.viewerCount.toLocaleString()}</span>
+										</div>
+										<div className="px-3 py-2.5">
+											<p className="text-white/70 text-xs truncate">{stream.title}</p>
+										</div>
 									</div>
 								</button>
 							))}
@@ -110,19 +111,19 @@ export function Explore() {
 							<TrendingUp className="w-4 h-4 text-rose-400" />
 							<h2 className="font-semibold text-white text-sm">Trending Now</h2>
 						</div>
-				<div ref={trendingRef} className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4">
-					{trendingCreators.map((creator, idx) => (
-							<div key={creator.id} className="relative flex-shrink-0 w-56 sm:w-64 md:w-72">
-								{idx === 0 && (
-									<div className="absolute -top-2 -right-2 z-10 bg-amber-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-0.5">
-										<Star className="w-2.5 h-2.5 fill-white" />
-										#1 Trending
-									</div>
-								)}
-								<CreatorCard creator={creator} />
-							</div>
-						))}
-					</div>
+						<div ref={trendingRef} className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4">
+							{trendingCreators.map((creator, idx) => (
+								<div key={creator.id} className="relative flex-shrink-0 w-56 sm:w-64 md:w-72">
+									{idx === 0 && (
+										<div className="absolute -top-2 -right-2 z-10 bg-amber-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-0.5">
+											<Star className="w-2.5 h-2.5 fill-white" />
+											#1 Trending
+										</div>
+									)}
+									<CreatorCard creator={creator} />
+								</div>
+							))}
+						</div>
 					</div>
 				)}
 
@@ -151,8 +152,8 @@ export function Explore() {
 						<p className="text-white/30">No creators found</p>
 					</div>
 				) : (
-				<div ref={allRef} className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4">
-					{filtered.map(creator => (
+					<div ref={allRef} className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4">
+						{filtered.map(creator => (
 							<div key={creator.id} className="flex-shrink-0 w-48 sm:w-56 md:w-64">
 								<CreatorCard creator={creator} />
 							</div>

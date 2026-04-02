@@ -121,9 +121,7 @@ export function SessionPickerModal({ isOpen, onClose, creatorName, creatorAvatar
 							<button
 								onClick={() => setPayMode('razorpay')}
 								className={`flex-1 py-2.5 rounded-xl text-xs font-semibold border transition-all ${
-									payMode === 'razorpay'
-										? 'border-rose-500/40 bg-rose-500/10 text-rose-400'
-										: 'border-white/10 bg-white/5 text-white/50 hover:bg-white/8'
+									payMode === 'razorpay' ? 'border-rose-500/40 bg-rose-500/10 text-rose-400' : 'border-white/10 bg-white/5 text-white/50 hover:bg-white/8'
 								}`}
 							>
 								{totalCost > 0 ? `Pay ${formatINR(inrCost)}` : 'Razorpay'}
@@ -131,9 +129,7 @@ export function SessionPickerModal({ isOpen, onClose, creatorName, creatorAvatar
 							<button
 								onClick={() => setPayMode('wallet')}
 								className={`flex-1 py-2.5 rounded-xl text-xs font-semibold border transition-all ${
-									payMode === 'wallet'
-										? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
-										: 'border-white/10 bg-white/5 text-white/50 hover:bg-white/8'
+									payMode === 'wallet' ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400' : 'border-white/10 bg-white/5 text-white/50 hover:bg-white/8'
 								}`}
 							>
 								<Wallet className="w-3 h-3 inline mr-1" />

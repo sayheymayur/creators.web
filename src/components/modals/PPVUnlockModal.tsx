@@ -33,32 +33,42 @@ export function PPVUnlockModal({ isOpen, onClose, post }: PPVUnlockModalProps) {
 	const inrPrice = usdToInr(price);
 
 	function handleUnlock() {
-		if (!authState.user) return;
+		const user = authState.user;
+		if (!user) return;
 		setIsLoading(true);
 		void delayMs(800).then(() => {
-		setError('');
+			setError('');
 
-		let ok = false;
+			if (payMode === 'razorpay') {
+				void payViaRazorpay(price, 'ppv', `PPV unlock: ${post.creatorName}`, post.creatorId, post.creatorName).then(result => {
+					if (!result.ok) {
+						if (!result.cancelled) setError(result.error || 'Payment failed.');
+						setIsLoading(false);
+						return;
+					}
 
-		if (payMode === 'razorpay') {
-			const result = await payViaRazorpay(price, 'ppv', `PPV unlock: ${post.creatorName}`, post.creatorId, post.creatorName);
-			ok = result.ok;
-			if (!ok && !result.cancelled) {
-				setError(result.error || 'Payment failed.');
+					unlockPost(post.id, user.id);
+					setSuccess(true);
+					showToast('Content unlocked!');
+					setTimeout(onClose, 1500);
+					setIsLoading(false);
+				});
+				return;
 			}
-		} else {
-			ok = deductFunds(price, 'ppv', `PPV unlock: ${post.creatorName}`, post.creatorId, post.creatorName);
-			if (!ok) setError('Insufficient wallet balance.');
-		}
 
-		if (ok) {
-			unlockPost(post.id, authState.user.id);
+			const ok = deductFunds(price, 'ppv', `PPV unlock: ${post.creatorName}`, post.creatorId, post.creatorName);
+			if (!ok) {
+				setError('Insufficient wallet balance.');
+				setIsLoading(false);
+				return;
+			}
+
+			unlockPost(post.id, user.id);
 			setSuccess(true);
 			showToast('Content unlocked!');
 			setTimeout(onClose, 1500);
-		}
-		setIsLoading(false);
-  });
+			setIsLoading(false);
+		});
 	}
 
 	return (
@@ -103,9 +113,7 @@ export function PPVUnlockModal({ isOpen, onClose, post }: PPVUnlockModalProps) {
 							<button
 								onClick={() => setPayMode('razorpay')}
 								className={`flex-1 py-2.5 rounded-xl text-xs font-semibold border transition-all ${
-									payMode === 'razorpay'
-										? 'border-rose-500/40 bg-rose-500/10 text-rose-400'
-										: 'border-white/10 bg-white/5 text-white/50 hover:bg-white/8'
+									payMode === 'razorpay' ? 'border-rose-500/40 bg-rose-500/10 text-rose-400' : 'border-white/10 bg-white/5 text-white/50 hover:bg-white/8'
 								}`}
 							>
 								Pay {formatINR(inrPrice)}
@@ -113,9 +121,7 @@ export function PPVUnlockModal({ isOpen, onClose, post }: PPVUnlockModalProps) {
 							<button
 								onClick={() => setPayMode('wallet')}
 								className={`flex-1 py-2.5 rounded-xl text-xs font-semibold border transition-all ${
-									payMode === 'wallet'
-										? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
-										: 'border-white/10 bg-white/5 text-white/50 hover:bg-white/8'
+									payMode === 'wallet' ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400' : 'border-white/10 bg-white/5 text-white/50 hover:bg-white/8'
 								}`}
 							>
 								<Wallet className="w-3 h-3 inline mr-1" />

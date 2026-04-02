@@ -64,22 +64,26 @@ export function SubscribeModal({ isOpen, onClose, creator }: SubscribeModalProps
 		if (!authState.user) return;
 		setIsLoading(true);
 		void delayMs(900).then(() => {
-		setError('');
+			setError('');
 
-		if (payMode === 'razorpay') {
-			const result = await payViaRazorpay(
-				creator.subscriptionPrice,
-				'subscription',
-				`Subscription to ${creator.name}`,
-				creator.id,
-				creator.name,
-			);
-			if (result.ok) {
-				completeSubscription();
-			} else if (!result.cancelled) {
-				setError(result.error || 'Payment failed. Please try again.');
+			if (payMode === 'razorpay') {
+				void payViaRazorpay(
+					creator.subscriptionPrice,
+					'subscription',
+					`Subscription to ${creator.name}`,
+					creator.id,
+					creator.name
+				).then(result => {
+					if (result.ok) {
+						completeSubscription();
+					} else if (!result.cancelled) {
+						setError(result.error || 'Payment failed. Please try again.');
+					}
+					setIsLoading(false);
+				});
+				return;
 			}
-		} else {
+
 			const ok = deductFunds(
 				creator.subscriptionPrice,
 				'subscription',
@@ -87,13 +91,14 @@ export function SubscribeModal({ isOpen, onClose, creator }: SubscribeModalProps
 				creator.id,
 				creator.name
 			);
+
 			if (ok) {
 				completeSubscription();
 			} else {
 				setError('Insufficient wallet balance.');
 			}
-		}
-		setIsLoading(false);
+			setIsLoading(false);
+		});
 	}
 
 	return (
@@ -138,9 +143,7 @@ export function SubscribeModal({ isOpen, onClose, creator }: SubscribeModalProps
 							<button
 								onClick={() => setPayMode('razorpay')}
 								className={`flex-1 py-2.5 rounded-xl text-xs font-semibold border transition-all ${
-									payMode === 'razorpay'
-										? 'border-rose-500/40 bg-rose-500/10 text-rose-400'
-										: 'border-white/10 bg-white/5 text-white/50 hover:bg-white/8'
+									payMode === 'razorpay' ? 'border-rose-500/40 bg-rose-500/10 text-rose-400' : 'border-white/10 bg-white/5 text-white/50 hover:bg-white/8'
 								}`}
 							>
 								Pay {formatINR(inrPrice)}
@@ -148,9 +151,7 @@ export function SubscribeModal({ isOpen, onClose, creator }: SubscribeModalProps
 							<button
 								onClick={() => setPayMode('wallet')}
 								className={`flex-1 py-2.5 rounded-xl text-xs font-semibold border transition-all ${
-									payMode === 'wallet'
-										? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
-										: 'border-white/10 bg-white/5 text-white/50 hover:bg-white/8'
+									payMode === 'wallet' ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400' : 'border-white/10 bg-white/5 text-white/50 hover:bg-white/8'
 								}`}
 							>
 								<Wallet className="w-3 h-3 inline mr-1" />

@@ -50,7 +50,7 @@ interface WalletContextValue {
 	addFunds: (amount: number) => void;
 	addFundsViaRazorpay: (amountUSD: number) => Promise<boolean>;
 	deductFunds: (amount: number, type: Transaction['type'], description: string, recipientId?: string, recipientName?: string) => boolean;
-	payViaRazorpay: (amountUSD: number, type: Transaction['type'], description: string, recipientId?: string, recipientName?: string) => Promise<{ ok: boolean; cancelled?: boolean; error?: string }>;
+	payViaRazorpay: (amountUSD: number, type: Transaction['type'], description: string, recipientId?: string, recipientName?: string) => Promise<{ ok: boolean, cancelled?: boolean, error?: string }>;
 	cancelSubscription: (subscriptionId: string) => void;
 	toggleAutoRenew: (subscriptionId: string) => void;
 	addSubscription: (subscription: Subscription) => void;
@@ -118,22 +118,23 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 		dispatch({ type: 'ADD_SUBSCRIPTION', payload: subscription });
 	}, []);
 
-	const addFundsViaRazorpay = useCallback(async (amountUSD: number): Promise<boolean> => {
-		if (!authState.user) return false;
+	const addFundsViaRazorpay = useCallback((amountUSD: number): Promise<boolean> => {
+		const user = authState.user;
+		if (!user) return Promise.resolve(false);
 		const inr = usdToInr(amountUSD);
-		try {
-			await openRazorpayCheckout({
-				amountINR: inr,
-				description: `Add $${amountUSD.toFixed(2)} to wallet`,
-				userName: authState.user.name,
-				userEmail: authState.user.email,
-				notes: { type: 'deposit', userId: authState.user.id },
-			});
-			const newBalance = authState.user.walletBalance + amountUSD;
+
+		return openRazorpayCheckout({
+			amountINR: inr,
+			description: `Add $${amountUSD.toFixed(2)} to wallet`,
+			userName: user.name,
+			userEmail: user.email,
+			notes: { type: 'deposit', userId: user.id },
+		}).then(() => {
+			const newBalance = user.walletBalance + amountUSD;
 			updateWallet(newBalance);
 			const tx: Transaction = {
 				id: `tx-${Date.now()}`,
-				userId: authState.user.id,
+				userId: user.id,
 				type: 'deposit',
 				amount: amountUSD,
 				createdAt: new Date().toISOString(),
@@ -142,34 +143,35 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 			};
 			dispatch({ type: 'ADD_TRANSACTION', payload: tx });
 			return true;
-		} catch (err) {
+		}).catch(err => {
 			if (!isPaymentCancelled(err)) {
 				console.error('[wallet] addFundsViaRazorpay failed:', err);
 			}
 			return false;
-		}
+		});
 	}, [authState.user, updateWallet]);
 
-	const payViaRazorpay = useCallback(async (
+	const payViaRazorpay = useCallback((
 		amountUSD: number,
 		type: Transaction['type'],
 		description: string,
 		recipientId?: string,
-		recipientName?: string,
-	): Promise<{ ok: boolean; cancelled?: boolean; error?: string }> => {
-		if (!authState.user) return { ok: false, error: 'Not authenticated' };
+		recipientName?: string
+	): Promise<{ ok: boolean, cancelled?: boolean, error?: string }> => {
+		const user = authState.user;
+		if (!user) return Promise.resolve({ ok: false, error: 'Not authenticated' });
 		const inr = usdToInr(amountUSD);
-		try {
-			const resp = await openRazorpayCheckout({
-				amountINR: inr,
-				description,
-				userName: authState.user.name,
-				userEmail: authState.user.email,
-				notes: { type, userId: authState.user.id, recipientId: recipientId ?? '' },
-			});
+
+		return openRazorpayCheckout({
+			amountINR: inr,
+			description,
+			userName: user.name,
+			userEmail: user.email,
+			notes: { type, userId: user.id, recipientId: recipientId ?? '' },
+		}).then(resp => {
 			const tx: Transaction = {
 				id: `tx-${Date.now()}-${resp.razorpay_payment_id}`,
-				userId: authState.user.id,
+				userId: user.id,
 				type,
 				amount: -amountUSD,
 				createdAt: new Date().toISOString(),
@@ -180,14 +182,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 			};
 			dispatch({ type: 'ADD_TRANSACTION', payload: tx });
 			return { ok: true };
-		} catch (err) {
+		}).catch(err => {
 			if (isPaymentCancelled(err)) {
 				return { ok: false, cancelled: true };
 			}
 			const msg = err instanceof Error ? err.message : 'Payment failed';
 			console.error('[wallet] payViaRazorpay failed:', msg);
 			return { ok: false, error: msg };
-		}
+		});
 	}, [authState.user]);
 
 	const getUserTransactions = useCallback((userId: string) => {

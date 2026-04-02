@@ -1,4 +1,4 @@
-const RAZORPAY_KEY_ID = import.meta.env.VITE_RAZORPAY_KEY_ID as string;
+const RAZORPAY_KEY_ID = import.meta.env.VITE_RAZORPAY_KEY_ID;
 
 if (!RAZORPAY_KEY_ID) {
 	console.error('[razorpay] VITE_RAZORPAY_KEY_ID is not set in .env');
@@ -20,12 +20,12 @@ interface RazorpayOptions {
 	description: string;
 	image?: string;
 	order_id?: string;
-	prefill?: { name?: string; email?: string; contact?: string };
+	prefill?: { name?: string, email?: string, contact?: string };
 	notes?: Record<string, string>;
-	theme?: { color?: string; backdrop_color?: string };
+	theme?: { color?: string, backdrop_color?: string };
 	handler: (response: RazorpaySuccessResponse) => void;
-	modal?: { ondismiss?: () => void; escape?: boolean; confirm_close?: boolean };
-	retry?: { enabled: boolean; max_count?: number };
+	modal?: { ondismiss?: () => void, escape?: boolean, confirm_close?: boolean };
+	retry?: { enabled: boolean, max_count?: number };
 }
 
 interface RazorpayInstance {
@@ -42,12 +42,12 @@ export interface RazorpaySuccessResponse {
 
 export interface RazorpayFailureResponse {
 	error: {
-		code: string;
-		description: string;
-		source: string;
-		step: string;
-		reason: string;
-		metadata?: { payment_id?: string; order_id?: string };
+		code: string,
+		description: string,
+		source: string,
+		step: string,
+		reason: string,
+		metadata?: { payment_id?: string, order_id?: string },
 	};
 }
 
@@ -107,7 +107,7 @@ export interface PaymentRequest {
 	receiptId?: string;
 }
 
-export async function openRazorpayCheckout(req: PaymentRequest): Promise<RazorpaySuccessResponse> {
+export function openRazorpayCheckout(req: PaymentRequest): Promise<RazorpaySuccessResponse> {
 	if (!RAZORPAY_KEY_ID) {
 		throw new Error('Razorpay key not configured. Set VITE_RAZORPAY_KEY_ID in .env');
 	}
@@ -116,9 +116,7 @@ export async function openRazorpayCheckout(req: PaymentRequest): Promise<Razorpa
 		throw new Error('Payment amount must be greater than zero');
 	}
 
-	await loadScript();
-
-	return new Promise<RazorpaySuccessResponse>((resolve, reject) => {
+	return loadScript().then(() => new Promise<RazorpaySuccessResponse>((resolve, reject) => {
 		const amountPaise = Math.round(req.amountINR * 100);
 
 		const options: RazorpayOptions = {
@@ -161,8 +159,8 @@ export async function openRazorpayCheckout(req: PaymentRequest): Promise<Razorpa
 
 			rzp.on('payment.failed', (resp: RazorpayFailureResponse) => {
 				const msg = resp.error?.description || 'Payment failed';
-				const err = new Error(msg);
-				(err as Error & { code?: string }).code = resp.error?.code;
+				const err: Error & { code?: string } = new Error(msg);
+				err.code = resp.error?.code;
 				reject(err);
 			});
 
@@ -170,7 +168,7 @@ export async function openRazorpayCheckout(req: PaymentRequest): Promise<Razorpa
 		} catch (err) {
 			reject(err instanceof Error ? err : new Error('Failed to open Razorpay checkout'));
 		}
-	});
+	}));
 }
 
 /**

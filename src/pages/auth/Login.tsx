@@ -7,7 +7,7 @@ import { DEMO_ACCOUNTS } from '../../data/users';
 
 export function Login() {
 	const navigate = useNavigate();
-	const { login, state } = useAuth();
+	const { login, loginWithGoogle, state } = useAuth();
 	const [email, setEmail] = useState('');
 	const [password, setPassword] = useState('');
 	const [showPassword, setShowPassword] = useState(false);
@@ -29,6 +29,16 @@ export function Login() {
 	function fillDemo(type: keyof typeof DEMO_ACCOUNTS) {
 		setEmail(DEMO_ACCOUNTS[type].email);
 		setPassword(DEMO_ACCOUNTS[type].password);
+	}
+
+	function handleGoogleLogin() {
+		setIsLoading(true);
+		void loginWithGoogle('fan').then(user => {
+			setIsLoading(false);
+			if (user) {
+				void navigate(user.role === 'admin' ? '/admin' : user.role === 'creator' ? '/creator-dashboard' : '/feed');
+			}
+		});
 	}
 
 	return (
@@ -140,7 +150,12 @@ export function Login() {
 						<div className="flex-1 h-px bg-white/10" />
 					</div>
 
-					<button className="w-full flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl py-3 text-sm font-medium text-white/70 hover:text-white transition-all">
+					<button
+						type="button"
+						onClick={() => { handleGoogleLogin(); }}
+						disabled={isLoading}
+						className="w-full flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl py-3 text-sm font-medium text-white/70 hover:text-white transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+					>
 						<Chrome className="w-4 h-4" />
 						Continue with Google
 					</button>

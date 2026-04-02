@@ -3,6 +3,9 @@
 import { configs, configure, globals } from './eslint-ps-standard.mjs';
 
 export default configure(
+	{
+		ignores: ['dist/**', 'node_modules/**']
+	},
 	// TypeScript / TSX (React) – PS standard ES3 + TS rules
 	{
 		files: ['**/*.{ts,tsx}'],

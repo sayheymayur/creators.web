@@ -5,6 +5,10 @@ on:
     branches:
       - main
 
+  push:
+    branches:
+      - main   # runs on direct commits to main
+
 jobs:
   lint:
     runs-on: ubuntu-latest

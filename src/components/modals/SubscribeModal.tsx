@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useWallet } from '../../context/WalletContext';
 import { useContent } from '../../context/ContentContext';
 import { useNotifications } from '../../context/NotificationContext';
+import { usdToInr, formatINR } from '../../services/razorpay';
 import type { Creator } from '../../types';
 import { delayMs } from '../../utils/delay';
 
@@ -22,20 +23,67 @@ const PERKS = [
 	'Exclusive behind-the-scenes content',
 ];
 
+type PayMode = 'razorpay' | 'wallet';
+
 export function SubscribeModal({ isOpen, onClose, creator }: SubscribeModalProps) {
 	const { state: authState } = useAuth();
-	const { deductFunds, addSubscription } = useWallet();
+	const { deductFunds, payViaRazorpay, addSubscription } = useWallet();
 	const { subscribe } = useContent();
 	const { showToast } = useNotifications();
 	const [isLoading, setIsLoading] = useState(false);
 	const [success, setSuccess] = useState(false);
+	const [payMode, setPayMode] = useState<PayMode>('razorpay');
+	const [error, setError] = useState('');
 
 	const balance = authState.user?.walletBalance ?? 0;
+	const inrPrice = usdToInr(creator.subscriptionPrice);
+
+	function completeSubscription() {
+		if (!authState.user) return;
+		subscribe(creator.id);
+		const endDate = new Date();
+		endDate.setMonth(endDate.getMonth() + 1);
+		addSubscription({
+			id: `sub-${Date.now()}`,
+			userId: authState.user.id,
+			creatorId: creator.id,
+			creatorName: creator.name,
+			creatorAvatar: creator.avatar,
+			startDate: new Date().toISOString().split('T')[0],
+			endDate: endDate.toISOString().split('T')[0],
+			isActive: true,
+			price: creator.subscriptionPrice,
+			autoRenew: true,
+		});
+		setSuccess(true);
+		showToast(`Subscribed to ${creator.name}!`);
+		setTimeout(onClose, 2000);
+	}
 
 	function handleSubscribe() {
 		if (!authState.user) return;
 		setIsLoading(true);
 		void delayMs(900).then(() => {
+			setError('');
+
+			if (payMode === 'razorpay') {
+				void payViaRazorpay(
+					creator.subscriptionPrice,
+					'subscription',
+					`Subscription to ${creator.name}`,
+					creator.id,
+					creator.name
+				).then(result => {
+					if (result.ok) {
+						completeSubscription();
+					} else if (!result.cancelled) {
+						setError(result.error || 'Payment failed. Please try again.');
+					}
+					setIsLoading(false);
+				});
+				return;
+			}
+
 			const ok = deductFunds(
 				creator.subscriptionPrice,
 				'subscription',
@@ -43,27 +91,11 @@ export function SubscribeModal({ isOpen, onClose, creator }: SubscribeModalProps
 				creator.id,
 				creator.name
 			);
+
 			if (ok) {
-				subscribe(creator.id);
-				const endDate = new Date();
-				endDate.setMonth(endDate.getMonth() + 1);
-				addSubscription({
-					id: `sub-${Date.now()}`,
-					userId: authState.user!.id,
-					creatorId: creator.id,
-					creatorName: creator.name,
-					creatorAvatar: creator.avatar,
-					startDate: new Date().toISOString().split('T')[0],
-					endDate: endDate.toISOString().split('T')[0],
-					isActive: true,
-					price: creator.subscriptionPrice,
-					autoRenew: true,
-				});
-				setSuccess(true);
-				showToast(`Subscribed to ${creator.name}! 🎉`);
-				setTimeout(onClose, 2000);
+				completeSubscription();
 			} else {
-				showToast('Insufficient balance. Please add funds to your wallet.', 'error');
+				setError('Insufficient wallet balance.');
 			}
 			setIsLoading(false);
 		});
@@ -106,27 +138,45 @@ export function SubscribeModal({ isOpen, onClose, creator }: SubscribeModalProps
 							))}
 						</div>
 
-						<div className="bg-white/5 rounded-xl p-3 mb-4">
-							<div className="flex justify-between items-center">
-								<span className="text-sm text-white/60 flex items-center gap-1.5"><Wallet className="w-4 h-4" /> Wallet balance</span>
-								<span className={`font-semibold ${balance < creator.subscriptionPrice ? 'text-rose-400' : 'text-emerald-400'}`}>
-									${balance.toFixed(2)}
-								</span>
-							</div>
+						<p className="text-xs font-semibold text-white/40 uppercase tracking-widest mb-2">Payment Method</p>
+						<div className="flex gap-2 mb-4">
+							<button
+								onClick={() => setPayMode('razorpay')}
+								className={`flex-1 py-2.5 rounded-xl text-xs font-semibold border transition-all ${
+									payMode === 'razorpay' ? 'border-rose-500/40 bg-rose-500/10 text-rose-400' : 'border-white/10 bg-white/5 text-white/50 hover:bg-white/8'
+								}`}
+							>
+								Pay {formatINR(inrPrice)}
+							</button>
+							<button
+								onClick={() => setPayMode('wallet')}
+								className={`flex-1 py-2.5 rounded-xl text-xs font-semibold border transition-all ${
+									payMode === 'wallet' ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400' : 'border-white/10 bg-white/5 text-white/50 hover:bg-white/8'
+								}`}
+							>
+								<Wallet className="w-3 h-3 inline mr-1" />
+								Wallet (${balance.toFixed(2)})
+							</button>
 						</div>
+
+						{error && (
+							<div className="bg-rose-500/10 border border-rose-500/20 rounded-xl p-3 mb-3">
+								<p className="text-xs text-rose-400">{error}</p>
+							</div>
+						)}
 
 						<Button
 							variant="primary"
 							fullWidth
 							isLoading={isLoading}
 							onClick={() => { void handleSubscribe(); }}
-							disabled={balance < creator.subscriptionPrice}
+							disabled={payMode === 'wallet' && balance < creator.subscriptionPrice}
 						>
 							Subscribe for ${creator.subscriptionPrice}/month
 						</Button>
-						{balance < creator.subscriptionPrice && (
+						{payMode === 'wallet' && balance < creator.subscriptionPrice && (
 							<p className="text-center text-xs text-rose-400 mt-2">
-								Insufficient balance. Add funds in your wallet.
+								Insufficient balance. Switch to Razorpay or add funds.
 							</p>
 						)}
 						<p className="text-center text-xs text-white/30 mt-2">Auto-renews monthly. Cancel anytime.</p>

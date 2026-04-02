@@ -5,11 +5,13 @@ import { Layout } from '../../components/layout/Layout';
 import { PostCard } from '../../components/ui/PostCard';
 import { useContent } from '../../context/ContentContext';
 import { mockCreators } from '../../data/users';
+import { useDragScroll } from '../../hooks/useDragScroll';
 
 export function Feed() {
 	const { state: contentState, isSubscribed } = useContent();
 	const navigate = useNavigate();
 	const [filter, setFilter] = useState<'all' | 'subscribed'>('all');
+	const followingRef = useDragScroll();
 
 	const posts = contentState.posts.filter(p => {
 		if (filter === 'subscribed') return isSubscribed(p.creatorId);
@@ -24,7 +26,7 @@ export function Feed() {
 				{subscribedCreators.length > 0 && (
 					<div className="mb-6">
 						<p className="text-xs text-white/30 font-medium uppercase tracking-wider mb-3">Following</p>
-						<div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+						<div ref={followingRef} className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
 							{subscribedCreators.map(creator => (
 								<button
 									key={creator.id}

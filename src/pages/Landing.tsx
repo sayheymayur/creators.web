@@ -1,11 +1,11 @@
 import { useNavigate } from 'react-router-dom';
-import { useRef } from 'react';
 import { Star, Shield, Zap, Users, TrendingUp, Lock, Play, ArrowRight, CheckCircle } from '../components/icons';
 import { mockCreators } from '../data/users';
+import { useDragScroll } from '../hooks/useDragScroll';
 
 export function Landing() {
 	const navigate = useNavigate();
-	const featuredRef = useRef<HTMLDivElement | null>(null);
+	const featuredRef = useDragScroll();
 
 	function scrollFeatured(direction: 'left' | 'right') {
 		const container = featuredRef.current;

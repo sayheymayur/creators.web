@@ -5,6 +5,7 @@ import { Layout } from '../../components/layout/Layout';
 import { CreatorCard } from '../../components/ui/CreatorCard';
 import { mockCreators } from '../../data/users';
 import { useLiveStream } from '../../context/LiveStreamContext';
+import { useDragScroll } from '../../hooks/useDragScroll';
 
 const CATEGORIES = ['All', 'Fitness', 'Art', 'Tech', 'Travel', 'Music', 'Food', 'Gaming'];
 
@@ -15,6 +16,9 @@ export function Explore() {
 	const [sortBy, setSortBy] = useState<'popular' | 'new' | 'price'>('popular');
 	const { getLiveStreams } = useLiveStream();
 	const liveStreams = getLiveStreams();
+	const liveRef = useDragScroll();
+	const trendingRef = useDragScroll();
+	const allRef = useDragScroll();
 
 	const approvedCreators = mockCreators.filter(c => c.isKYCVerified);
 
@@ -73,7 +77,7 @@ export function Explore() {
 							</div>
 							<h2 className="font-semibold text-white text-sm">Live Now</h2>
 						</div>
-						<div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4 mb-8">
+						<div ref={liveRef} className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4 mb-8">
 							{liveStreams.map(stream => (
 								<button
 									key={stream.id}
@@ -91,13 +95,9 @@ export function Explore() {
 											<Eye className="w-3 h-3 text-white/70" />
 											<span className="text-white text-[10px] font-semibold">{stream.viewerCount.toLocaleString()}</span>
 										</div>
-										<div className="absolute bottom-2 left-2 flex items-center gap-1.5">
-											<img src={stream.creatorAvatar} alt="" className="w-6 h-6 rounded-full object-cover border border-white/20" />
-											<span className="text-white text-xs font-semibold">{stream.creatorName}</span>
+										<div className="px-3 py-2.5">
+											<p className="text-white/70 text-xs truncate">{stream.title}</p>
 										</div>
-									</div>
-									<div className="px-3 py-2.5">
-										<p className="text-white/70 text-xs truncate">{stream.title}</p>
 									</div>
 								</button>
 							))}
@@ -111,7 +111,7 @@ export function Explore() {
 							<TrendingUp className="w-4 h-4 text-rose-400" />
 							<h2 className="font-semibold text-white text-sm">Trending Now</h2>
 						</div>
-						<div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4">
+						<div ref={trendingRef} className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4">
 							{trendingCreators.map((creator, idx) => (
 								<div key={creator.id} className="relative flex-shrink-0 w-56 sm:w-64 md:w-72">
 									{idx === 0 && (
@@ -152,7 +152,7 @@ export function Explore() {
 						<p className="text-white/30">No creators found</p>
 					</div>
 				) : (
-					<div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4">
+					<div ref={allRef} className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4">
 						{filtered.map(creator => (
 							<div key={creator.id} className="flex-shrink-0 w-48 sm:w-56 md:w-64">
 								<CreatorCard creator={creator} />

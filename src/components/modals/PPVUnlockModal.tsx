@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useWallet } from '../../context/WalletContext';
 import { useContent } from '../../context/ContentContext';
 import { useNotifications } from '../../context/NotificationContext';
+import { usdToInr, formatINR } from '../../services/razorpay';
 import type { Post } from '../../types';
 import { delayMs } from '../../utils/delay';
 
@@ -15,30 +16,57 @@ interface PPVUnlockModalProps {
 	post: Post;
 }
 
+type PayMode = 'razorpay' | 'wallet';
+
 export function PPVUnlockModal({ isOpen, onClose, post }: PPVUnlockModalProps) {
 	const { state: authState } = useAuth();
-	const { deductFunds } = useWallet();
+	const { deductFunds, payViaRazorpay } = useWallet();
 	const { unlockPost } = useContent();
 	const { showToast } = useNotifications();
 	const [isLoading, setIsLoading] = useState(false);
 	const [success, setSuccess] = useState(false);
+	const [payMode, setPayMode] = useState<PayMode>('razorpay');
+	const [error, setError] = useState('');
 
 	const price = post.ppvPrice ?? 0;
 	const balance = authState.user?.walletBalance ?? 0;
+	const inrPrice = usdToInr(price);
 
 	function handleUnlock() {
-		if (!authState.user) return;
+		const user = authState.user;
+		if (!user) return;
 		setIsLoading(true);
 		void delayMs(800).then(() => {
-			const ok = deductFunds(price, 'ppv', `PPV unlock: ${post.creatorName}`, post.creatorId, post.creatorName);
-			if (ok) {
-				unlockPost(post.id, authState.user!.id);
-				setSuccess(true);
-				showToast('Content unlocked!');
-				setTimeout(onClose, 1500);
-			} else {
-				showToast('Insufficient balance. Please add funds.', 'error');
+			setError('');
+
+			if (payMode === 'razorpay') {
+				void payViaRazorpay(price, 'ppv', `PPV unlock: ${post.creatorName}`, post.creatorId, post.creatorName).then(result => {
+					if (!result.ok) {
+						if (!result.cancelled) setError(result.error || 'Payment failed.');
+						setIsLoading(false);
+						return;
+					}
+
+					unlockPost(post.id, user.id);
+					setSuccess(true);
+					showToast('Content unlocked!');
+					setTimeout(onClose, 1500);
+					setIsLoading(false);
+				});
+				return;
 			}
+
+			const ok = deductFunds(price, 'ppv', `PPV unlock: ${post.creatorName}`, post.creatorId, post.creatorName);
+			if (!ok) {
+				setError('Insufficient wallet balance.');
+				setIsLoading(false);
+				return;
+			}
+
+			unlockPost(post.id, user.id);
+			setSuccess(true);
+			showToast('Content unlocked!');
+			setTimeout(onClose, 1500);
 			setIsLoading(false);
 		});
 	}
@@ -80,18 +108,45 @@ export function PPVUnlockModal({ isOpen, onClose, post }: PPVUnlockModalProps) {
 							</div>
 						</div>
 
+						<p className="text-xs font-semibold text-white/40 uppercase tracking-widest mb-2">Payment Method</p>
+						<div className="flex gap-2 mb-4">
+							<button
+								onClick={() => setPayMode('razorpay')}
+								className={`flex-1 py-2.5 rounded-xl text-xs font-semibold border transition-all ${
+									payMode === 'razorpay' ? 'border-rose-500/40 bg-rose-500/10 text-rose-400' : 'border-white/10 bg-white/5 text-white/50 hover:bg-white/8'
+								}`}
+							>
+								Pay {formatINR(inrPrice)}
+							</button>
+							<button
+								onClick={() => setPayMode('wallet')}
+								className={`flex-1 py-2.5 rounded-xl text-xs font-semibold border transition-all ${
+									payMode === 'wallet' ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400' : 'border-white/10 bg-white/5 text-white/50 hover:bg-white/8'
+								}`}
+							>
+								<Wallet className="w-3 h-3 inline mr-1" />
+								Wallet (${balance.toFixed(2)})
+							</button>
+						</div>
+
+						{error && (
+							<div className="bg-rose-500/10 border border-rose-500/20 rounded-xl p-3 mb-3">
+								<p className="text-xs text-rose-400">{error}</p>
+							</div>
+						)}
+
 						<Button
 							variant="primary"
 							fullWidth
 							isLoading={isLoading}
 							onClick={() => { void handleUnlock(); }}
-							disabled={balance < price}
+							disabled={payMode === 'wallet' && balance < price}
 						>
 							<Unlock className="w-4 h-4" />
 							Unlock for ${price.toFixed(2)}
 						</Button>
-						{balance < price && (
-							<p className="text-center text-xs text-rose-400 mt-2">Insufficient balance. Add funds in your wallet.</p>
+						{payMode === 'wallet' && balance < price && (
+							<p className="text-center text-xs text-rose-400 mt-2">Insufficient balance. Switch to Razorpay or add funds.</p>
 						)}
 					</>
 				)}

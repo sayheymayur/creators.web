@@ -22,7 +22,7 @@ export function CreatorCard({ creator }: CreatorCardProps) {
 
 	return (
 		<div
-			onClick={() => navigate(`/creator/${creator.id}`)}
+			onClick={() => { void navigate(`/creator/${creator.id}`); }}
 			className="bg-[#161616] border border-white/5 rounded-2xl overflow-hidden cursor-pointer hover:border-rose-500/30 hover:shadow-lg hover:shadow-rose-500/5 transition-all duration-300 group"
 		>
 			<div className="relative h-24">

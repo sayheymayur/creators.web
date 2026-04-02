@@ -96,7 +96,7 @@ export function GoLivePage() {
 		return (
 			<div className="fixed inset-0 z-[100] bg-[#0d0d0d] flex flex-col">
 				<div className="border-b border-white/5 px-4 h-14 flex items-center gap-3">
-					<button onClick={() => navigate(-1)} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors">
+					<button type="button" onClick={() => { void navigate(-1); }} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors">
 						<ArrowLeft className="w-5 h-5 text-white/60" />
 					</button>
 					<h1 className="text-base font-bold text-white">Go Live</h1>

@@ -7,6 +7,7 @@ import { useWallet } from '../../context/WalletContext';
 import { useContent } from '../../context/ContentContext';
 import { useNotifications } from '../../context/NotificationContext';
 import type { Creator } from '../../types';
+import { delayMs } from '../../utils/delay';
 
 interface SubscribeModalProps {
 	isOpen: boolean;
@@ -31,40 +32,41 @@ export function SubscribeModal({ isOpen, onClose, creator }: SubscribeModalProps
 
 	const balance = authState.user?.walletBalance ?? 0;
 
-	async function handleSubscribe() {
+	function handleSubscribe() {
 		if (!authState.user) return;
 		setIsLoading(true);
-		await new Promise(r => setTimeout(r, 900));
-		const ok = deductFunds(
-			creator.subscriptionPrice,
-			'subscription',
-			`Subscription to ${creator.name}`,
-			creator.id,
-			creator.name
-		);
-		if (ok) {
-			subscribe(creator.id);
-			const endDate = new Date();
-			endDate.setMonth(endDate.getMonth() + 1);
-			addSubscription({
-				id: `sub-${Date.now()}`,
-				userId: authState.user.id,
-				creatorId: creator.id,
-				creatorName: creator.name,
-				creatorAvatar: creator.avatar,
-				startDate: new Date().toISOString().split('T')[0],
-				endDate: endDate.toISOString().split('T')[0],
-				isActive: true,
-				price: creator.subscriptionPrice,
-				autoRenew: true,
-			});
-			setSuccess(true);
-			showToast(`Subscribed to ${creator.name}! 🎉`);
-			setTimeout(onClose, 2000);
-		} else {
-			showToast('Insufficient balance. Please add funds to your wallet.', 'error');
-		}
-		setIsLoading(false);
+		void delayMs(900).then(() => {
+			const ok = deductFunds(
+				creator.subscriptionPrice,
+				'subscription',
+				`Subscription to ${creator.name}`,
+				creator.id,
+				creator.name
+			);
+			if (ok) {
+				subscribe(creator.id);
+				const endDate = new Date();
+				endDate.setMonth(endDate.getMonth() + 1);
+				addSubscription({
+					id: `sub-${Date.now()}`,
+					userId: authState.user!.id,
+					creatorId: creator.id,
+					creatorName: creator.name,
+					creatorAvatar: creator.avatar,
+					startDate: new Date().toISOString().split('T')[0],
+					endDate: endDate.toISOString().split('T')[0],
+					isActive: true,
+					price: creator.subscriptionPrice,
+					autoRenew: true,
+				});
+				setSuccess(true);
+				showToast(`Subscribed to ${creator.name}! 🎉`);
+				setTimeout(onClose, 2000);
+			} else {
+				showToast('Insufficient balance. Please add funds to your wallet.', 'error');
+			}
+			setIsLoading(false);
+		});
 	}
 
 	return (
@@ -117,7 +119,7 @@ export function SubscribeModal({ isOpen, onClose, creator }: SubscribeModalProps
 							variant="primary"
 							fullWidth
 							isLoading={isLoading}
-							onClick={handleSubscribe}
+							onClick={() => { void handleSubscribe(); }}
 							disabled={balance < creator.subscriptionPrice}
 						>
 							Subscribe for ${creator.subscriptionPrice}/month

@@ -117,7 +117,7 @@ export function ChatRoom() {
 
 			<div className="fixed top-14 left-0 right-0 z-30 bg-[#0d0d0d]/90 backdrop-blur-xl border-b border-white/5">
 				<div className="max-w-2xl mx-auto px-4 h-14 flex items-center gap-3">
-					<button onClick={() => navigate('/messages')} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors">
+					<button type="button" onClick={() => { void navigate('/messages'); }} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors">
 						<ArrowLeft className="w-5 h-5 text-white/60" />
 					</button>
 					<Avatar src={otherAvatar} alt={otherName} size="md" isOnline={conv.isOnline} />
@@ -127,13 +127,15 @@ export function ChatRoom() {
 					</div>
 					<div className="ml-auto flex items-center gap-2">
 						<button
-							onClick={() => { startCall(otherId, otherName, otherAvatar, 'audio'); navigate('/call'); }}
+							type="button"
+							onClick={() => { startCall(otherId, otherName, otherAvatar, 'audio'); void navigate('/call'); }}
 							className="w-8 h-8 rounded-xl bg-white/8 hover:bg-emerald-500/20 hover:text-emerald-400 text-white/50 flex items-center justify-center transition-all"
 						>
 							<Phone className="w-4 h-4" />
 						</button>
 						<button
-							onClick={() => { startCall(otherId, otherName, otherAvatar, 'video'); navigate('/call'); }}
+							type="button"
+							onClick={() => { startCall(otherId, otherName, otherAvatar, 'video'); void navigate('/call'); }}
 							className="w-8 h-8 rounded-xl bg-white/8 hover:bg-sky-500/20 hover:text-sky-400 text-white/50 flex items-center justify-center transition-all"
 						>
 							<Video className="w-4 h-4" />

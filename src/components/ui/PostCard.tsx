@@ -32,7 +32,7 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 	const isContentVisible = isOwner || !post.isLocked || (post.isPPV && post.unlockedBy.includes(userId)) || (!post.isPPV && isSubscribedToCreator);
 
 	function handleLike() {
-		if (!authState.user) { navigate('/login'); return; }
+		if (!authState.user) { void navigate('/login'); return; }
 		toggleLike(post.id, userId);
 	}
 
@@ -59,7 +59,7 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 	return (
 		<div className="bg-[#161616] border border-white/5 rounded-2xl overflow-hidden hover:border-white/10 transition-all duration-300">
 			<div className="flex items-center justify-between px-4 pt-4 pb-3">
-				<button onClick={handleCreatorClick} className="flex items-center gap-3 group">
+				<button type="button" onClick={handleCreatorClick} className="flex items-center gap-3 group">
 					<Avatar src={post.creatorAvatar} alt={post.creatorName} size="md" />
 					<div className="text-left">
 						<p className="text-sm font-semibold text-white group-hover:text-rose-400 transition-colors">{post.creatorName}</p>
@@ -103,7 +103,8 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 										<p className="text-white font-semibold text-sm mb-1">Subscriber Only</p>
 										<p className="text-white/50 text-xs mb-3">Subscribe to view this content</p>
 										<button
-											onClick={() => navigate(`/creator/${post.creatorId}`)}
+											type="button"
+											onClick={() => { void navigate(`/creator/${post.creatorId}`); }}
 											className="w-full bg-rose-500 hover:bg-rose-600 text-white text-sm font-semibold py-2 rounded-lg transition-colors"
 										>
 											Subscribe

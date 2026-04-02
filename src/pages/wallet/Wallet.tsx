@@ -6,6 +6,7 @@ import { Button } from '../../components/ui/Button';
 import { useAuth } from '../../context/AuthContext';
 import { useWallet } from '../../context/WalletContext';
 import { formatDate, formatCurrency } from '../../utils/date';
+import { delayMs } from '../../utils/delay';
 import type { Transaction } from '../../types';
 
 const ADD_FUND_PRESETS = [10, 25, 50, 100, 200, 500];
@@ -73,15 +74,20 @@ export function Wallet() {
 	const totalSpent = transactions.filter(t => t.amount < 0).reduce((sum, t) => sum + Math.abs(t.amount), 0);
 	const totalDeposited = transactions.filter(t => t.type === 'deposit').reduce((sum, t) => sum + t.amount, 0);
 
-	async function handleAddFunds() {
+	function handleAddFunds() {
 		const amount = customAmount ? parseFloat(customAmount) : addAmount;
 		if (!amount || amount <= 0) return;
 		setIsLoading(true);
-		await new Promise(r => setTimeout(r, 1000));
-		addFunds(amount);
-		setAddSuccess(true);
-		setIsLoading(false);
-		setTimeout(() => { setAddSuccess(false); setShowAddFunds(false); setCustomAmount(''); }, 1500);
+		void delayMs(1000).then(() => {
+			addFunds(amount);
+			setAddSuccess(true);
+			setIsLoading(false);
+			setTimeout(() => {
+				setAddSuccess(false);
+				setShowAddFunds(false);
+				setCustomAmount('');
+			}, 1500);
+		});
 	}
 
 	return (
@@ -225,7 +231,7 @@ export function Wallet() {
 								placeholder="Custom amount..."
 								className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/25 focus:outline-none focus:border-rose-500/50 mb-4"
 							/>
-							<Button variant="primary" fullWidth isLoading={isLoading} onClick={handleAddFunds}>
+							<Button variant="primary" fullWidth isLoading={isLoading} onClick={() => { void handleAddFunds(); }}>
 								Add ${(customAmount ? parseFloat(customAmount) || 0 : addAmount).toFixed(2)}
 							</Button>
 						</>

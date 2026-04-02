@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { User, Mail, Lock, Eye, EyeOff, Camera, Video, ArrowRight } from '../../components/icons';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../../components/ui/Button';
+import { delayMs } from '../../utils/delay';
 
 export function Register() {
 	const navigate = useNavigate();
@@ -15,20 +16,21 @@ export function Register() {
 	const [showPassword, setShowPassword] = useState(false);
 	const [isLoading, setIsLoading] = useState(false);
 
-	async function handleContinue(e: React.FormEvent) {
+	function handleContinue(e: React.FormEvent) {
 		e.preventDefault();
 		if (step === 1) { setStep(2); return; }
 		setIsLoading(true);
-		await new Promise(r => setTimeout(r, 1000));
-		setPendingEmail(email);
-		navigate('/otp');
-		setIsLoading(false);
+		void delayMs(1000).then(() => {
+			setPendingEmail(email);
+			void navigate('/otp');
+			setIsLoading(false);
+		});
 	}
 
 	return (
 		<div className="min-h-screen bg-[#0d0d0d] flex items-center justify-center px-4 py-8">
 			<div className="w-full max-w-sm">
-				<button onClick={() => navigate('/')} className="flex items-center gap-2 mb-8">
+				<button type="button" onClick={() => { void navigate('/'); }} className="flex items-center gap-2 mb-8">
 					<div className="w-8 h-8 bg-rose-500 rounded-xl flex items-center justify-center">
 						<span className="text-white font-black text-sm">cw</span>
 					</div>
@@ -98,7 +100,10 @@ export function Register() {
 						</Button>
 					</div>
 				) : (
-					<form onSubmit={handleContinue} className="space-y-4">
+					<form
+						onSubmit={e => { handleContinue(e); }}
+						className="space-y-4"
+					>
 						<div>
 							<label className="block text-sm font-medium text-white/60 mb-1.5">Full Name</label>
 							<div className="relative">

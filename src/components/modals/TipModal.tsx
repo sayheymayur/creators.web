@@ -5,6 +5,7 @@ import { Button } from '../ui/Button';
 import { useAuth } from '../../context/AuthContext';
 import { useWallet } from '../../context/WalletContext';
 import { useNotifications } from '../../context/NotificationContext';
+import { delayMs } from '../../utils/delay';
 
 const TIP_PRESETS = [3, 5, 10, 20, 50, 100];
 
@@ -28,19 +29,20 @@ export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvata
 	const tipAmount = customAmount ? parseFloat(customAmount) || 0 : amount;
 	const balance = authState.user?.walletBalance ?? 0;
 
-	async function handleSendTip() {
+	function handleSendTip() {
 		if (!tipAmount || tipAmount <= 0) return;
 		setIsLoading(true);
-		await new Promise(r => setTimeout(r, 800));
-		const ok = deductFunds(tipAmount, 'tip', `Tip to ${creatorName}`, creatorId, creatorName);
-		if (ok) {
-			setSuccess(true);
-			showToast(`Sent $${tipAmount.toFixed(2)} tip to ${creatorName}! 💝`);
-			setTimeout(onClose, 1500);
-		} else {
-			showToast('Insufficient balance. Please add funds.', 'error');
-		}
-		setIsLoading(false);
+		void delayMs(800).then(() => {
+			const ok = deductFunds(tipAmount, 'tip', `Tip to ${creatorName}`, creatorId, creatorName);
+			if (ok) {
+				setSuccess(true);
+				showToast(`Sent $${tipAmount.toFixed(2)} tip to ${creatorName}! 💝`);
+				setTimeout(onClose, 1500);
+			} else {
+				showToast('Insufficient balance. Please add funds.', 'error');
+			}
+			setIsLoading(false);
+		});
 	}
 
 	return (
@@ -100,7 +102,7 @@ export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvata
 							variant="primary"
 							fullWidth
 							isLoading={isLoading}
-							onClick={handleSendTip}
+							onClick={() => { void handleSendTip(); }}
 							disabled={tipAmount <= 0 || balance < tipAmount}
 							className="bg-amber-500 hover:bg-amber-600 shadow-amber-500/20"
 						>

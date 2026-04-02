@@ -28,7 +28,7 @@ export function Feed() {
 							{subscribedCreators.map(creator => (
 								<button
 									key={creator.id}
-									onClick={() => navigate(`/creator/${creator.id}`)}
+									onClick={() => { void navigate(`/creator/${creator.id}`); }}
 									className="flex flex-col items-center gap-1 shrink-0"
 								>
 									<div className="relative">
@@ -79,7 +79,7 @@ export function Feed() {
 						<p className="text-white/40 font-medium mb-1">No posts yet</p>
 						<p className="text-sm text-white/25 mb-4">Subscribe to creators to see their content here</p>
 						<button
-							onClick={() => navigate('/explore')}
+							onClick={() => { void navigate('/explore'); }}
 							className="bg-rose-500 hover:bg-rose-600 text-white text-sm font-semibold px-6 py-2 rounded-xl transition-colors"
 						>
 							<Zap className="w-4 h-4 inline mr-1.5" />

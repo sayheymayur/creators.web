@@ -6,6 +6,7 @@ import { Button } from '../../components/ui/Button';
 import { useCurrentCreator } from '../../context/AuthContext';
 import { mockCreators } from '../../data/users';
 import { useNotifications } from '../../context/NotificationContext';
+import { delayMs } from '../../utils/delay';
 
 export function Earnings() {
 	const creator = useCurrentCreator();
@@ -19,16 +20,20 @@ export function Earnings() {
 
 	const creatorData = creator ?? mockCreators[0];
 
-	async function handleWithdraw() {
+	function handleWithdraw() {
 		if (!withdrawAmount || !bankName || !accountNumber) {
 			showToast('Please fill in all fields', 'error'); return;
 		}
 		setIsWithdrawing(true);
-		await new Promise(r => setTimeout(r, 1200));
-		setWithdrawSuccess(true);
-		setIsWithdrawing(false);
-		showToast(`Withdrawal of $${withdrawAmount} initiated!`);
-		setTimeout(() => { setWithdrawSuccess(false); setShowWithdraw(false); }, 2000);
+		void delayMs(1200).then(() => {
+			setWithdrawSuccess(true);
+			setIsWithdrawing(false);
+			showToast(`Withdrawal of $${withdrawAmount} initiated!`);
+			setTimeout(() => {
+				setWithdrawSuccess(false);
+				setShowWithdraw(false);
+			}, 2000);
+		});
 	}
 
 	return (
@@ -152,7 +157,7 @@ export function Earnings() {
 									className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-rose-500/50"
 								/>
 							</div>
-							<Button variant="primary" fullWidth isLoading={isWithdrawing} onClick={handleWithdraw}>
+							<Button variant="primary" fullWidth isLoading={isWithdrawing} onClick={() => { void handleWithdraw(); }}>
 								Withdraw ${withdrawAmount || '0.00'}
 							</Button>
 						</div>

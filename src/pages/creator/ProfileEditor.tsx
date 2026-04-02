@@ -5,6 +5,7 @@ import { Button } from '../../components/ui/Button';
 import { useAuth, useCurrentCreator } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { mockCreators } from '../../data/users';
+import { delayMs } from '../../utils/delay';
 
 export function ProfileEditor() {
 	const creator = useCurrentCreator();
@@ -21,12 +22,13 @@ export function ProfileEditor() {
 
 	const CATEGORIES = ['Fitness', 'Art', 'Tech', 'Travel', 'Music', 'Food', 'Gaming', 'Lifestyle'];
 
-	async function handleSave() {
+	function handleSave() {
 		setIsSaving(true);
-		await new Promise(r => setTimeout(r, 800));
-		updateUser({ name });
-		showToast('Profile updated!');
-		setIsSaving(false);
+		void delayMs(800).then(() => {
+			updateUser({ name });
+			showToast('Profile updated!');
+			setIsSaving(false);
+		});
 	}
 
 	return (
@@ -108,7 +110,7 @@ export function ProfileEditor() {
 						<p className="text-xs text-white/30 mt-1">Platform fee 20%. You receive ${((parseFloat(price) || 0) * 0.8).toFixed(2)} per subscriber.</p>
 					</div>
 
-					<Button variant="primary" fullWidth isLoading={isSaving} onClick={handleSave} leftIcon={<Save className="w-4 h-4" />}>
+					<Button variant="primary" fullWidth isLoading={isSaving} onClick={() => { void handleSave(); }} leftIcon={<Save className="w-4 h-4" />}>
 						Save Changes
 					</Button>
 				</div>

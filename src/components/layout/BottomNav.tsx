@@ -42,8 +42,9 @@ export function BottomNav() {
 					const isActive = location.pathname === path || (path !== '/' && location.pathname.startsWith(path));
 					return (
 						<button
+							type="button"
 							key={path}
-							onClick={() => navigate(path)}
+							onClick={() => { void navigate(path); }}
 							className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl transition-all relative ${
 								isActive ? 'text-rose-400' : 'text-white/40 hover:text-white/70'
 							}`}

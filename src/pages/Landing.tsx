@@ -28,13 +28,13 @@ export function Landing() {
 					</div>
 					<div className="flex items-center gap-2">
 						<button
-							onClick={() => navigate('/login')}
+							onClick={() => { void navigate('/login'); }}
 							className="text-sm text-white/60 hover:text-white px-3 py-1.5 rounded-lg transition-colors"
 						>
 							Sign In
 						</button>
 						<button
-							onClick={() => navigate('/register')}
+							onClick={() => { void navigate('/register'); }}
 							className="bg-rose-500 hover:bg-rose-600 text-white text-sm font-semibold px-4 py-1.5 rounded-xl transition-all active:scale-95"
 						>
 							Get Started
@@ -68,14 +68,14 @@ export function Landing() {
 
 					<div className="flex flex-col sm:flex-row gap-3 justify-center mb-16">
 						<button
-							onClick={() => navigate('/register')}
+							onClick={() => { void navigate('/register'); }}
 							className="flex items-center justify-center gap-2 bg-rose-500 hover:bg-rose-600 text-white font-bold px-8 py-3.5 rounded-2xl transition-all active:scale-95 shadow-2xl shadow-rose-500/30 text-base"
 						>
 							Create account
 							<ArrowRight className="w-4 h-4" />
 						</button>
 						<button
-							onClick={() => navigate('/explore')}
+							onClick={() => { void navigate('/explore'); }}
 							className="flex items-center justify-center gap-2 bg-white/10 hover:bg-white/15 text-white font-semibold px-8 py-3.5 rounded-2xl transition-all text-base"
 						>
 							<Play className="w-4 h-4" />
@@ -114,7 +114,7 @@ export function Landing() {
 									type="button"
 									key={creator.id}
 									data-featured-card
-									onClick={() => navigate('/explore')}
+									onClick={() => { void navigate('/explore'); }}
 									className="bg-[#161616] border border-white/5 rounded-2xl overflow-hidden cursor-pointer hover:border-rose-500/30 transition-all group flex-shrink-0 w-44 sm:w-52 md:w-60"
 								>
 									<div className="relative h-28 sm:h-32 md:h-40">
@@ -213,7 +213,7 @@ export function Landing() {
 						))}
 					</div>
 					<button
-						onClick={() => navigate('/login')}
+						onClick={() => { void navigate('/login'); }}
 						className="bg-rose-500 hover:bg-rose-600 text-white font-bold px-10 py-3.5 rounded-2xl transition-all active:scale-95 shadow-xl shadow-rose-500/25 text-base"
 					>
 						Sign in to demo

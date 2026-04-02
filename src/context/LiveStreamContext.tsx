@@ -1,6 +1,12 @@
 import React, { createContext, useContext, useReducer, useCallback } from 'react';
 import type { LiveStream, LiveChatMessage, VirtualGift } from '../types';
 
+const AVA = {
+	jamie: 'https://images.pexels.com/photos/1040880/pexels-photo-1040880.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&fit=crop',
+	alice: 'https://images.pexels.com/photos/1382731/pexels-photo-1382731.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&fit=crop',
+	bob: 'https://images.pexels.com/photos/1681010/pexels-photo-1681010.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&fit=crop',
+} as const;
+
 export const VIRTUAL_GIFTS: VirtualGift[] = [
 	{ id: 'gift-1', name: 'Rose', emoji: '🌹', value: 0.99 },
 	{ id: 'gift-2', name: 'Fire', emoji: '🔥', value: 1.99 },
@@ -24,10 +30,41 @@ const MOCK_LIVE_STREAMS: LiveStream[] = [
 		giftsReceived: 28,
 		totalGiftValue: 124.50,
 		chatMessages: [
-			{ id: 'lc-1', userId: 'fan-1', userName: 'Jamie Hart', userAvatar: 'https://images.pexels.com/photos/1040880/pexels-photo-1040880.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&fit=crop', text: 'Love this stream!', createdAt: new Date(Date.now() - 120000).toISOString() },
-			{ id: 'lc-2', userId: 'fan-2', userName: 'Alice Johnson', userAvatar: 'https://images.pexels.com/photos/1382731/pexels-photo-1382731.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&fit=crop', text: 'You look amazing Luna!', createdAt: new Date(Date.now() - 90000).toISOString() },
-			{ id: 'lc-3', userId: 'fan-1', userName: 'Jamie Hart', userAvatar: 'https://images.pexels.com/photos/1040880/pexels-photo-1040880.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&fit=crop', text: '', isGift: true, giftName: 'Diamond', giftValue: 9.99, createdAt: new Date(Date.now() - 60000).toISOString() },
-			{ id: 'lc-4', userId: 'fan-3', userName: 'Bob Martinez', userAvatar: 'https://images.pexels.com/photos/1681010/pexels-photo-1681010.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&fit=crop', text: 'How many reps per set?', createdAt: new Date(Date.now() - 30000).toISOString() },
+			{
+				id: 'lc-1',
+				userId: 'fan-1',
+				userName: 'Jamie Hart',
+				userAvatar: AVA.jamie,
+				text: 'Love this stream!',
+				createdAt: new Date(Date.now() - 120000).toISOString(),
+			},
+			{
+				id: 'lc-2',
+				userId: 'fan-2',
+				userName: 'Alice Johnson',
+				userAvatar: AVA.alice,
+				text: 'You look amazing Luna!',
+				createdAt: new Date(Date.now() - 90000).toISOString(),
+			},
+			{
+				id: 'lc-3',
+				userId: 'fan-1',
+				userName: 'Jamie Hart',
+				userAvatar: AVA.jamie,
+				text: '',
+				isGift: true,
+				giftName: 'Diamond',
+				giftValue: 9.99,
+				createdAt: new Date(Date.now() - 60000).toISOString(),
+			},
+			{
+				id: 'lc-4',
+				userId: 'fan-3',
+				userName: 'Bob Martinez',
+				userAvatar: AVA.bob,
+				text: 'How many reps per set?',
+				createdAt: new Date(Date.now() - 30000).toISOString(),
+			},
 		],
 	},
 	{
@@ -43,8 +80,22 @@ const MOCK_LIVE_STREAMS: LiveStream[] = [
 		giftsReceived: 76,
 		totalGiftValue: 589.20,
 		chatMessages: [
-			{ id: 'lc-5', userId: 'fan-1', userName: 'Jamie Hart', userAvatar: 'https://images.pexels.com/photos/1040880/pexels-photo-1040880.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&fit=crop', text: 'This beat is fire!!', createdAt: new Date(Date.now() - 200000).toISOString() },
-			{ id: 'lc-6', userId: 'fan-2', userName: 'Alice Johnson', userAvatar: 'https://images.pexels.com/photos/1382731/pexels-photo-1382731.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&fit=crop', text: 'drop the album already!!', createdAt: new Date(Date.now() - 150000).toISOString() },
+			{
+				id: 'lc-5',
+				userId: 'fan-1',
+				userName: 'Jamie Hart',
+				userAvatar: AVA.jamie,
+				text: 'This beat is fire!!',
+				createdAt: new Date(Date.now() - 200000).toISOString(),
+			},
+			{
+				id: 'lc-6',
+				userId: 'fan-2',
+				userName: 'Alice Johnson',
+				userAvatar: AVA.alice,
+				text: 'drop the album already!!',
+				createdAt: new Date(Date.now() - 150000).toISOString(),
+			},
 		],
 	},
 ];

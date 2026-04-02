@@ -99,7 +99,7 @@ export function CreatorProfile() {
 					<div className="absolute top-3 left-3 z-20">
 						<button
 							type="button"
-							onClick={() => navigate(-1)}
+							onClick={() => { void navigate(-1); }}
 							className="w-8 h-8 sm:w-9 sm:h-9 bg-black/50 backdrop-blur-sm rounded-full flex items-center justify-center text-white/80 hover:text-white hover:bg-black/70 transition-colors"
 							aria-label="Go back"
 						>
@@ -180,7 +180,7 @@ export function CreatorProfile() {
 
 						{isOwner && (
 							<button
-								onClick={() => navigate('/creator-dashboard/profile')}
+								onClick={() => { void navigate('/creator-dashboard/profile'); }}
 								className="bg-white/10 hover:bg-white/15 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-all mt-4"
 							>
 								Edit Profile

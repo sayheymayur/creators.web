@@ -7,6 +7,7 @@ import { useWallet } from '../../context/WalletContext';
 import { useContent } from '../../context/ContentContext';
 import { useNotifications } from '../../context/NotificationContext';
 import type { Post } from '../../types';
+import { delayMs } from '../../utils/delay';
 
 interface PPVUnlockModalProps {
 	isOpen: boolean;
@@ -25,20 +26,21 @@ export function PPVUnlockModal({ isOpen, onClose, post }: PPVUnlockModalProps) {
 	const price = post.ppvPrice ?? 0;
 	const balance = authState.user?.walletBalance ?? 0;
 
-	async function handleUnlock() {
+	function handleUnlock() {
 		if (!authState.user) return;
 		setIsLoading(true);
-		await new Promise(r => setTimeout(r, 800));
-		const ok = deductFunds(price, 'ppv', `PPV unlock: ${post.creatorName}`, post.creatorId, post.creatorName);
-		if (ok) {
-			unlockPost(post.id, authState.user.id);
-			setSuccess(true);
-			showToast('Content unlocked!');
-			setTimeout(onClose, 1500);
-		} else {
-			showToast('Insufficient balance. Please add funds.', 'error');
-		}
-		setIsLoading(false);
+		void delayMs(800).then(() => {
+			const ok = deductFunds(price, 'ppv', `PPV unlock: ${post.creatorName}`, post.creatorId, post.creatorName);
+			if (ok) {
+				unlockPost(post.id, authState.user!.id);
+				setSuccess(true);
+				showToast('Content unlocked!');
+				setTimeout(onClose, 1500);
+			} else {
+				showToast('Insufficient balance. Please add funds.', 'error');
+			}
+			setIsLoading(false);
+		});
 	}
 
 	return (
@@ -82,7 +84,7 @@ export function PPVUnlockModal({ isOpen, onClose, post }: PPVUnlockModalProps) {
 							variant="primary"
 							fullWidth
 							isLoading={isLoading}
-							onClick={handleUnlock}
+							onClick={() => { void handleUnlock(); }}
 							disabled={balance < price}
 						>
 							<Unlock className="w-4 h-4" />

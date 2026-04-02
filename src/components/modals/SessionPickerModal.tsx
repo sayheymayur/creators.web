@@ -137,13 +137,13 @@ export function SessionPickerModal({ isOpen, onClose, creatorName, creatorAvatar
 						disabled={!canStart}
 						className="w-full py-3.5 rounded-2xl font-bold text-sm transition-all active:scale-98 disabled:opacity-40 disabled:cursor-not-allowed bg-rose-500 hover:bg-rose-600 text-white shadow-lg shadow-rose-500/20"
 					>
-						{!selectedType
-							? 'Select a session type'
-							: !selectedDuration
-								? 'Select duration'
-								: !canAfford
-									? 'Insufficient balance'
-									: `Start ${selectedType === 'chat' ? 'Chat' : selectedType === 'audio' ? 'Audio Call' : 'Video Call'} for $${totalCost.toFixed(2)}`}
+						{!selectedType ?
+							'Select a session type' :
+							!selectedDuration ?
+								'Select duration' :
+								!canAfford ?
+									'Insufficient balance' :
+									`Start ${selectedType === 'chat' ? 'Chat' : selectedType === 'audio' ? 'Audio Call' : 'Video Call'} for $${totalCost.toFixed(2)}`}
 					</button>
 				</div>
 			</div>

@@ -82,7 +82,7 @@ export function LiveStreamRoom() {
 
 				<div className="absolute top-0 left-0 right-0 flex items-center gap-3 p-4 pt-12">
 					<button
-						onClick={() => navigate(-1)}
+						onClick={() => { void navigate(-1); }}
 						className="w-8 h-8 rounded-xl bg-black/40 backdrop-blur-sm flex items-center justify-center text-white"
 					>
 						<ArrowLeft className="w-4 h-4" />

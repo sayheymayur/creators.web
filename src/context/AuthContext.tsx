@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useReducer, useCallback } from 'react';
 import type { User, Creator } from '../types';
 import { mockCreators, mockFanUser, mockAdminUser, DEMO_ACCOUNTS } from '../data/users';
+import { delayMs } from '../utils/delay';
 
 interface AuthState {
 	user: User | null;
@@ -70,30 +71,30 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
 	const [state, dispatch] = useReducer(authReducer, initialState);
 
-	const login = useCallback(async (email: string, password: string): Promise<boolean> => {
+	const login = useCallback((email: string, password: string): Promise<boolean> => {
 		dispatch({ type: 'CLEAR_ERROR' });
-		await new Promise(r => setTimeout(r, 800));
+		return delayMs(800).then(() => {
+			const emailLower = email.toLowerCase().trim();
 
-		const emailLower = email.toLowerCase().trim();
+			if (emailLower === DEMO_ACCOUNTS.fan.email && password === DEMO_ACCOUNTS.fan.password) {
+				dispatch({ type: 'LOGIN', payload: mockFanUser });
+				return true;
+			}
 
-		if (emailLower === DEMO_ACCOUNTS.fan.email && password === DEMO_ACCOUNTS.fan.password) {
-			dispatch({ type: 'LOGIN', payload: mockFanUser });
-			return true;
-		}
+			if (emailLower === DEMO_ACCOUNTS.creator.email && password === DEMO_ACCOUNTS.creator.password) {
+				const creatorUser = mockCreators[0];
+				dispatch({ type: 'LOGIN', payload: creatorUser });
+				return true;
+			}
 
-		if (emailLower === DEMO_ACCOUNTS.creator.email && password === DEMO_ACCOUNTS.creator.password) {
-			const creatorUser = mockCreators[0];
-			dispatch({ type: 'LOGIN', payload: creatorUser });
-			return true;
-		}
+			if (emailLower === DEMO_ACCOUNTS.admin.email && password === DEMO_ACCOUNTS.admin.password) {
+				dispatch({ type: 'LOGIN', payload: mockAdminUser });
+				return true;
+			}
 
-		if (emailLower === DEMO_ACCOUNTS.admin.email && password === DEMO_ACCOUNTS.admin.password) {
-			dispatch({ type: 'LOGIN', payload: mockAdminUser });
-			return true;
-		}
-
-		dispatch({ type: 'SET_ERROR', payload: 'Invalid email or password. Try the demo accounts!' });
-		return false;
+			dispatch({ type: 'SET_ERROR', payload: 'Invalid email or password. Try the demo accounts!' });
+			return false;
+		});
 	}, []);
 
 	const logout = useCallback(() => {

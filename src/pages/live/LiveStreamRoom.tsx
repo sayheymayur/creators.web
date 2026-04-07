@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import AgoraRTC, { type IRemoteAudioTrack, type IRemoteVideoTrack } from 'agora-rtc-sdk-ng';
 import { ArrowLeft, Eye, Heart, Share2, Gift } from '../../components/icons';
 import { useLiveStream, VIRTUAL_GIFTS } from '../../context/LiveStreamContext';
 import { useAuth } from '../../context/AuthContext';
 import { useWallet } from '../../context/WalletContext';
 import { useNotifications } from '../../context/NotificationContext';
+import { buildLiveChannel, fetchAgoraRtcToken, getAgoraAppId, stringToAgoraUid } from '../../services/agoraRtc';
 import { usdToInr, formatINR } from '../../services/razorpay';
 import type { VirtualGift } from '../../types';
 
@@ -28,8 +30,13 @@ export function LiveStreamRoom() {
 	const [elapsed, setElapsed] = useState('00:00');
 	const [likeCount, setLikeCount] = useState(0);
 	const [floatingGift, setFloatingGift] = useState<{ emoji: string, name: string } | null>(null);
+	const [hasRemoteVideo, setHasRemoteVideo] = useState(false);
+	const [agoraError, setAgoraError] = useState('');
 	const chatEndRef = useRef<HTMLDivElement>(null);
 	const elapsedRef = useRef<ReturnType<typeof setInterval> | null>(null);
+	const remoteVideoRef = useRef<HTMLDivElement | null>(null);
+	const remoteAudioTrackRef = useRef<IRemoteAudioTrack | null>(null);
+	const remoteVideoTrackRef = useRef<IRemoteVideoTrack | null>(null);
 
 	const stream = getStream(streamId ?? '');
 
@@ -38,6 +45,60 @@ export function LiveStreamRoom() {
 			navigate(-1);
 		}
 	}, [stream, navigate]);
+
+	useEffect(() => {
+		if (!stream || !authState.user) return;
+
+		const client = AgoraRTC.createClient({ codec: 'vp8', mode: 'live' });
+		client.setClientRole('audience');
+		setAgoraError('');
+		setHasRemoteVideo(false);
+
+		client.on('user-published', (user, mediaType) => {
+			void client.subscribe(user, mediaType).then(() => {
+				if (mediaType === 'video' && user.videoTrack) {
+					remoteVideoTrackRef.current = user.videoTrack;
+					setHasRemoteVideo(true);
+					if (remoteVideoRef.current) user.videoTrack.play(remoteVideoRef.current);
+				}
+				if (mediaType === 'audio' && user.audioTrack) {
+					remoteAudioTrackRef.current = user.audioTrack;
+					user.audioTrack.play();
+				}
+			}).catch(() => {
+				setAgoraError('Could not subscribe to live media.');
+			});
+		});
+
+		client.on('user-unpublished', (_user, mediaType) => {
+			if (mediaType === 'video') {
+				setHasRemoteVideo(false);
+				remoteVideoTrackRef.current = null;
+			}
+			if (mediaType === 'audio') {
+				remoteAudioTrackRef.current?.stop();
+				remoteAudioTrackRef.current = null;
+			}
+		});
+
+		const uid = stringToAgoraUid(authState.user.id);
+		const channelName = buildLiveChannel(stream.id);
+
+		void fetchAgoraRtcToken(channelName, uid, 'audience').then(token => (
+			client.join(getAgoraAppId(), channelName, token, uid)
+		)).catch(() => {
+			setAgoraError('Live media unavailable. Showing fallback preview.');
+		});
+
+		return () => {
+			remoteAudioTrackRef.current?.stop();
+			remoteAudioTrackRef.current = null;
+			remoteVideoTrackRef.current?.stop();
+			remoteVideoTrackRef.current = null;
+			setHasRemoteVideo(false);
+			void client.leave().catch(() => undefined);
+		};
+	}, [authState.user, stream?.id, stream?.status]);
 
 	useEffect(() => {
 		if (!stream) return;
@@ -105,12 +166,19 @@ export function LiveStreamRoom() {
 	return (
 		<div className="fixed inset-0 z-[150] bg-[#0a0a0a] flex flex-col">
 			<div className="relative flex-1 overflow-hidden">
+				<div ref={remoteVideoRef} className={`absolute inset-0 z-0 ${hasRemoteVideo ? 'opacity-100' : 'opacity-0'}`} />
 				<img
 					src={stream.creatorAvatar}
 					alt={stream.creatorName}
-					className="w-full h-full object-cover scale-110 blur-sm brightness-50"
+					className={`w-full h-full object-cover scale-110 blur-sm brightness-50 ${hasRemoteVideo ? 'opacity-0' : 'opacity-100'}`}
 				/>
 				<div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/80" />
+
+				{agoraError && (
+					<div className="absolute top-24 left-1/2 -translate-x-1/2 z-30 bg-rose-500/20 border border-rose-500/30 rounded-xl px-3 py-1.5">
+						<p className="text-xs text-rose-300">{agoraError}</p>
+					</div>
+				)}
 
 				<div className="absolute top-0 left-0 right-0 flex items-center gap-3 p-4 pt-12">
 					<button

@@ -58,8 +58,7 @@ export function Explore() {
 							<button
 								key={cat}
 								onClick={() => setCategory(cat)}
-								className={`shrink-0 text-sm px-3 py-1.5 rounded-xl font-medium transition-all ${
-									category === cat ? 'bg-rose-500 text-white' : 'bg-white/5 text-white/50 hover:text-white hover:bg-white/10'
+								className={`shrink-0 text-sm px-3 py-1.5 rounded-xl font-medium transition-all ${category === cat ? 'bg-rose-500 text-white' : 'bg-white/5 text-white/50 hover:text-white hover:bg-white/10'
 								}`}
 							>
 								{cat}
@@ -71,10 +70,10 @@ export function Explore() {
 				{!search && category === 'All' && liveStreams.length > 0 && (
 					<div className="mb-8">
 						<div className="flex items-center gap-2 mb-4">
-							<div className="flex items-center gap-1.5 bg-rose-500 rounded-lg px-2 py-0.5">
+							{/* <div className="flex items-center gap-1.5 bg-rose-500 rounded-lg px-2 py-0.5">
 								<div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
 								<span className="text-white text-[10px] font-bold">LIVE</span>
-							</div>
+							</div> */}
 							<h2 className="font-semibold text-white text-sm">Live Now</h2>
 						</div>
 						<div ref={liveRef} className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4 mb-8">

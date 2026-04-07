@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import AgoraRTC, { type IAgoraRTCClient, type ILocalAudioTrack, type ILocalVideoTrack } from 'agora-rtc-sdk-ng';
 import { Radio, Eye, Gift, DollarSign, ArrowLeft, Send, X, Users } from '../../components/icons';
 import { useLiveStream, VIRTUAL_GIFTS } from '../../context/LiveStreamContext';
 import { useCurrentCreator } from '../../context/AuthContext';
+import { buildLiveChannel, fetchAgoraRtcToken, getAgoraAppId, stringToAgoraUid } from '../../services/agoraRtc';
 import type { LiveStream } from '../../types';
 
 function formatElapsed(startedAt: string): string {
@@ -23,14 +25,27 @@ export function GoLivePage() {
 	const [elapsed, setElapsed] = useState('00:00');
 	const [text, setText] = useState('');
 	const [viewerSimCount, setViewerSimCount] = useState(0);
+	const [agoraError, setAgoraError] = useState('');
+	const [hasLocalVideo, setHasLocalVideo] = useState(false);
 	const elapsedRef = useRef<ReturnType<typeof setInterval> | null>(null);
 	const viewerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 	const chatEndRef = useRef<HTMLDivElement>(null);
+	const localVideoRef = useRef<HTMLDivElement | null>(null);
+	const hostClientRef = useRef<IAgoraRTCClient | null>(null);
+	const hostAudioTrackRef = useRef<ILocalAudioTrack | null>(null);
+	const hostVideoTrackRef = useRef<ILocalVideoTrack | null>(null);
 
 	useEffect(() => {
 		return () => {
 			if (elapsedRef.current) clearInterval(elapsedRef.current);
 			if (viewerRef.current) clearInterval(viewerRef.current);
+			hostAudioTrackRef.current?.close();
+			hostVideoTrackRef.current?.close();
+			hostAudioTrackRef.current = null;
+			hostVideoTrackRef.current = null;
+			setHasLocalVideo(false);
+			void hostClientRef.current?.leave().catch(() => undefined);
+			hostClientRef.current = null;
 		};
 	}, []);
 
@@ -45,6 +60,14 @@ export function GoLivePage() {
 		}
 	}, [activeStream?.id]);
 
+	useEffect(() => {
+		if (!isLive) return;
+		const localTrack = hostVideoTrackRef.current;
+		const localContainer = localVideoRef.current;
+		if (!localTrack || !localContainer) return;
+		localTrack.play(localContainer);
+	}, [isLive, activeStream?.id]);
+
 	if (!creator) {
 		return (
 			<div className="min-h-screen bg-[#0d0d0d] flex items-center justify-center">
@@ -52,28 +75,61 @@ export function GoLivePage() {
 			</div>
 		);
 	}
+	const activeCreator = creator;
 
 	function handleGoLive() {
 		if (!title.trim()) return;
-		const stream = goLive(creator!.id, creator!.name, creator!.avatar, title.trim());
-		setActiveStream(stream);
-		setIsLive(true);
+		const stream = goLive(activeCreator.id, activeCreator.name, activeCreator.avatar, title.trim());
+		const channelName = buildLiveChannel(stream.id);
+		const uid = stringToAgoraUid(activeCreator.id);
+		const client = AgoraRTC.createClient({ codec: 'vp8', mode: 'live' });
+		client.setClientRole('host');
+		hostClientRef.current = client;
+		setAgoraError('');
 
-		elapsedRef.current = setInterval(() => {
-			setElapsed(formatElapsed(stream.startedAt));
-		}, 1000);
+		void fetchAgoraRtcToken(channelName, uid, 'host').then(token => (
+			client.join(getAgoraAppId(), channelName, token, uid).then(() => (
+				AgoraRTC.createMicrophoneAudioTrack().then(audioTrack => {
+					hostAudioTrackRef.current = audioTrack;
+					return AgoraRTC.createCameraVideoTrack().then(videoTrack => {
+						hostVideoTrackRef.current = videoTrack;
+						setHasLocalVideo(true);
+						if (localVideoRef.current) videoTrack.play(localVideoRef.current);
+						return client.publish([audioTrack, videoTrack]);
+					}).catch(() => (
+						client.publish([audioTrack])
+					));
+				})
+			))
+		)).catch(() => {
+			setAgoraError('Live media could not connect. Showing fallback preview.');
+		}).finally(() => {
+			setActiveStream(stream);
+			setIsLive(true);
 
-		let viewers = 0;
-		viewerRef.current = setInterval(() => {
-			const delta = Math.floor(Math.random() * 5) - 1;
-			viewers = Math.max(0, viewers + delta + 2);
-			setViewerSimCount(viewers);
-		}, 3000);
+			elapsedRef.current = setInterval(() => {
+				setElapsed(formatElapsed(stream.startedAt));
+			}, 1000);
+
+			let viewers = 0;
+			viewerRef.current = setInterval(() => {
+				const delta = Math.floor(Math.random() * 5) - 1;
+				viewers = Math.max(0, viewers + delta + 2);
+				setViewerSimCount(viewers);
+			}, 3000);
+		});
 	}
 
 	function handleEndLive() {
 		if (!activeStream) return;
 		endLive(activeStream.id);
+		hostAudioTrackRef.current?.close();
+		hostVideoTrackRef.current?.close();
+		hostAudioTrackRef.current = null;
+		hostVideoTrackRef.current = null;
+		setHasLocalVideo(false);
+		void hostClientRef.current?.leave().catch(() => undefined);
+		hostClientRef.current = null;
 		if (elapsedRef.current) clearInterval(elapsedRef.current);
 		if (viewerRef.current) clearInterval(viewerRef.current);
 		setIsLive(false);
@@ -161,12 +217,19 @@ export function GoLivePage() {
 	return (
 		<div className="fixed inset-0 z-[100] bg-[#0a0a0a] flex flex-col">
 			<div className="relative flex-1 overflow-hidden">
+				<div ref={localVideoRef} className="absolute inset-0 z-0" />
 				<img
-					src={creator.avatar}
-					alt={creator.name}
-					className="w-full h-full object-cover scale-110 blur-sm brightness-40"
+					src={activeCreator.avatar}
+					alt={activeCreator.name}
+					className={`w-full h-full object-cover scale-110 blur-sm brightness-40 ${hasLocalVideo ? 'opacity-0' : 'opacity-100'}`}
 				/>
 				<div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-black/80" />
+
+				{agoraError && (
+					<div className="absolute top-24 left-1/2 -translate-x-1/2 z-30 bg-rose-500/20 border border-rose-500/30 rounded-xl px-3 py-1.5">
+						<p className="text-xs text-rose-300">{agoraError}</p>
+					</div>
+				)}
 
 				<div className="absolute top-0 left-0 right-0 p-4 pt-12 flex items-center gap-3">
 					<div className="flex items-center gap-2 bg-rose-500 rounded-xl px-3 py-1.5">

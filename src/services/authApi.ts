@@ -1,44 +1,33 @@
 import type { User } from '../types';
-
-const AUTH_EXCHANGE_URL = import.meta.env.VITE_AUTH_EXCHANGE_URL as string | undefined;
-
-type SignupRole = 'fan' | 'creator';
+import { creatorsApi } from './creatorsApi';
 
 interface ExchangeResponse {
-	user: User;
+	user?: User;
 }
 
-function isValidUser(value: unknown): value is User {
-	if (typeof value !== 'object' || value === null) return false;
-	const candidate = value as Record<string, unknown>;
-	return typeof candidate.id === 'string' &&
-		typeof candidate.email === 'string' &&
-		typeof candidate.role === 'string' &&
-		typeof candidate.name === 'string';
-}
-
-export async function exchangeFirebaseToken(
+export function exchangeFirebaseToken(
 	idToken: string,
-	preferredRole?: SignupRole
+	role: 'fan' | 'creator'
 ): Promise<User | null> {
-	if (!AUTH_EXCHANGE_URL) return null;
+	// Prefer the canonical API endpoint; keep compatibility with older env-based exchange URL.
+	const exchangeUrl = import.meta.env.VITE_AUTH_EXCHANGE_URL?.trim() ?? '';
+	if (!exchangeUrl) {
+		return creatorsApi.auth.firebaseExchange({ idToken, preferredRole: role })
+			.then(res => res.user ?? null)
+			.catch(() => null);
+	}
 
-	return globalThis.fetch(AUTH_EXCHANGE_URL, {
+	return globalThis.fetch(exchangeUrl, {
 		method: 'POST',
-		headers: {
-			'Content-Type': 'application/json',
-		},
-		body: JSON.stringify({ idToken, preferredRole }),
-		credentials: 'include',
-	}).then(response => {
-		if (!response.ok) {
-			throw new Error('Unable to complete secure sign-in.');
-		}
-		return response.json() as Promise<ExchangeResponse>;
-	}).then(payload => {
-		if (!isValidUser(payload.user)) {
-			throw new Error('Received invalid user payload from auth server.');
-		}
-		return payload.user;
-	});
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ idToken, role }),
+	})
+		.then(response => {
+			if (!response.ok) return null;
+			return response.json().then(raw => {
+				const data = raw as ExchangeResponse;
+				return data.user ?? null;
+			});
+		})
+		.catch(() => null);
 }

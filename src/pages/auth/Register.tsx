@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { User, Mail, Lock, Eye, EyeOff, Camera, Video, ArrowRight, Chrome } from '../../components/icons';
+import { FcGoogle } from 'react-icons/fc';
+import { User, Mail, Lock, Eye, EyeOff, Camera, Video, ArrowRight } from '../../components/icons';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../../components/ui/Button';
 import { delayMs } from '../../utils/delay';
 
 export function Register() {
 	const navigate = useNavigate();
-	const { setPendingEmail, loginWithGoogle, state } = useAuth();
+	const { register, loginWithGoogle, state } = useAuth();
 	const [step, setStep] = useState<1 | 2>(1);
 	const [role, setRole] = useState<'fan' | 'creator'>('fan');
 	const [name, setName] = useState('');
@@ -20,11 +21,13 @@ export function Register() {
 		e.preventDefault();
 		if (step === 1) { setStep(2); return; }
 		setIsLoading(true);
-		void delayMs(1000).then(() => {
-			setPendingEmail(email);
-			void navigate('/otp');
-			setIsLoading(false);
-		});
+		void delayMs(150).then(() =>
+			register(email, password, name).then(success => {
+				setIsLoading(false);
+				if (!success) return;
+				void navigate(role === 'creator' ? '/creator-dashboard' : '/feed');
+			})
+		);
 	}
 
 	function handleGoogleSignup() {
@@ -108,6 +111,25 @@ export function Register() {
 							Continue as {role === 'fan' ? 'Fan' : 'Creator'}
 							<ArrowRight className="w-4 h-4" />
 						</Button>
+						<div className="my-3 flex items-center gap-3">
+							<div className="flex-1 h-px bg-white/10" />
+							<span className="text-xs text-white/30">or</span>
+							<div className="flex-1 h-px bg-white/10" />
+						</div>
+						<button
+							type="button"
+							onClick={handleGoogleSignup}
+							disabled={isLoading}
+							className="w-full flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl py-3 text-sm font-medium text-white/70 hover:text-white transition-all disabled:opacity-70"
+						>
+							<FcGoogle className="w-4 h-4" />
+							Continue with Google
+						</button>
+						{state.loginError && (
+							<p className="text-rose-400 text-sm bg-rose-500/10 border border-rose-500/20 rounded-xl px-3 py-2">
+								{state.loginError}
+							</p>
+						)}
 					</div>
 				) : (
 					<form

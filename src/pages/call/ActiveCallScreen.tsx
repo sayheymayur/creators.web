@@ -1,8 +1,11 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import AgoraRTC, { type ILocalAudioTrack, type ILocalVideoTrack, type IRemoteAudioTrack, type IRemoteVideoTrack } from 'agora-rtc-sdk-ng';
 import { Mic, MicOff, Video, VideoOff, Volume2, VolumeX, Phone, RotateCcw, Minimize2, Clock, AlertTriangle } from '../../components/icons';
 import { useCall } from '../../context/CallContext';
 import { useSession } from '../../context/SessionContext';
+import { useAuth } from '../../context/AuthContext';
+import { buildCallChannel, fetchAgoraRtcToken, getAgoraAppId, stringToAgoraUid } from '../../services/agoraRtc';
 
 function formatDuration(secs: number): string {
 	const m = Math.floor(secs / 60).toString().padStart(2, '0');
@@ -14,12 +17,21 @@ export function ActiveCallScreen() {
 	const navigate = useNavigate();
 	const { state: callState, endCall, toggleMute, toggleCamera, toggleSpeaker } = useCall();
 	const { state: sessionState, endSessionEarly } = useSession();
+	const { state: authState } = useAuth();
 	const call = callState.activeCall;
 	const session = sessionState.activeSession;
 	const [elapsed, setElapsed] = useState(0);
 	const [showControls, setShowControls] = useState(true);
 	const controlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+	const localVideoRef = useRef<HTMLDivElement | null>(null);
+	const remoteVideoRef = useRef<HTMLDivElement | null>(null);
+	const localAudioTrackRef = useRef<ILocalAudioTrack | null>(null);
+	const localVideoTrackRef = useRef<ILocalVideoTrack | null>(null);
+	const remoteAudioTrackRef = useRef<IRemoteAudioTrack | null>(null);
+	const remoteVideoTrackRef = useRef<IRemoteVideoTrack | null>(null);
+	const [hasRemoteVideo, setHasRemoteVideo] = useState(false);
+	const [agoraError, setAgoraError] = useState('');
 
 	const isTimedSession = session && (session.type === 'audio' || session.type === 'video');
 	const secondsRemaining = sessionState.secondsRemaining;
@@ -84,6 +96,102 @@ export function ActiveCallScreen() {
 	const timerDisplay = isTimedSession ?
 		formatDuration(secondsRemaining) :
 		formatDuration(elapsed);
+	const hideControls = !showControls && isVideo;
+
+	useEffect(() => {
+		if (!call || !authState.user) return;
+
+		const participantId = call.participantId || session?.creatorId || 'unknown';
+		const channelName = buildCallChannel(authState.user.id, participantId);
+		const uid = stringToAgoraUid(authState.user.id);
+		const appId = getAgoraAppId();
+		const client = AgoraRTC.createClient({ codec: 'vp8', mode: 'rtc' });
+		setAgoraError('');
+
+		client.on('user-published', (user, mediaType) => {
+			void client.subscribe(user, mediaType).then(() => {
+				if (mediaType === 'audio' && user.audioTrack) {
+					remoteAudioTrackRef.current = user.audioTrack;
+					if (isSpeakerOn) user.audioTrack.play();
+				}
+				if (mediaType === 'video' && user.videoTrack) {
+					remoteVideoTrackRef.current = user.videoTrack;
+					setHasRemoteVideo(true);
+					if (remoteVideoRef.current) {
+						user.videoTrack.play(remoteVideoRef.current);
+					}
+				}
+			}).catch(() => {
+				setAgoraError('Failed to subscribe remote media.');
+			});
+		});
+
+		client.on('user-unpublished', (_user, mediaType) => {
+			if (mediaType === 'video') {
+				setHasRemoteVideo(false);
+				remoteVideoTrackRef.current = null;
+			}
+			if (mediaType === 'audio') {
+				remoteAudioTrackRef.current?.stop();
+				remoteAudioTrackRef.current = null;
+			}
+		});
+
+		void fetchAgoraRtcToken(channelName, uid, 'host').then(token => (
+			client.join(appId, channelName, token, uid).then(() => (
+				AgoraRTC.createMicrophoneAudioTrack().then(audioTrack => {
+					localAudioTrackRef.current = audioTrack;
+					if (call.type !== 'video') {
+						return client.publish([audioTrack]);
+					}
+					return AgoraRTC.createCameraVideoTrack().then(videoTrack => {
+						localVideoTrackRef.current = videoTrack;
+						if (localVideoRef.current) videoTrack.play(localVideoRef.current);
+						return client.publish([audioTrack, videoTrack]);
+					});
+				})
+			))
+		)).catch(() => {
+			setAgoraError('Unable to connect media. Showing call preview.');
+		});
+
+		return () => {
+			remoteAudioTrackRef.current?.stop();
+			remoteAudioTrackRef.current = null;
+			remoteVideoTrackRef.current?.stop();
+			remoteVideoTrackRef.current = null;
+			setHasRemoteVideo(false);
+
+			const localAudioTrack = localAudioTrackRef.current;
+			const localVideoTrack = localVideoTrackRef.current;
+			localAudioTrackRef.current = null;
+			localVideoTrackRef.current = null;
+
+			const leavePromise = client.leave().catch(() => undefined);
+			if (localAudioTrack) localAudioTrack.close();
+			if (localVideoTrack) localVideoTrack.close();
+			void leavePromise;
+		};
+	}, [authState.user, call?.id, call?.participantId, call?.type, session?.creatorId]);
+
+	useEffect(() => {
+		const localAudioTrack = localAudioTrackRef.current;
+		if (!localAudioTrack) return;
+		void localAudioTrack.setEnabled(!isMuted);
+	}, [isMuted]);
+
+	useEffect(() => {
+		const localVideoTrack = localVideoTrackRef.current;
+		if (!localVideoTrack) return;
+		void localVideoTrack.setEnabled(!isCameraOff);
+	}, [isCameraOff]);
+
+	useEffect(() => {
+		const remoteAudioTrack = remoteAudioTrackRef.current;
+		if (!remoteAudioTrack) return;
+		if (isSpeakerOn) remoteAudioTrack.play();
+		else remoteAudioTrack.stop();
+	}, [isSpeakerOn]);
 
 	return (
 		<div
@@ -91,7 +199,11 @@ export function ActiveCallScreen() {
 			onTouchStart={resetControlsTimer}
 			onClick={resetControlsTimer}
 		>
-			{isVideo ? (
+			{isVideo && hasRemoteVideo ? (
+				<div ref={remoteVideoRef} className="absolute inset-0" />
+			) : null}
+
+			{isVideo && !hasRemoteVideo ? (
 				<div className="absolute inset-0">
 					<img
 						src={participantAvatar}
@@ -116,8 +228,8 @@ export function ActiveCallScreen() {
 				</div>
 			)}
 
-			<div className={`relative z-10 flex flex-col h-full transition-opacity duration-300 ${!showControls && isVideo ? 'opacity-0' : 'opacity-100'}`}>
-				<div className="pt-14 pb-4 px-6 text-center">
+			<div className="relative z-10 flex flex-col h-full">
+				<div className={`pt-14 pb-4 px-6 text-center transition-opacity duration-300 ${hideControls ? 'opacity-0' : 'opacity-100'}`}>
 					<h1 className="text-2xl font-bold text-white drop-shadow-lg">{participantName}</h1>
 					{isConnecting ? (
 						<p className="text-white/60 text-sm mt-1 animate-pulse">
@@ -149,7 +261,7 @@ export function ActiveCallScreen() {
 				</div>
 
 				{isWarning && (
-					<div className="mx-6 bg-rose-500/20 border border-rose-500/30 rounded-2xl px-4 py-3 flex items-center gap-2">
+					<div className={`mx-6 bg-rose-500/20 border border-rose-500/30 rounded-2xl px-4 py-3 flex items-center gap-2 transition-opacity duration-300 ${hideControls ? 'opacity-0' : 'opacity-100'}`}>
 						<AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
 						<p className="text-sm text-rose-300 font-medium">1 minute remaining in your session</p>
 					</div>
@@ -158,16 +270,18 @@ export function ActiveCallScreen() {
 				{isVideo && !isCameraOff && (
 					<div className="absolute top-16 right-4 z-20">
 						<div className="w-24 h-32 sm:w-28 sm:h-36 rounded-2xl overflow-hidden border-2 border-white/20 shadow-xl bg-[#1a1a1a]">
-							<div className="w-full h-full bg-gradient-to-br from-rose-900/40 to-[#1a1a1a] flex items-center justify-center">
-								<div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
-									<Video className="w-5 h-5 text-white/40" />
-								</div>
-							</div>
+							<div ref={localVideoRef} className="w-full h-full bg-gradient-to-br from-rose-900/40 to-[#1a1a1a]" />
 						</div>
 					</div>
 				)}
 
-				<div className="mt-auto pb-14 px-8">
+				{agoraError && (
+					<div className="absolute top-16 left-1/2 -translate-x-1/2 z-30 bg-rose-500/20 border border-rose-500/30 rounded-xl px-3 py-1.5">
+						<p className="text-xs text-rose-300">{agoraError}</p>
+					</div>
+				)}
+
+				<div className={`mt-auto pb-14 px-8 transition-opacity duration-300 ${hideControls ? 'opacity-0' : 'opacity-100'}`}>
 					<div className="flex items-center justify-center gap-5 mb-8">
 						<ControlBtn active={!isMuted} onPress={toggleMute} icon={isMuted ? MicOff : Mic} label={isMuted ? 'Unmute' : 'Mute'} />
 						{isVideo && (

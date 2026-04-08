@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Eye, EyeOff, Mail, Lock, Chrome, ChevronRight, Zap } from '../../components/icons';
+import { FcGoogle } from 'react-icons/fc';
+import { Eye, EyeOff, Mail, Lock, ChevronRight, Zap } from '../../components/icons';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../../components/ui/Button';
 import { DEMO_ACCOUNTS } from '../../data/users';
@@ -152,11 +153,11 @@ export function Login() {
 
 					<button
 						type="button"
-						onClick={() => { handleGoogleLogin(); }}
+						onClick={handleGoogleLogin}
 						disabled={isLoading}
-						className="w-full flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl py-3 text-sm font-medium text-white/70 hover:text-white transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+						className="w-full flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl py-3 text-sm font-medium text-white/70 hover:text-white transition-all disabled:opacity-70"
 					>
-						<Chrome className="w-4 h-4" />
+						<FcGoogle className="w-4 h-4" />
 						Continue with Google
 					</button>
 

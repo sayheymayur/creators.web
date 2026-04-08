@@ -8,7 +8,7 @@ import { delayMs } from '../../utils/delay';
 
 export function Register() {
 	const navigate = useNavigate();
-	const { setPendingEmail, loginWithGoogle, state } = useAuth();
+	const { register, loginWithGoogle, state } = useAuth();
 	const [step, setStep] = useState<1 | 2>(1);
 	const [role, setRole] = useState<'fan' | 'creator'>('fan');
 	const [name, setName] = useState('');
@@ -21,11 +21,13 @@ export function Register() {
 		e.preventDefault();
 		if (step === 1) { setStep(2); return; }
 		setIsLoading(true);
-		void delayMs(1000).then(() => {
-			setPendingEmail(email);
-			void navigate('/otp');
-			setIsLoading(false);
-		});
+		void delayMs(150).then(() =>
+			register(email, password, name).then(success => {
+				setIsLoading(false);
+				if (!success) return;
+				void navigate(role === 'creator' ? '/creator-dashboard' : '/feed');
+			})
+		);
 	}
 
 	function handleGoogleSignup() {

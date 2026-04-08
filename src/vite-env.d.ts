@@ -10,6 +10,7 @@ interface ImportMetaEnv {
 	readonly VITE_FIREBASE_APP_ID?: string;
 	readonly VITE_FIREBASE_MEASUREMENT_ID?: string;
 	readonly VITE_AUTH_EXCHANGE_URL?: string;
+	readonly VITE_CREATORS_API_URL?: string;
 	readonly VITE_AGORA_APP_ID?: string;
 	readonly VITE_AGORA_TOKEN_ENDPOINT?: string;
 }

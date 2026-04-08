@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useReducer } from 'react';
+import React, { createContext, useContext, useReducer, useCallback, useEffect, useRef } from 'react';
 import { signInWithPopup, signOut, signOut as firebaseSignOut, type User as FirebaseUser } from 'firebase/auth';
 import type { User, Creator } from '../types';
 import { mockCreators, mockFanUser, mockAdminUser, DEMO_ACCOUNTS } from '../data/users';
@@ -6,6 +6,8 @@ import { delayMs } from '../utils/delay';
 import { isFirebaseConfigured, firebaseMissingConfigKeys } from '../config/firebase';
 import { getFirebaseAuth, getGoogleProvider } from '../lib/firebaseClient';
 import { exchangeFirebaseToken } from '../services/authApi';
+import { creatorsApi, ApiError } from '../services/creatorsApi';
+import { clearSessionToken, getSessionToken } from '../services/sessionToken';
 
 interface AuthState {
 	user: User | null;
@@ -131,6 +133,7 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
 interface AuthContextValue {
 	state: AuthState;
 	login: (email: string, password: string) => Promise<boolean>;
+	register: (email: string, password: string, displayName: string) => Promise<boolean>;
 	loginWithGoogle: (role: 'fan' | 'creator') => Promise<User | null>;
 	logout: () => void;
 	verifyAge: () => void;
@@ -170,10 +173,37 @@ function createFallbackGoogleUser(firebaseUser: FirebaseUser, preferredRole: 'fa
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
 	const [state, dispatch] = useReducer(authReducer, initialState);
+	const didBootstrapRef = useRef(false);
+
+	useEffect(() => {
+		// StrictMode runs effects twice in dev; avoid double-bootstrapping.
+		if (didBootstrapRef.current) return;
+		didBootstrapRef.current = true;
+
+		const token = getSessionToken();
+		if (!token) return;
+
+		const ac = new AbortController();
+		void creatorsApi.auth.me(ac.signal)
+			.then(({ user }) => {
+				if (ac.signal.aborted) return;
+				if (!user) {
+					clearSessionToken();
+					return;
+				}
+				dispatch({ type: 'LOGIN', payload: user });
+			})
+			.catch(() => {
+				// If token is invalid/expired, drop it; otherwise keep it.
+				clearSessionToken();
+			});
+
+		return () => ac.abort();
+	}, []);
 
 	const login = useCallback((email: string, password: string): Promise<boolean> => {
 		dispatch({ type: 'CLEAR_ERROR' });
-		return delayMs(800).then(() => {
+		return delayMs(250).then(() => {
 			const emailLower = email.toLowerCase().trim();
 
 			if (emailLower === DEMO_ACCOUNTS.fan.email && password === DEMO_ACCOUNTS.fan.password) {
@@ -192,9 +222,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 				return true;
 			}
 
-			dispatch({ type: 'SET_ERROR', payload: 'Invalid email or password. Try the demo accounts!' });
-			return false;
+			return creatorsApi.auth.login({ email, password })
+				.then(() => creatorsApi.auth.me())
+				.then(({ user }) => {
+					if (!user) {
+						dispatch({ type: 'SET_ERROR', payload: 'Login succeeded but user profile was missing.' });
+						return false;
+					}
+					dispatch({ type: 'LOGIN', payload: user });
+					return true;
+				})
+				.catch(err => {
+					if (err instanceof ApiError && err.status === 401) {
+						dispatch({ type: 'SET_ERROR', payload: 'Invalid email or password.' });
+						return false;
+					}
+					dispatch({ type: 'SET_ERROR', payload: 'Login failed. Please try again.' });
+					return false;
+				});
 		});
+	}, []);
+
+	const register = useCallback((email: string, password: string, displayName: string): Promise<boolean> => {
+		dispatch({ type: 'CLEAR_ERROR' });
+		return creatorsApi.auth.register({ email, password, displayName })
+			.then(() => creatorsApi.auth.me())
+			.then(({ user }) => {
+				if (!user) {
+					dispatch({ type: 'SET_ERROR', payload: 'Registration succeeded but user profile was missing.' });
+					return false;
+				}
+				dispatch({ type: 'LOGIN', payload: user });
+				return true;
+			})
+			.catch(err => {
+				const msg = err instanceof ApiError && err.status >= 400 && err.status < 500 ?
+					'Registration failed. Please check your details.' :
+					'Registration failed. Please try again.';
+				dispatch({ type: 'SET_ERROR', payload: msg });
+				return false;
+			});
 	}, []);
 
 	const loginWithGoogle = useCallback((role: 'fan' | 'creator'): Promise<User | null> => {
@@ -210,7 +277,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 		return signInWithPopup(getFirebaseAuth(), getGoogleProvider())
 			.then(result => result.user.getIdToken().then(idToken => ({ firebaseUser: result.user, idToken })))
 			.then(({ firebaseUser, idToken }) =>
-				exchangeFirebaseToken(idToken, role).then(apiUser => ({ firebaseUser, apiUser }))
+				creatorsApi.auth.firebaseExchange({ idToken, preferredRole: role })
+					.then(res => ({ firebaseUser, apiUser: res.user ?? null }))
+					.catch(() => exchangeFirebaseToken(idToken, role).then(apiUser => ({ firebaseUser, apiUser })))
 			)
 			.then(({ firebaseUser, apiUser }) => {
 				const fallbackUser: User = {
@@ -238,6 +307,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 	}, []);
 
 	const logout = useCallback(() => {
+		clearSessionToken();
+		void creatorsApi.auth.logout().catch(() => {});
 		if (isFirebaseConfigured) {
 			void signOut(getFirebaseAuth()).finally(() => {
 				dispatch({ type: 'LOGOUT' });
@@ -280,6 +351,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 		<AuthContext.Provider value={{
 			state,
 			login,
+			register,
 			loginWithGoogle,
 			logout,
 			verifyAge,

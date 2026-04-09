@@ -153,7 +153,7 @@ function normalizeUsername(input: string): string {
 		.slice(0, 20) || 'user';
 }
 
-function createFallbackGoogleUser(firebaseUser: FirebaseUser, preferredRole: 'fan' | 'creator'): User {
+function _createFallbackGoogleUser(firebaseUser: FirebaseUser, preferredRole: 'fan' | 'creator'): User {
 	const email = firebaseUser.email ?? '';
 	const displayName = firebaseUser.displayName?.trim() || email.split('@')[0] || 'New User';
 
@@ -357,6 +357,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 			verifyAge,
 			setPendingEmail,
 			updateUser,
+			updateCreatorProfile,
 			updateWallet,
 			clearError,
 		}}

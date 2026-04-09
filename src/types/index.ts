@@ -103,6 +103,11 @@ export interface User {
 	name: string;
 	username: string;
 	avatar: string;
+	// Optional creator-profile fields. These may be returned for creators depending on backend shape,
+	// and are updated via POST /me/profile in the frontend.
+	bio?: string;
+	banner?: string;
+	category?: string;
 	role: UserRole;
 	createdAt: string;
 	isAgeVerified: boolean;

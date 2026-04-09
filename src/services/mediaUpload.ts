@@ -6,7 +6,7 @@ export async function uploadMediaAsset(kind: UploadKind, file: File): Promise<{ 
 		mimeType: file.type || 'application/octet-stream',
 		sizeBytes: file.size,
 		kind,
-	}).then((upload) => {
+	}).then(upload => {
 		const headers = new Headers(upload.headers ?? {});
 		if (file.type) headers.set('Content-Type', file.type);
 
@@ -14,7 +14,7 @@ export async function uploadMediaAsset(kind: UploadKind, file: File): Promise<{ 
 			method: 'PUT',
 			body: file,
 			headers,
-		}).then((putRes) => {
+		}).then(putRes => {
 			if (!putRes.ok) {
 				throw new Error(`Upload failed (HTTP ${putRes.status})`);
 			}

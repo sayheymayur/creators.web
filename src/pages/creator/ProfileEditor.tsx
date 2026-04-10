@@ -5,8 +5,7 @@ import { Button } from '../../components/ui/Button';
 import { useAuth, useCurrentCreator } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { mockCreators } from '../../data/users';
-import { ApiError, creatorsApi } from '../../services/creatorsApi';
-import { uploadMediaAsset } from '../../services/mediaUpload';
+import { delayMs } from '../../utils/delay';
 
 export function ProfileEditor() {
 	const creator = useCurrentCreator();
@@ -58,7 +57,7 @@ export function ProfileEditor() {
 
 	const CATEGORIES = ['Fitness', 'Art', 'Tech', 'Travel', 'Music', 'Food', 'Gaming', 'Lifestyle'];
 
-	async function handleSave() {
+	function handleSave() {
 		if (isSaving) return;
 		setIsSaving(true);
 		void delayMs(800).then(() => {
@@ -82,7 +81,7 @@ export function ProfileEditor() {
 			});
 			showToast('Creator profile updated!');
 			setIsSaving(false);
-		}
+		});
 	}
 
 	return (

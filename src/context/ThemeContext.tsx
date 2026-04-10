@@ -74,9 +74,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 			return () => mq.removeEventListener('change', handler);
 		}
 		// Safari fallback
-		// eslint-disable-next-line deprecation/deprecation
 		mq.addListener(handler);
-		// eslint-disable-next-line deprecation/deprecation
 		return () => mq.removeListener(handler);
 	}, []);
 
@@ -90,4 +88,3 @@ export function useTheme() {
 	if (!ctx) throw new Error('useTheme must be used within ThemeProvider');
 	return ctx;
 }
-

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer, useCallback, useEffect, useRef } from 'react';
-import { signInWithPopup, signOut, signOut as firebaseSignOut, type User as FirebaseUser } from 'firebase/auth';
+import { signInWithPopup, signOut, signOut as firebaseSignOut } from 'firebase/auth';
 import type { User, Creator } from '../types';
 import { mockCreators, mockFanUser, mockAdminUser, DEMO_ACCOUNTS } from '../data/users';
 import { delayMs } from '../utils/delay';
@@ -145,31 +145,6 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
-
-function normalizeUsername(input: string): string {
-	return input
-		.toLowerCase()
-		.replace(/[^a-z0-9]/g, '')
-		.slice(0, 20) || 'user';
-}
-
-function createFallbackGoogleUser(firebaseUser: FirebaseUser, preferredRole: 'fan' | 'creator'): User {
-	const email = firebaseUser.email ?? '';
-	const displayName = firebaseUser.displayName?.trim() || email.split('@')[0] || 'New User';
-
-	return {
-		id: `google-${firebaseUser.uid}`,
-		email,
-		name: displayName,
-		username: normalizeUsername(displayName || email),
-		avatar: firebaseUser.photoURL ?? 'https://images.pexels.com/photos/1040880/pexels-photo-1040880.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&fit=crop',
-		role: preferredRole,
-		createdAt: new Date().toISOString(),
-		isAgeVerified: true,
-		status: 'active',
-		walletBalance: 0,
-	};
-}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
 	const [state, dispatch] = useReducer(authReducer, initialState);
@@ -357,6 +332,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 			verifyAge,
 			setPendingEmail,
 			updateUser,
+			updateCreatorProfile,
 			updateWallet,
 			clearError,
 		}}

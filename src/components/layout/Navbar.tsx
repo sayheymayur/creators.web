@@ -287,9 +287,9 @@ function NavLink({ label, path, current, onClick, badge }: {
 			type="button"
 			onClick={onClick}
 			className={`relative px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${isActive ?
-					'text-foreground bg-foreground/10' :
-					'text-muted hover:text-foreground hover:bg-foreground/5'
-				}`}
+				'text-foreground bg-foreground/10' :
+				'text-muted hover:text-foreground hover:bg-foreground/5'
+			}`}
 		>
 			{label}
 			{badge && badge > 0 ? (
@@ -317,9 +317,9 @@ function MenuItem({ icon, label, onClick, danger }: {
 			type="button"
 			onClick={onClick}
 			className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm transition-colors rounded-lg mx-1 ${danger ?
-					'text-rose-400 hover:bg-rose-500/10' :
-					'text-muted hover:text-foreground hover:bg-foreground/10'
-				}`}
+				'text-rose-400 hover:bg-rose-500/10' :
+				'text-muted hover:text-foreground hover:bg-foreground/10'
+			}`}
 			style={{ width: 'calc(100% - 8px)' }}
 		>
 			{icon}

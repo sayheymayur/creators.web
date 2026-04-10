@@ -14,8 +14,7 @@ import { useCall } from '../../context/CallContext';
 import { useSession } from '../../context/SessionContext';
 import { useWallet } from '../../context/WalletContext';
 import { SessionPickerModal, type SessionPayMode } from '../../components/modals/SessionPickerModal';
-import type { SessionType } from '../../types';
-import type { Creator } from '../../types';
+import type { Creator, SessionType } from '../../types';
 import { creatorsApi } from '../../services/creatorsApi';
 
 export function CreatorProfile() {

@@ -4,10 +4,10 @@ import { clearSessionToken, getSessionToken, setSessionToken } from './sessionTo
 export type PreferredRole = 'fan' | 'creator';
 export type UploadKind = 'post_image' | 'post_video' | 'avatar' | 'banner' | 'kyc_doc';
 export type CreatorProfileResponse = User & {
-	role: 'creator';
-	bio?: string;
-	banner?: string;
-	category?: string;
+	role: 'creator',
+	bio?: string,
+	banner?: string,
+	category?: string,
 };
 
 export interface RegisterRequest {

@@ -15,6 +15,7 @@ import { Login } from './pages/auth/Login';
 import { Register } from './pages/auth/Register';
 import { AgeVerification } from './pages/auth/AgeVerification';
 import { OTPVerification } from './pages/auth/OTPVerification';
+import { PartnerApply } from './pages/partner/PartnerApply';
 
 import { Feed } from './pages/fan/Feed';
 import { Explore } from './pages/fan/Explore';
@@ -99,6 +100,7 @@ function AppRoutes() {
 	return (
 		<Routes>
 			<Route path="/" element={<Landing />} />
+			<Route path="/partner/apply" element={<PartnerApply />} />
 			<Route
 				path="/login" element={state.isAuthenticated ? (
 					<Navigate to={state.user?.role === 'admin' ? '/admin' : state.user?.role === 'creator' ? '/creator-dashboard' : '/feed'} replace />

@@ -51,50 +51,42 @@ export function ProfileEditor() {
 
 	const CATEGORIES = ['Fitness', 'Art', 'Tech', 'Travel', 'Music', 'Food', 'Gaming', 'Lifestyle'];
 
-	async function handleSave() {
+	function handleSave() {
 		if (isSaving) return;
 		setIsSaving(true);
-		try {
-			let avatarAssetId: string | undefined;
-			let bannerAssetId: string | undefined;
+		const avatarPromise = avatarFile ? uploadMediaAsset('avatar', avatarFile).then(r => r.assetId) : Promise.resolve(undefined);
+		const bannerPromise = bannerFile ? uploadMediaAsset('banner', bannerFile).then(r => r.assetId) : Promise.resolve(undefined);
 
-			if (avatarFile) {
-				const uploaded = await uploadMediaAsset('avatar', avatarFile);
-				avatarAssetId = uploaded.assetId;
-			}
-
-			if (bannerFile) {
-				const uploaded = await uploadMediaAsset('banner', bannerFile);
-				bannerAssetId = uploaded.assetId;
-			}
-
-			const { user } = await creatorsApi.me.updateProfile({
-				name: name.trim() || undefined,
-				username: username.trim() || undefined,
-				bio: bio.trim() || undefined,
-				category: category?.trim() || undefined,
-				avatarAssetId,
-				bannerAssetId,
-			});
-
-			updateUser(user);
-			showToast('Profile updated!');
-			setAvatarFile(null);
-			setBannerFile(null);
-		} catch (err) {
-			if (err instanceof ApiError) {
-				const body = err.body;
-				const msg =
-					typeof body === 'object' && body && 'message' in body && typeof (body as { message?: unknown }).message === 'string'
-						? (body as { message: string }).message
-						: `Save failed (HTTP ${err.status}).`;
-				showToast(msg, 'error');
-			} else {
+		void Promise.all([avatarPromise, bannerPromise])
+			.then(([avatarAssetId, bannerAssetId]) =>
+				creatorsApi.me.updateProfile({
+					name: name.trim() || undefined,
+					username: username.trim() || undefined,
+					bio: bio.trim() || undefined,
+					category: category?.trim() || undefined,
+					avatarAssetId,
+					bannerAssetId,
+				})
+			)
+			.then(({ user }) => {
+				updateUser(user);
+				showToast('Profile updated!');
+				setAvatarFile(null);
+				setBannerFile(null);
+			})
+			.catch(err => {
+				if (err instanceof ApiError) {
+					const body = err.body;
+					const msg =
+						typeof body === 'object' && body && 'message' in body && typeof (body as { message?: unknown }).message === 'string' ?
+							(body as { message: string }).message :
+							`Save failed (HTTP ${err.status}).`;
+					showToast(msg, 'error');
+					return;
+				}
 				showToast(err instanceof Error ? err.message : 'Save failed.', 'error');
-			}
-		} finally {
-			setIsSaving(false);
-		}
+			})
+			.finally(() => setIsSaving(false));
 	}
 
 	return (

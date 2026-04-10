@@ -8,6 +8,10 @@ export function Landing() {
 	const navigate = useNavigate();
 	const featuredRef = useDragScroll();
 	const { mode, toggle } = useTheme();
+	const partnerCtaClass =
+		mode === 'dark' ?
+			'bg-foreground text-background hover:bg-foreground/90' :
+			'bg-rose-500 hover:bg-rose-600 text-white';
 
 	function scrollFeatured(direction: 'left' | 'right') {
 		const container = featuredRef.current;
@@ -36,6 +40,13 @@ export function Landing() {
 							className="p-2 rounded-xl hover:bg-foreground/10 transition-colors"
 						>
 							{mode === 'dark' ? <Sun className="w-5 h-5 text-muted" /> : <Moon className="w-5 h-5 text-muted" />}
+						</button>
+						<button
+							type="button"
+							onClick={() => { void navigate('/partner/apply'); }}
+							className={`${partnerCtaClass} text-sm font-semibold px-4 py-1.5 rounded-xl transition-all active:scale-95`}
+						>
+							Become a Partner
 						</button>
 						<button
 							onClick={() => { void navigate('/login'); }}

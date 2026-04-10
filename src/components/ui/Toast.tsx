@@ -35,10 +35,10 @@ function ToastItem({ id, message, type }: { id: string, message: string, type: '
 
 	return (
 		<div
-			className={`pointer-events-auto flex items-center gap-3 bg-[#1e1e1e] border ${borders[type]} rounded-lg px-4 py-3 shadow-2xl min-w-[280px] max-w-[400px] animate-slide-in`}
+			className={`pointer-events-auto flex items-center gap-3 bg-surface2 border ${borders[type]} rounded-lg px-4 py-3 shadow-2xl min-w-[280px] max-w-[400px] animate-slide-in`}
 		>
 			{icons[type]}
-			<span className="text-sm text-white/90 flex-1">{message}</span>
+			<span className="text-sm text-foreground/90 flex-1">{message}</span>
 		</div>
 	);
 }
@@ -64,12 +64,12 @@ export function Modal({
 				className="absolute inset-0 bg-black/70 backdrop-blur-sm"
 				onClick={onClose}
 			/>
-			<div className={`relative w-full ${maxWidth} bg-[#161616] border border-white/10 rounded-t-2xl sm:rounded-2xl shadow-2xl z-10 max-h-[90vh] overflow-y-auto`}>
+			<div className={`relative w-full ${maxWidth} bg-surface border border-border/20 rounded-t-2xl sm:rounded-2xl shadow-2xl z-10 max-h-[90vh] overflow-y-auto`}>
 				{title && (
-					<div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
-						<h2 className="text-lg font-semibold text-white">{title}</h2>
-						<button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors">
-							<X className="w-5 h-5 text-white/60" />
+					<div className="flex items-center justify-between px-5 py-4 border-b border-border/20">
+						<h2 className="text-lg font-semibold text-foreground">{title}</h2>
+						<button onClick={onClose} className="p-1.5 rounded-lg hover:bg-foreground/10 transition-colors">
+							<X className="w-5 h-5 text-muted" />
 						</button>
 					</div>
 				)}

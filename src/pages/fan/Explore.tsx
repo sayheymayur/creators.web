@@ -44,12 +44,12 @@ export function Explore() {
 			<div className="max-w-6xl mx-auto px-4 py-6">
 				<div className="mb-6">
 					<div className="relative mb-4">
-						<Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+						<Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
 						<input
 							value={search}
 							onChange={e => setSearch(e.target.value)}
 							placeholder="Search creators by name, category..."
-							className="w-full bg-white/5 border border-white/10 rounded-2xl pl-11 pr-4 py-3 text-sm text-white placeholder-white/25 focus:outline-none focus:border-rose-500/30 transition-colors"
+							className="w-full bg-input border border-border/20 rounded-2xl pl-11 pr-4 py-3 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40 transition-colors"
 						/>
 					</div>
 
@@ -74,23 +74,23 @@ export function Explore() {
 								<div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
 								<span className="text-white text-[10px] font-bold">LIVE</span>
 							</div> */}
-							<h2 className="font-semibold text-white text-sm">Live Now</h2>
+							<h2 className="font-semibold text-foreground text-sm">Live Now</h2>
 						</div>
 						<div ref={liveRef} className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4 mb-8">
 							{liveStreams.map(stream => (
 								<button
 									key={stream.id}
 									onClick={() => { void navigate(`/live/${stream.id}`); }}
-									className="relative bg-[#161616] border border-white/5 rounded-2xl overflow-hidden hover:border-white/10 transition-all group flex-shrink-0 w-64 sm:w-72"
+									className="relative bg-surface border border-border/20 rounded-2xl overflow-hidden hover:border-border/30 transition-all group flex-shrink-0 w-64 sm:w-72"
 								>
 									<div className="relative h-28">
 										<img src={stream.creatorAvatar} alt={stream.creatorName} className="w-full h-full object-cover scale-105 blur-sm brightness-50" />
-										<div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/60" />
+										<div className="absolute inset-0 bg-gradient-to-b from-transparent to-overlay/60" />
 										<div className="absolute top-2 left-2 flex items-center gap-1.5 bg-rose-500 rounded-lg px-2 py-0.5">
 											<div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
 											<span className="text-white text-[10px] font-bold">LIVE</span>
 										</div>
-										<div className="absolute top-2 right-2 flex items-center gap-1 bg-black/50 rounded-lg px-2 py-0.5">
+										<div className="absolute top-2 right-2 flex items-center gap-1 bg-overlay/50 rounded-lg px-2 py-0.5">
 											<Eye className="w-3 h-3 text-white/70" />
 											<span className="text-white text-[10px] font-semibold">{stream.viewerCount.toLocaleString()}</span>
 										</div>
@@ -108,7 +108,7 @@ export function Explore() {
 					<div className="mb-8">
 						<div className="flex items-center gap-2 mb-4">
 							<TrendingUp className="w-4 h-4 text-rose-400" />
-							<h2 className="font-semibold text-white text-sm">Trending Now</h2>
+							<h2 className="font-semibold text-foreground text-sm">Trending Now</h2>
 						</div>
 						<div ref={trendingRef} className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4">
 							{trendingCreators.map((creator, idx) => (
@@ -127,16 +127,16 @@ export function Explore() {
 				)}
 
 				<div className="flex items-center justify-between mb-4">
-					<div className="flex items-center gap-1.5 text-white/50 text-sm">
+					<div className="flex items-center gap-1.5 text-muted text-sm">
 						<Users className="w-4 h-4" />
 						<span>{filtered.length} creator{filtered.length !== 1 ? 's' : ''}</span>
 					</div>
 					<div className="flex items-center gap-2">
-						<SlidersHorizontal className="w-4 h-4 text-white/30" />
+						<SlidersHorizontal className="w-4 h-4 text-muted" />
 						<select
 							value={sortBy}
 							onChange={e => setSortBy(e.target.value as typeof sortBy)}
-							className="bg-white/5 border border-white/10 rounded-xl px-2 py-1.5 text-xs text-white/70 focus:outline-none [color-scheme:dark]"
+							className="bg-input border border-border/20 rounded-xl px-2 py-1.5 text-xs text-foreground/80 focus:outline-none"
 						>
 							<option value="popular">Most Popular</option>
 							<option value="new">Newest</option>
@@ -147,8 +147,8 @@ export function Explore() {
 
 				{filtered.length === 0 ? (
 					<div className="text-center py-16">
-						<Search className="w-10 h-10 text-white/10 mx-auto mb-3" />
-						<p className="text-white/30">No creators found</p>
+						<Search className="w-10 h-10 text-muted/50 mx-auto mb-3" />
+						<p className="text-muted">No creators found</p>
 					</div>
 				) : (
 					<div ref={allRef} className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4">

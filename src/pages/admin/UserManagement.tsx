@@ -35,39 +35,39 @@ export function UserManagement() {
 	const roleColors = {
 		fan: 'bg-blue-500/20 text-blue-400',
 		creator: 'bg-rose-500/20 text-rose-400',
-		admin: 'bg-white/10 text-white/60',
+		admin: 'bg-foreground/10 text-muted',
 	};
 
 	return (
-		<div className="min-h-screen bg-[#0d0d0d]">
+		<div className="min-h-screen bg-background text-foreground">
 			<Navbar />
 			<ToastContainer />
 			<div className="max-w-6xl mx-auto px-4 pt-20 pb-8">
 				<div className="flex items-center justify-between mb-6">
 					<div className="flex items-center gap-3">
 						<Users className="w-5 h-5 text-rose-400" />
-						<h1 className="text-xl font-bold text-white">User Management</h1>
+						<h1 className="text-xl font-bold text-foreground">User Management</h1>
 					</div>
-					<p className="text-white/40 text-sm">{filtered.length} users</p>
+					<p className="text-muted text-sm">{filtered.length} users</p>
 				</div>
 
 				<div className="flex flex-col sm:flex-row gap-3 mb-4">
 					<div className="relative flex-1">
-						<Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+						<Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
 						<input
 							value={search}
 							onChange={e => setSearch(e.target.value)}
 							placeholder="Search users by name or email..."
-							className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-white/25 focus:outline-none focus:border-rose-500/30"
+							className="w-full bg-input border border-border/20 rounded-xl pl-10 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
 						/>
 					</div>
-					<div className="flex gap-1 bg-white/5 p-0.5 rounded-xl">
+					<div className="flex gap-1 bg-foreground/5 p-0.5 rounded-xl">
 						{(['all', 'fan', 'creator', 'admin'] as const).map(r => (
 							<button
 								key={r}
 								onClick={() => setRoleFilter(r)}
 								className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all capitalize ${
-									roleFilter === r ? 'bg-white/10 text-white' : 'text-white/40'
+									roleFilter === r ? 'bg-foreground/10 text-foreground' : 'text-muted'
 								}`}
 							>
 								{r}
@@ -76,22 +76,22 @@ export function UserManagement() {
 					</div>
 				</div>
 
-				<div className="bg-[#161616] border border-white/5 rounded-2xl overflow-hidden">
-					<div className="grid grid-cols-12 gap-3 px-4 py-2 border-b border-white/5">
-						<p className="text-xs text-white/30 col-span-4">User</p>
-						<p className="text-xs text-white/30 col-span-2 hidden sm:block">Role</p>
-						<p className="text-xs text-white/30 col-span-2 hidden sm:block">Joined</p>
-						<p className="text-xs text-white/30 col-span-2 hidden sm:block">Status</p>
-						<p className="text-xs text-white/30 col-span-2">Actions</p>
+				<div className="bg-surface border border-border/20 rounded-2xl overflow-hidden">
+					<div className="grid grid-cols-12 gap-3 px-4 py-2 border-b border-border/10">
+						<p className="text-xs text-muted col-span-4">User</p>
+						<p className="text-xs text-muted col-span-2 hidden sm:block">Role</p>
+						<p className="text-xs text-muted col-span-2 hidden sm:block">Joined</p>
+						<p className="text-xs text-muted col-span-2 hidden sm:block">Status</p>
+						<p className="text-xs text-muted col-span-2">Actions</p>
 					</div>
 
 					{filtered.map(user => (
-						<div key={user.id} className="grid grid-cols-12 gap-3 px-4 py-3 border-b border-white/5 last:border-0 items-center">
+						<div key={user.id} className="grid grid-cols-12 gap-3 px-4 py-3 border-b border-border/10 last:border-0 items-center">
 							<div className="col-span-4 flex items-center gap-2 min-w-0">
 								<img src={user.avatar} alt={user.name} className="w-8 h-8 rounded-full object-cover shrink-0" />
 								<div className="min-w-0">
-									<p className="text-sm font-medium text-white truncate">{user.name}</p>
-									<p className="text-xs text-white/30 truncate">{user.email}</p>
+									<p className="text-sm font-medium text-foreground truncate">{user.name}</p>
+									<p className="text-xs text-muted/80 truncate">{user.email}</p>
 								</div>
 							</div>
 							<div className="col-span-2 hidden sm:block">
@@ -100,7 +100,7 @@ export function UserManagement() {
 								</span>
 							</div>
 							<div className="col-span-2 hidden sm:block">
-								<p className="text-xs text-white/40">{formatDate(user.createdAt)}</p>
+								<p className="text-xs text-muted">{formatDate(user.createdAt)}</p>
 							</div>
 							<div className="col-span-2 hidden sm:block">
 								<span className={`text-[10px] px-2 py-0.5 rounded-full font-medium capitalize ${statusColors[user.status]}`}>
@@ -138,7 +138,7 @@ export function UserManagement() {
 										) : (
 											<button
 												onClick={() => handleStatusChange(user.id, 'active')}
-												className="p-1.5 bg-white/5 hover:bg-white/10 text-white/40 rounded-lg transition-colors"
+												className="p-1.5 bg-foreground/5 hover:bg-foreground/10 text-muted rounded-lg transition-colors"
 												title="Unban"
 											>
 												<CheckCircle className="w-3.5 h-3.5" />

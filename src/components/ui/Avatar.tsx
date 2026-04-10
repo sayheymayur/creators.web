@@ -34,7 +34,7 @@ export function Avatar({ src, alt, size = 'md', isOnline, className = '' }: Avat
 			/>
 			{isOnline !== undefined && (
 				<span
-					className={`absolute bottom-0 right-0 ${dotSizes[size]} rounded-full border-2 border-[#0d0d0d] ${
+					className={`absolute bottom-0 right-0 ${dotSizes[size]} rounded-full border-2 border-background ${
 						isOnline ? 'bg-emerald-500' : 'bg-gray-500'
 					}`}
 				/>

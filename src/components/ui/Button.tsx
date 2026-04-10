@@ -26,10 +26,10 @@ export function Button({
 
 	const variants = {
 		primary: 'bg-rose-500 hover:bg-rose-600 active:scale-95 text-white shadow-lg shadow-rose-500/20 disabled:opacity-50',
-		secondary: 'bg-white/10 hover:bg-white/20 active:scale-95 text-white',
-		ghost: 'hover:bg-white/10 active:scale-95 text-white/70 hover:text-white',
+		secondary: 'bg-foreground/10 hover:bg-foreground/20 active:scale-95 text-foreground',
+		ghost: 'hover:bg-foreground/10 active:scale-95 text-muted hover:text-foreground',
 		danger: 'bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30',
-		outline: 'border border-white/20 hover:border-white/40 hover:bg-white/5 active:scale-95 text-white',
+		outline: 'border border-border/30 hover:border-border/60 hover:bg-foreground/5 active:scale-95 text-foreground',
 	};
 
 	const sizes = {

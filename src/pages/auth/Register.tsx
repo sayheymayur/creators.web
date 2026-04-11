@@ -202,7 +202,7 @@ export function Register() {
 							disabled={isLoading}
 							className="w-full flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl py-3 text-sm font-medium text-white/70 hover:text-white transition-all disabled:opacity-60 disabled:cursor-not-allowed"
 						>
-							<Chrome className="w-4 h-4" />
+							<FcGoogle className="w-4 h-4" />
 							Continue with Google
 						</button>
 						<button type="button" onClick={() => setStep(1)} className="w-full text-center text-sm text-white/30 hover:text-white/50 transition-colors">

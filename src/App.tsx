@@ -8,6 +8,7 @@ import { NotificationProvider } from './context/NotificationContext';
 import { CallProvider } from './context/CallContext';
 import { SessionProvider } from './context/SessionContext';
 import { LiveStreamProvider } from './context/LiveStreamContext';
+import { WsProvider } from './context/WsContext';
 
 import { Landing } from './pages/Landing';
 import { Login } from './pages/auth/Login';
@@ -145,21 +146,23 @@ function Providers({ children }: { children: React.ReactNode }) {
 	return (
 		<BrowserRouter>
 			<AuthProvider>
-				<NotificationProvider>
-					<ContentProvider>
-						<ChatProvider>
-							<WalletProvider>
-								<CallProvider>
-									<SessionProvider>
-										<LiveStreamProvider>
-											{children}
-										</LiveStreamProvider>
-									</SessionProvider>
-								</CallProvider>
-							</WalletProvider>
-						</ChatProvider>
-					</ContentProvider>
-				</NotificationProvider>
+				<WsProvider>
+					<NotificationProvider>
+						<ContentProvider>
+							<ChatProvider>
+								<WalletProvider>
+									<CallProvider>
+										<SessionProvider>
+											<LiveStreamProvider>
+												{children}
+											</LiveStreamProvider>
+										</SessionProvider>
+									</CallProvider>
+								</WalletProvider>
+							</ChatProvider>
+						</ContentProvider>
+					</NotificationProvider>
+				</WsProvider>
 			</AuthProvider>
 		</BrowserRouter>
 	);

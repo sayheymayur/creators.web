@@ -102,3 +102,6 @@ export const SlidersHorizontal = Fi.FiSliders;
 export const Upload = Fi.FiUpload;
 
 export const Loader2 = Fi.FiLoader;
+
+export const Sun = (Fi as any).FiSun ?? Fi.FiZap;
+export const Moon = (Fi as any).FiMoon ?? Fi.FiZap;

@@ -195,7 +195,7 @@ export function ActiveCallScreen() {
 
 	return (
 		<div
-			className="fixed inset-0 z-[300] bg-[#0a0a0a] flex flex-col"
+			className="fixed inset-0 z-[300] bg-overlay flex flex-col"
 			onTouchStart={resetControlsTimer}
 			onClick={resetControlsTimer}
 		>
@@ -214,14 +214,14 @@ export function ActiveCallScreen() {
 				</div>
 			) : (
 				<div className="absolute inset-0 flex items-center justify-center">
-					<div className="absolute inset-0 bg-gradient-to-b from-[#1a1a1a] to-[#0a0a0a]" />
+					<div className="absolute inset-0 bg-gradient-to-b from-surface2 to-overlay" />
 					<div className="relative flex flex-col items-center gap-5">
 						<div className="relative">
 							<div className="absolute inset-0 rounded-full bg-rose-500/10 animate-ping scale-150" />
 							<img
 								src={participantAvatar}
 								alt={participantName}
-								className="relative w-28 h-28 rounded-full object-cover border-4 border-white/10"
+								className="relative w-28 h-28 rounded-full object-cover border-4 border-border/20"
 							/>
 						</div>
 					</div>
@@ -269,8 +269,8 @@ export function ActiveCallScreen() {
 
 				{isVideo && !isCameraOff && (
 					<div className="absolute top-16 right-4 z-20">
-						<div className="w-24 h-32 sm:w-28 sm:h-36 rounded-2xl overflow-hidden border-2 border-white/20 shadow-xl bg-[#1a1a1a]">
-							<div ref={localVideoRef} className="w-full h-full bg-gradient-to-br from-rose-900/40 to-[#1a1a1a]" />
+						<div className="w-24 h-32 sm:w-28 sm:h-36 rounded-2xl overflow-hidden border-2 border-white/20 shadow-xl bg-surface2">
+							<div ref={localVideoRef} className="w-full h-full bg-gradient-to-br from-rose-900/40 to-surface2" />
 						</div>
 					</div>
 				)}

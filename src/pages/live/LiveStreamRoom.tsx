@@ -164,7 +164,7 @@ export function LiveStreamRoom() {
 	}
 
 	return (
-		<div className="fixed inset-0 z-[150] bg-[#0a0a0a] flex flex-col">
+		<div className="fixed inset-0 z-[150] bg-overlay flex flex-col">
 			<div className="relative flex-1 overflow-hidden">
 				<div ref={remoteVideoRef} className={`absolute inset-0 z-0 ${hasRemoteVideo ? 'opacity-100' : 'opacity-0'}`} />
 				<img
@@ -277,10 +277,10 @@ export function LiveStreamRoom() {
 			</div>
 
 			{showGifts && (
-				<div className="bg-[#141414] border-t border-white/10 p-4 animate-slide-up">
+				<div className="bg-surface border-t border-border/20 p-4 animate-slide-up">
 					<div className="flex items-center justify-between mb-4">
-						<p className="text-sm font-bold text-white">Send a Gift</p>
-						<button onClick={() => setShowGifts(false)} className="text-white/40 text-xs hover:text-white/70">Close</button>
+						<p className="text-sm font-bold text-foreground">Send a Gift</p>
+						<button onClick={() => setShowGifts(false)} className="text-muted text-xs hover:text-foreground">Close</button>
 					</div>
 					<div className="grid grid-cols-3 gap-2">
 						{VIRTUAL_GIFTS.map(gift => (
@@ -288,10 +288,10 @@ export function LiveStreamRoom() {
 								key={gift.id}
 								onClick={() => handleGift(gift)}
 								disabled={giftLoading}
-								className="flex flex-col items-center gap-1.5 bg-white/5 hover:bg-white/10 border border-white/8 rounded-2xl p-3 transition-all active:scale-95 disabled:opacity-50"
+								className="flex flex-col items-center gap-1.5 bg-foreground/5 hover:bg-foreground/10 border border-border/20 rounded-2xl p-3 transition-all active:scale-95 disabled:opacity-50"
 							>
 								<span className="text-2xl">{gift.emoji}</span>
-								<span className="text-xs text-white font-medium">{gift.name}</span>
+								<span className="text-xs text-foreground font-medium">{gift.name}</span>
 								<span className="text-[10px] text-amber-400 font-semibold">{formatINR(usdToInr(gift.value))}</span>
 							</button>
 						))}

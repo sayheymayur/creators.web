@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer, useCallback, useEffect, useRef } from 'react';
-import { signInWithPopup, signOut, signOut as firebaseSignOut, type User as FirebaseUser } from 'firebase/auth';
+import { signInWithPopup, signOut, signOut as firebaseSignOut } from 'firebase/auth';
 import type { User, Creator } from '../types';
 import { mockCreators, mockFanUser, mockAdminUser, DEMO_ACCOUNTS } from '../data/users';
 import { delayMs } from '../utils/delay';

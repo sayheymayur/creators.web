@@ -64,20 +64,20 @@ export function CallHistory() {
 	return (
 		<Layout>
 			<div className="max-w-2xl mx-auto px-4 py-6">
-				<h1 className="text-xl font-bold text-white mb-6">Call History</h1>
+				<h1 className="text-xl font-bold text-foreground mb-6">Call History</h1>
 
 				{state.callHistory.length === 0 ? (
 					<div className="flex flex-col items-center justify-center py-20 text-center">
-						<div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center mb-4">
-							<Phone className="w-8 h-8 text-white/20" />
+						<div className="w-16 h-16 bg-foreground/5 rounded-2xl flex items-center justify-center mb-4">
+							<Phone className="w-8 h-8 text-muted/60" />
 						</div>
-						<p className="text-white/40 text-sm">No calls yet</p>
+						<p className="text-muted text-sm">No calls yet</p>
 					</div>
 				) : (
 					<div className="space-y-6">
 						{grouped.map(group => (
 							<div key={group.label}>
-								<p className="text-xs font-semibold text-white/30 uppercase tracking-widest mb-3">{group.label}</p>
+								<p className="text-xs font-semibold text-muted uppercase tracking-widest mb-3">{group.label}</p>
 								<div className="space-y-1">
 									{group.items.map(record => (
 										<CallRow
@@ -116,10 +116,10 @@ function CallRow({
 		record.direction === 'incoming' ? PhoneIncoming : PhoneOutgoing;
 
 	return (
-		<div className="flex items-center gap-3 bg-white/3 hover:bg-white/5 rounded-2xl p-3 transition-colors group">
+		<div className="flex items-center gap-3 bg-foreground/5 hover:bg-foreground/10 rounded-2xl p-3 transition-colors group">
 			<div className="relative shrink-0">
 				<img src={avatar} alt={record.participantName} className="w-11 h-11 rounded-xl object-cover" />
-				<div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-[#0d0d0d] flex items-center justify-center ${
+				<div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-background flex items-center justify-center ${
 					isMissed ? 'bg-rose-500/90' : record.direction === 'incoming' ? 'bg-emerald-500/90' : 'bg-sky-500/90'
 				}`}
 				>
@@ -128,26 +128,26 @@ function CallRow({
 			</div>
 
 			<div className="flex-1 min-w-0">
-				<p className={`text-sm font-semibold truncate ${isMissed ? 'text-rose-400' : 'text-white'}`}>
+				<p className={`text-sm font-semibold truncate ${isMissed ? 'text-rose-500' : 'text-foreground'}`}>
 					{record.participantName}
 				</p>
 				<div className="flex items-center gap-1.5 mt-0.5">
 					{record.type === 'video' ? (
-						<Video className="w-3 h-3 text-white/30" />
+						<Video className="w-3 h-3 text-muted/80" />
 					) : (
-						<Phone className="w-3 h-3 text-white/30" />
+						<Phone className="w-3 h-3 text-muted/80" />
 					)}
-					<span className="text-xs text-white/30">
+					<span className="text-xs text-muted/80">
 						{isMissed ? (record.status === 'declined' ? 'Declined' : 'Missed') : formatDuration(record.durationSeconds ?? 0)}
 					</span>
-					<span className="text-white/20 text-xs">·</span>
-					<span className="text-xs text-white/30">{formatTime(record.startedAt)}</span>
+					<span className="text-muted/60 text-xs">·</span>
+					<span className="text-xs text-muted/80">{formatTime(record.startedAt)}</span>
 				</div>
 			</div>
 
 			<button
 				onClick={onCallback}
-				className="w-9 h-9 rounded-xl bg-white/5 hover:bg-rose-500/20 hover:text-rose-400 flex items-center justify-center text-white/40 transition-all opacity-0 group-hover:opacity-100"
+				className="w-9 h-9 rounded-xl bg-foreground/5 hover:bg-rose-500/20 hover:text-rose-500 flex items-center justify-center text-muted transition-all opacity-0 group-hover:opacity-100"
 			>
 				<PhoneCall className="w-4 h-4" />
 			</button>

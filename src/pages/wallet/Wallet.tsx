@@ -35,16 +35,16 @@ function TransactionItem({ tx }: { tx: Transaction }) {
 	};
 
 	return (
-		<div className="flex items-center gap-3 py-3 border-b border-white/5 last:border-0">
-			<div className={`w-9 h-9 rounded-xl flex items-center justify-center bg-white/5 ${typeColors[tx.type]}`}>
+		<div className="flex items-center gap-3 py-3 border-b border-border/10 last:border-0">
+			<div className={`w-9 h-9 rounded-xl flex items-center justify-center bg-foreground/5 ${typeColors[tx.type]}`}>
 				{typeIcons[tx.type]}
 			</div>
 			<div className="flex-1 min-w-0">
-				<p className="text-sm font-medium text-white truncate">{tx.description}</p>
-				<p className="text-xs text-white/30">{formatDate(tx.createdAt)}</p>
+				<p className="text-sm font-medium text-foreground truncate">{tx.description}</p>
+				<p className="text-xs text-muted/80">{formatDate(tx.createdAt)}</p>
 			</div>
 			<div className="text-right shrink-0">
-				<p className={`text-sm font-semibold ${isPositive ? 'text-emerald-400' : 'text-white/70'}`}>
+				<p className={`text-sm font-semibold ${isPositive ? 'text-emerald-400' : 'text-foreground/80'}`}>
 					{isPositive ? '+' : ''}{formatCurrency(tx.amount)}
 				</p>
 				<p className={`text-[10px] capitalize ${tx.status === 'completed' ? 'text-emerald-400/60' : 'text-amber-400/60'}`}>
@@ -104,21 +104,21 @@ export function Wallet() {
 				<div className="bg-gradient-to-br from-rose-500/20 via-rose-900/10 to-transparent border border-rose-500/20 rounded-3xl p-6 mb-6">
 					<div className="flex items-start justify-between mb-4">
 						<div>
-							<p className="text-xs text-white/40 font-medium uppercase tracking-wider mb-1">Available Balance</p>
-							<p className="text-4xl font-black text-white">${(user?.walletBalance ?? 0).toFixed(2)}</p>
+							<p className="text-xs text-muted font-medium uppercase tracking-wider mb-1">Available Balance</p>
+							<p className="text-4xl font-black text-foreground">${(user?.walletBalance ?? 0).toFixed(2)}</p>
 						</div>
 						<div className="w-12 h-12 bg-rose-500/20 rounded-2xl flex items-center justify-center">
 							<WalletIcon className="w-6 h-6 text-rose-400" />
 						</div>
 					</div>
 					<div className="grid grid-cols-2 gap-3 mb-4">
-						<div className="bg-white/5 rounded-xl p-3">
-							<p className="text-xs text-white/40 mb-0.5">Total Deposited</p>
+						<div className="bg-foreground/5 rounded-xl p-3">
+							<p className="text-xs text-muted mb-0.5">Total Deposited</p>
 							<p className="text-base font-bold text-emerald-400">${totalDeposited.toFixed(2)}</p>
 						</div>
-						<div className="bg-white/5 rounded-xl p-3">
-							<p className="text-xs text-white/40 mb-0.5">Total Spent</p>
-							<p className="text-base font-bold text-white/70">${totalSpent.toFixed(2)}</p>
+						<div className="bg-foreground/5 rounded-xl p-3">
+							<p className="text-xs text-muted mb-0.5">Total Spent</p>
+							<p className="text-base font-bold text-foreground/80">${totalSpent.toFixed(2)}</p>
 						</div>
 					</div>
 					<Button
@@ -131,13 +131,13 @@ export function Wallet() {
 					</Button>
 				</div>
 
-				<div className="flex gap-1 bg-white/5 p-0.5 rounded-xl mb-4">
+				<div className="flex gap-1 bg-foreground/5 p-0.5 rounded-xl mb-4">
 					{(['transactions', 'subscriptions'] as const).map(tab => (
 						<button
 							key={tab}
 							onClick={() => setActiveTab(tab)}
 							className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all capitalize ${
-								activeTab === tab ? 'bg-white/10 text-white' : 'text-white/40'
+								activeTab === tab ? 'bg-foreground/10 text-foreground' : 'text-muted'
 							}`}
 						>
 							{tab}
@@ -146,9 +146,9 @@ export function Wallet() {
 				</div>
 
 				{activeTab === 'transactions' && (
-					<div className="bg-[#161616] border border-white/5 rounded-2xl px-4">
+					<div className="bg-surface border border-border/20 rounded-2xl px-4">
 						{transactions.length === 0 ? (
-							<p className="text-center text-white/30 py-8 text-sm">No transactions yet</p>
+							<p className="text-center text-muted py-8 text-sm">No transactions yet</p>
 						) : (
 							transactions.map(tx => <TransactionItem key={tx.id} tx={tx} />)
 						)}
@@ -158,18 +158,18 @@ export function Wallet() {
 				{activeTab === 'subscriptions' && (
 					<div className="space-y-3">
 						{activeSubscriptions.length === 0 ? (
-							<div className="bg-[#161616] border border-white/5 rounded-2xl p-8 text-center">
-								<TrendingUp className="w-8 h-8 text-white/10 mx-auto mb-2" />
-								<p className="text-white/30 text-sm">No active subscriptions</p>
+							<div className="bg-surface border border-border/20 rounded-2xl p-8 text-center">
+								<TrendingUp className="w-8 h-8 text-muted/50 mx-auto mb-2" />
+								<p className="text-muted text-sm">No active subscriptions</p>
 							</div>
 						) : (
 							activeSubscriptions.map(sub => (
-								<div key={sub.id} className="bg-[#161616] border border-white/5 rounded-2xl p-4">
+								<div key={sub.id} className="bg-surface border border-border/20 rounded-2xl p-4">
 									<div className="flex items-center gap-3 mb-3">
 										<img src={sub.creatorAvatar} alt={sub.creatorName} className="w-10 h-10 rounded-full object-cover" />
 										<div className="flex-1">
-											<p className="text-sm font-semibold text-white">{sub.creatorName}</p>
-											<p className="text-xs text-white/40">Renews {formatDate(sub.endDate)}</p>
+											<p className="text-sm font-semibold text-foreground">{sub.creatorName}</p>
+											<p className="text-xs text-muted">Renews {formatDate(sub.endDate)}</p>
 										</div>
 										<span className="text-sm font-bold text-rose-400">${sub.price}/mo</span>
 									</div>
@@ -179,7 +179,7 @@ export function Wallet() {
 											className={`flex-1 text-xs py-1.5 rounded-xl font-medium transition-all border ${
 												sub.autoRenew ?
 													'border-emerald-500/30 bg-emerald-500/10 text-emerald-400' :
-													'border-white/10 bg-white/5 text-white/40'
+													'border-border/20 bg-foreground/5 text-muted'
 											}`}
 										>
 											<RefreshCw className="w-3 h-3 inline mr-1" />
@@ -206,16 +206,16 @@ export function Wallet() {
 							<div className="w-14 h-14 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-3">
 								<CheckCircle className="w-7 h-7 text-emerald-400" />
 							</div>
-							<p className="text-white font-semibold">Funds Added!</p>
-							<p className="text-white/40 text-sm mt-1">
+							<p className="text-foreground font-semibold">Funds Added!</p>
+							<p className="text-muted text-sm mt-1">
 								${(customAmount ? parseFloat(customAmount) : addAmount).toFixed(2)} added to your wallet
 							</p>
 						</div>
 					) : (
 						<>
-							<div className="flex items-center gap-2 bg-white/5 rounded-xl p-3 mb-4">
-								<CreditCard className="w-4 h-4 text-white/40" />
-								<span className="text-sm text-white/40">Secure payment via Razorpay</span>
+							<div className="flex items-center gap-2 bg-foreground/5 rounded-xl p-3 mb-4">
+								<CreditCard className="w-4 h-4 text-muted" />
+								<span className="text-sm text-muted">Secure payment via Razorpay</span>
 							</div>
 							{payError && (
 								<div className="bg-rose-500/10 border border-rose-500/20 rounded-xl p-3 mb-3">
@@ -223,14 +223,14 @@ export function Wallet() {
 								</div>
 							)}
 
-							<p className="text-xs text-white/40 font-medium mb-2 uppercase tracking-wide">Select Amount</p>
+							<p className="text-xs text-muted font-medium mb-2 uppercase tracking-wide">Select Amount</p>
 							<div className="grid grid-cols-3 gap-2 mb-3">
 								{ADD_FUND_PRESETS.map(p => (
 									<button
 										key={p}
 										onClick={() => { setAddAmount(p); setCustomAmount(''); }}
 										className={`py-2.5 rounded-xl text-sm font-semibold transition-all ${
-											addAmount === p && !customAmount ? 'bg-rose-500 text-white' : 'bg-white/5 text-white/70 hover:bg-white/10'
+											addAmount === p && !customAmount ? 'bg-rose-500 text-white' : 'bg-foreground/5 text-muted hover:bg-foreground/10'
 										}`}
 									>
 										${p}
@@ -242,7 +242,7 @@ export function Wallet() {
 								value={customAmount}
 								onChange={e => setCustomAmount(e.target.value)}
 								placeholder="Custom amount..."
-								className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/25 focus:outline-none focus:border-rose-500/50 mb-4"
+								className="w-full bg-input border border-border/20 rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40 mb-4"
 							/>
 							<Button variant="primary" fullWidth isLoading={isLoading} onClick={() => { void handleAddFunds(); }}>
 								Add ${(customAmount ? parseFloat(customAmount) || 0 : addAmount).toFixed(2)}

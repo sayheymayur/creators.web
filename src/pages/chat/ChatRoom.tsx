@@ -39,8 +39,8 @@ export function ChatRoom() {
 
 	if (!conv || !convId) {
 		return (
-			<div className="min-h-screen bg-[#0d0d0d] flex items-center justify-center">
-				<p className="text-white/40">Conversation not found</p>
+			<div className="min-h-screen bg-background text-foreground flex items-center justify-center">
+				<p className="text-muted">Conversation not found</p>
 			</div>
 		);
 	}
@@ -111,32 +111,32 @@ export function ChatRoom() {
 	}
 
 	return (
-		<div className="min-h-screen bg-[#0d0d0d] flex flex-col">
+		<div className="min-h-screen bg-background text-foreground flex flex-col">
 			<Navbar />
 			<ToastContainer />
 
-			<div className="fixed top-14 left-0 right-0 z-30 bg-[#0d0d0d]/90 backdrop-blur-xl border-b border-white/5">
+			<div className="fixed top-14 left-0 right-0 z-30 bg-background/90 backdrop-blur-xl border-b border-border/10">
 				<div className="max-w-2xl mx-auto px-4 h-14 flex items-center gap-3">
-					<button type="button" onClick={() => { void navigate('/messages'); }} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors">
-						<ArrowLeft className="w-5 h-5 text-white/60" />
+					<button type="button" onClick={() => { void navigate('/messages'); }} className="p-1.5 rounded-lg hover:bg-foreground/10 transition-colors">
+						<ArrowLeft className="w-5 h-5 text-muted" />
 					</button>
 					<Avatar src={otherAvatar} alt={otherName} size="md" isOnline={conv.isOnline} />
 					<div>
-						<p className="text-sm font-semibold text-white">{otherName}</p>
-						<p className="text-xs text-white/40">{conv.isOnline ? 'Online now' : 'Offline'}</p>
+						<p className="text-sm font-semibold text-foreground">{otherName}</p>
+						<p className="text-xs text-muted">{conv.isOnline ? 'Online now' : 'Offline'}</p>
 					</div>
 					<div className="ml-auto flex items-center gap-2">
 						<button
 							type="button"
 							onClick={() => { startCall(otherId, otherName, otherAvatar, 'audio'); void navigate('/call'); }}
-							className="w-8 h-8 rounded-xl bg-white/8 hover:bg-emerald-500/20 hover:text-emerald-400 text-white/50 flex items-center justify-center transition-all"
+							className="w-8 h-8 rounded-xl bg-foreground/10 hover:bg-emerald-500/20 hover:text-emerald-400 text-muted flex items-center justify-center transition-all"
 						>
 							<Phone className="w-4 h-4" />
 						</button>
 						<button
 							type="button"
 							onClick={() => { startCall(otherId, otherName, otherAvatar, 'video'); void navigate('/call'); }}
-							className="w-8 h-8 rounded-xl bg-white/8 hover:bg-sky-500/20 hover:text-sky-400 text-white/50 flex items-center justify-center transition-all"
+							className="w-8 h-8 rounded-xl bg-foreground/10 hover:bg-sky-500/20 hover:text-sky-400 text-muted flex items-center justify-center transition-all"
 						>
 							<Video className="w-4 h-4" />
 						</button>
@@ -160,12 +160,12 @@ export function ChatRoom() {
 								{!isMe && <Avatar src={msg.senderAvatar} alt={msg.senderName} size="sm" className="mt-auto mb-1" />}
 								<div className={`max-w-[75%] ${isMe ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
 									{!msg.isUnlocked && msg.isPaid ? (
-										<div className={`rounded-2xl overflow-hidden border ${isMe ? 'border-white/10 bg-white/5' : 'border-rose-500/20 bg-rose-500/5'}`}>
+										<div className={`rounded-2xl overflow-hidden border ${isMe ? 'border-border/20 bg-foreground/5' : 'border-rose-500/20 bg-rose-500/5'}`}>
 											<div className="px-4 py-3 flex items-center gap-2">
 												<Lock className="w-4 h-4 text-rose-400 shrink-0" />
 												<div className="flex-1">
-													<p className="text-xs text-white/60">Paid message (${msg.price?.toFixed(2)})</p>
-													<p className="text-[10px] text-white/30">Select to unlock and view this message.</p>
+													<p className="text-xs text-foreground/70">Paid message (${msg.price?.toFixed(2)})</p>
+													<p className="text-[10px] text-muted/80">Select to unlock and view this message.</p>
 												</div>
 												{!isMe && (
 													<button
@@ -182,7 +182,7 @@ export function ChatRoom() {
 										<div className={`px-4 py-2.5 rounded-2xl text-sm ${
 											isMe ?
 												'bg-rose-500 text-white rounded-tr-sm' :
-												'bg-[#1e1e1e] text-white/80 rounded-tl-sm'
+												'bg-surface2 text-foreground/90 rounded-tl-sm'
 										}`}
 										>
 											{msg.isUnlocked && msg.isPaid && (
@@ -194,11 +194,11 @@ export function ChatRoom() {
 										</div>
 									)}
 									<div className={`flex items-center gap-1 ${isMe ? 'flex-row-reverse' : ''}`}>
-										<p className="text-[10px] text-white/20">{formatDistanceToNow(msg.createdAt)}</p>
+										<p className="text-[10px] text-muted/70">{formatDistanceToNow(msg.createdAt)}</p>
 										{isMe && (
 											msg.isSeen ?
 												<CheckCheck className="w-3 h-3 text-rose-400" /> :
-												<Check className="w-3 h-3 text-white/20" />
+												<Check className="w-3 h-3 text-muted/70" />
 										)}
 									</div>
 								</div>
@@ -209,17 +209,17 @@ export function ChatRoom() {
 				</div>
 			</div>
 
-			<div className="fixed bottom-0 left-0 right-0 bg-[#0d0d0d]/95 backdrop-blur-xl border-t border-white/5">
+			<div className="fixed bottom-0 left-0 right-0 bg-background/95 backdrop-blur-xl border-t border-border/10">
 				<div className="max-w-2xl mx-auto px-4 py-3">
 					<form onSubmit={handleSend} className="flex gap-2">
-						<button type="button" className="p-2.5 rounded-xl hover:bg-white/10 transition-colors text-white/40 hover:text-white/70">
+						<button type="button" className="p-2.5 rounded-xl hover:bg-foreground/10 transition-colors text-muted hover:text-foreground">
 							<ImageIcon className="w-5 h-5" />
 						</button>
 						<input
 							value={text}
 							onChange={e => setText(e.target.value)}
 							placeholder="Type a message..."
-							className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-4 py-2.5 text-sm text-white placeholder-white/25 focus:outline-none focus:border-rose-500/30"
+							className="flex-1 bg-input border border-border/20 rounded-2xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
 						/>
 						<button
 							type="submit"

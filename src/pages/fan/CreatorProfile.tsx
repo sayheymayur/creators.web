@@ -14,7 +14,7 @@ import { useCall } from '../../context/CallContext';
 import { useSession } from '../../context/SessionContext';
 import { useWallet } from '../../context/WalletContext';
 import { SessionPickerModal, type SessionPayMode } from '../../components/modals/SessionPickerModal';
-import type { SessionType, Creator } from '../../types';
+import type { Creator, SessionType } from '../../types';
 import { creatorsApi } from '../../services/creatorsApi';
 
 export function CreatorProfile() {
@@ -70,7 +70,7 @@ export function CreatorProfile() {
 		return (
 			<Layout>
 				<div className="flex items-center justify-center min-h-[50vh]">
-					<p className="text-white/40">Creator not found</p>
+					<p className="text-muted">Creator not found</p>
 				</div>
 			</Layout>
 		);
@@ -82,7 +82,7 @@ export function CreatorProfile() {
 		return (
 			<Layout>
 				<div className="flex items-center justify-center min-h-[50vh]">
-					<p className="text-white/40">Creator not found</p>
+					<p className="text-muted">Creator not found</p>
 				</div>
 			</Layout>
 		);
@@ -92,7 +92,7 @@ export function CreatorProfile() {
 		return (
 			<Layout>
 				<div className="flex items-center justify-center min-h-[50vh]">
-					<p className="text-white/40">Loading creator…</p>
+					<p className="text-muted">Loading creator…</p>
 				</div>
 			</Layout>
 		);
@@ -199,7 +199,7 @@ export function CreatorProfile() {
 				<div className="relative z-0">
 					<div className="h-40 sm:h-52">
 						<img src={creatorForDisplay.banner} alt="" className="w-full h-full object-cover" />
-						<div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-[#0d0d0d]" />
+						<div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-background" />
 					</div>
 
 					<div className="absolute top-3 left-3 z-20">
@@ -229,10 +229,10 @@ export function CreatorProfile() {
 							<img
 								src={creatorForDisplay.avatar}
 								alt={creatorForDisplay.name}
-								className="w-20 h-20 rounded-2xl border-4 border-[#0d0d0d] object-cover"
+								className="w-20 h-20 rounded-2xl border-4 border-background object-cover"
 							/>
 							{creatorForDisplay.isOnline && (
-								<div className="absolute bottom-1 right-1 w-3.5 h-3.5 bg-emerald-400 border-2 border-[#0d0d0d] rounded-full" />
+								<div className="absolute bottom-1 right-1 w-3.5 h-3.5 bg-emerald-400 border-2 border-background rounded-full" />
 							)}
 						</div>
 
@@ -242,19 +242,19 @@ export function CreatorProfile() {
 									<>
 										<button
 											onClick={() => { startCall(creatorForDisplay.id, creatorForDisplay.name, creatorForDisplay.avatar, 'audio'); navigate('/call'); }}
-											className="w-9 h-9 bg-white/10 hover:bg-emerald-500/20 hover:text-emerald-400 text-white/70 rounded-xl flex items-center justify-center transition-all"
+											className="w-9 h-9 bg-foreground/10 hover:bg-emerald-500/20 hover:text-emerald-400 text-muted rounded-xl flex items-center justify-center transition-all"
 										>
 											<Phone className="w-4 h-4" />
 										</button>
 										<button
 											onClick={() => { startCall(creatorForDisplay.id, creatorForDisplay.name, creatorForDisplay.avatar, 'video'); navigate('/call'); }}
-											className="w-9 h-9 bg-white/10 hover:bg-sky-500/20 hover:text-sky-400 text-white/70 rounded-xl flex items-center justify-center transition-all"
+											className="w-9 h-9 bg-foreground/10 hover:bg-sky-500/20 hover:text-sky-400 text-muted rounded-xl flex items-center justify-center transition-all"
 										>
 											<Video className="w-4 h-4" />
 										</button>
 										<button
 											onClick={handleMessage}
-											className="flex items-center gap-1.5 bg-white/10 hover:bg-white/15 text-white text-sm font-semibold px-3 py-2 rounded-xl transition-all"
+											className="flex items-center gap-1.5 bg-foreground/10 hover:bg-foreground/15 text-foreground text-sm font-semibold px-3 py-2 rounded-xl transition-all"
 										>
 											<MessageCircle className="w-4 h-4" />
 											Message
@@ -287,7 +287,7 @@ export function CreatorProfile() {
 						{isOwner && (
 							<button
 								onClick={() => { void navigate('/creator-dashboard/profile'); }}
-								className="bg-white/10 hover:bg-white/15 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-all mt-4"
+								className="bg-foreground/10 hover:bg-foreground/15 text-foreground text-sm font-semibold px-4 py-2 rounded-xl transition-all mt-4"
 							>
 								Edit Profile
 							</button>
@@ -303,8 +303,8 @@ export function CreatorProfile() {
 
 					<div className="flex gap-4 mb-4">
 						<div className="text-center">
-							<p className="font-bold text-white">{creator.postCount}</p>
-							<p className="text-xs text-white/40">Posts</p>
+							<p className="font-bold text-foreground">{creator.postCount}</p>
+							<p className="text-xs text-muted">Posts</p>
 						</div>
 						<div className="text-center">
 							<p className="font-bold text-white">{creatorForDisplay.subscriberCount.toLocaleString()}</p>
@@ -336,7 +336,7 @@ export function CreatorProfile() {
 						</div>
 					)}
 
-					<div className="flex gap-1 bg-white/5 p-0.5 rounded-xl mb-4">
+					<div className="flex gap-1 bg-foreground/5 p-0.5 rounded-xl mb-4">
 						{[
 							{ key: 'all', icon: Grid3x3, label: 'All' },
 							{ key: 'free', icon: Image, label: 'Free' },
@@ -346,7 +346,7 @@ export function CreatorProfile() {
 								key={key}
 								onClick={() => setPostFilter(key as typeof postFilter)}
 								className={`flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-lg transition-all ${
-									postFilter === key ? 'bg-white/10 text-white' : 'text-white/40'
+									postFilter === key ? 'bg-foreground/10 text-foreground' : 'text-muted'
 								}`}
 							>
 								<Icon className="w-3.5 h-3.5" />
@@ -359,8 +359,8 @@ export function CreatorProfile() {
 				<div className="px-4 pb-8 space-y-4">
 					{creatorPosts.length === 0 ? (
 						<div className="text-center py-10">
-							<Type className="w-8 h-8 text-white/10 mx-auto mb-2" />
-							<p className="text-white/30 text-sm">No posts found</p>
+							<Type className="w-8 h-8 text-muted/50 mx-auto mb-2" />
+							<p className="text-muted text-sm">No posts found</p>
 						</div>
 					) : (
 						creatorPosts.map(post => (

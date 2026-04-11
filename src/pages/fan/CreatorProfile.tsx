@@ -127,21 +127,21 @@ export function CreatorProfile() {
 		const startAndNavigate = () => {
 			startSession(
 				type,
-				creator.id,
-				creator.name,
-				creator.avatar,
+				creatorForDisplay.id,
+				creatorForDisplay.name,
+				creatorForDisplay.avatar,
 				userId,
 				userName,
 				durationMinutes,
-				creator.perMinuteRate
+				creatorForDisplay.perMinuteRate
 			);
 
 			if (type === 'chat') {
-				void navigate(`/session/chat/${creator.id}`);
+				void navigate(`/session/chat/${creatorForDisplay.id}`);
 				return;
 			}
 
-			startCall(creator.id, creator.name, creator.avatar, type);
+			startCall(creatorForDisplay.id, creatorForDisplay.name, creatorForDisplay.avatar, type);
 			void navigate('/call');
 		};
 
@@ -149,9 +149,9 @@ export function CreatorProfile() {
 			void payViaRazorpay(
 				totalCost,
 				'session',
-				`${type} session with ${creator.name} (${durationMinutes}min)`,
-				creator.id,
-				creator.name
+				`${type} session with ${creatorForDisplay.name} (${durationMinutes}min)`,
+				creatorForDisplay.id,
+				creatorForDisplay.name
 			).then(result => {
 				if (!result.ok) {
 					if (!result.cancelled) showToast(result.error || 'Payment failed.', 'error');
@@ -163,7 +163,7 @@ export function CreatorProfile() {
 			return;
 		}
 
-		const ok = deductFunds(totalCost, 'session', `Session with ${creator.name}`, creator.id, creator.name);
+		const ok = deductFunds(totalCost, 'session', `Session with ${creatorForDisplay.name}`, creatorForDisplay.id, creatorForDisplay.name);
 		if (!ok) {
 			showToast('Insufficient wallet balance.', 'error');
 			return;
@@ -174,20 +174,20 @@ export function CreatorProfile() {
 
 	function handleMessage() {
 		if (!authState.user) { navigate('/login'); return; }
-		const existing = getConversationForUser(creator.id);
+		const existing = getConversationForUser(creatorForDisplay.id);
 		if (existing) {
 			navigate(`/messages/${existing.id}`);
 		} else {
 			const convId = `conv-${Date.now()}`;
 			addConversation({
 				id: convId,
-				participantIds: [authState.user.id, creator.id],
-				participantNames: [authState.user.name, creator.name],
-				participantAvatars: [authState.user.avatar, creator.avatar],
+				participantIds: [authState.user.id, creatorForDisplay.id],
+				participantNames: [authState.user.name, creatorForDisplay.name],
+				participantAvatars: [authState.user.avatar, creatorForDisplay.avatar],
 				lastMessage: '',
 				lastMessageTime: new Date().toISOString(),
 				unreadCount: 0,
-				isOnline: creator.isOnline,
+				isOnline: creatorForDisplay.isOnline,
 			});
 			navigate(`/messages/${convId}`);
 		}
@@ -303,7 +303,7 @@ export function CreatorProfile() {
 
 					<div className="flex gap-4 mb-4">
 						<div className="text-center">
-							<p className="font-bold text-foreground">{creator.postCount}</p>
+							<p className="font-bold text-foreground">{creatorForDisplay.postCount}</p>
 							<p className="text-xs text-muted">Posts</p>
 						</div>
 						<div className="text-center">

@@ -141,7 +141,7 @@ export function Navbar() {
 				<div className="flex items-center gap-2 shrink-0">
 					<button
 						type="button"
-						onClick={() => { toggle(); }}
+						onClick={e => { toggle(e); }}
 						aria-label={mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
 						className="p-2 rounded-xl hover:bg-foreground/10 transition-colors"
 					>

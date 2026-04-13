@@ -27,7 +27,7 @@ export function Login() {
 		});
 	}
 
-	function fillDemo(type: keyof typeof DEMO_ACCOUNTS) {
+	function fillDemo(type: 'fan' | 'creator') {
 		setEmail(DEMO_ACCOUNTS[type].email);
 		setPassword(DEMO_ACCOUNTS[type].password);
 	}
@@ -72,8 +72,8 @@ export function Login() {
 
 					<div className="mb-5">
 						<p className="text-xs text-muted font-medium mb-2 uppercase tracking-wide">Quick Demo Login</p>
-						<div className="grid grid-cols-3 gap-2">
-							{(['fan', 'creator', 'admin'] as const).map(type => (
+						<div className="grid grid-cols-2 gap-2">
+							{(['fan', 'creator'] as const).map(type => (
 								<button
 									key={type}
 									onClick={() => fillDemo(type)}

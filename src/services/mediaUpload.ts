@@ -1,6 +1,6 @@
 import { creatorsApi, type UploadKind } from './creatorsApi';
 
-export async function uploadMediaAsset(kind: UploadKind, file: File): Promise<{ assetId: string, fileUrl: string }> {
+export function uploadMediaAsset(kind: UploadKind, file: File): Promise<{ assetId: string, fileUrl: string }> {
 	return creatorsApi.media.createUpload({
 		fileName: file.name,
 		mimeType: file.type || 'application/octet-stream',
@@ -19,10 +19,8 @@ export async function uploadMediaAsset(kind: UploadKind, file: File): Promise<{ 
 				throw new Error(`Upload failed (HTTP ${putRes.status})`);
 			}
 
-			return creatorsApi.media.complete({ assetId: upload.assetId }).then(() => ({
-				assetId: upload.assetId,
-				fileUrl: upload.fileUrl,
-			}));
+			return creatorsApi.media.complete({ assetId: upload.assetId })
+				.then(() => ({ assetId: upload.assetId, fileUrl: upload.fileUrl }));
 		});
 	});
 }

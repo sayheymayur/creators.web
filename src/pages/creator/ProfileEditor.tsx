@@ -60,28 +60,39 @@ export function ProfileEditor() {
 	function handleSave() {
 		if (isSaving) return;
 		setIsSaving(true);
-		void delayMs(800).then(() => {
-			const parsedPrice = Math.max(1, parseFloat(price) || 0);
-			const perMinuteRate = Math.max(0.5, parseFloat((parsedPrice / 4).toFixed(2)));
+		const avatarPromise = avatarFile ? uploadMediaAsset('avatar', avatarFile).then(r => r.assetId) : Promise.resolve(undefined);
+		const bannerPromise = bannerFile ? uploadMediaAsset('banner', bannerFile).then(r => r.assetId) : Promise.resolve(undefined);
 
-			updateUser({
-				name,
-				username,
-				avatar: avatarUrl,
-			});
-			updateCreatorProfile({
-				name,
-				username,
-				bio,
-				category,
-				avatar: avatarUrl,
-				banner: bannerUrl,
-				subscriptionPrice: parsedPrice,
-				perMinuteRate,
-			});
-			showToast('Creator profile updated!');
-			setIsSaving(false);
-		});
+		void Promise.all([avatarPromise, bannerPromise])
+			.then(([avatarAssetId, bannerAssetId]) =>
+				creatorsApi.me.updateProfile({
+					name: name.trim() || undefined,
+					username: username.trim() || undefined,
+					bio: bio.trim() || undefined,
+					category: category?.trim() || undefined,
+					avatarAssetId,
+					bannerAssetId,
+				})
+			)
+			.then(({ user }) => {
+				updateUser(user);
+				showToast('Profile updated!');
+				setAvatarFile(null);
+				setBannerFile(null);
+			})
+			.catch(err => {
+				if (err instanceof ApiError) {
+					const body = err.body;
+					const msg =
+						typeof body === 'object' && body && 'message' in body && typeof (body as { message?: unknown }).message === 'string' ?
+							(body as { message: string }).message :
+							`Save failed (HTTP ${err.status}).`;
+					showToast(msg, 'error');
+					return;
+				}
+				showToast(err instanceof Error ? err.message : 'Save failed.', 'error');
+			})
+			.finally(() => setIsSaving(false));
 	}
 
 	return (

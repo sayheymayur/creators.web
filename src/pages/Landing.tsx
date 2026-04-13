@@ -8,15 +8,10 @@ export function Landing() {
 	const navigate = useNavigate();
 	const featuredRef = useDragScroll();
 	const { mode, toggle } = useTheme();
-
-	function scrollFeatured(direction: 'left' | 'right') {
-		const container = featuredRef.current;
-		if (!container) return;
-		const card = container.querySelector<HTMLElement>('button[data-featured-card]');
-		const baseWidth = card?.offsetWidth || 240;
-		const amount = baseWidth * (direction === 'right' ? 1 : -1);
-		container.scrollBy({ left: amount, behavior: 'smooth' });
-	}
+	const partnerCtaClass =
+		mode === 'dark' ?
+			'bg-rose-500 hover:bg-rose-600 text-white' :
+			'bg-rose-500 hover:bg-rose-600 text-white';
 
 	return (
 		<div className="min-h-screen bg-background text-foreground overflow-x-hidden">
@@ -31,7 +26,7 @@ export function Landing() {
 					<div className="flex items-center gap-2">
 						<button
 							type="button"
-							onClick={() => { toggle(); }}
+							onClick={e => { toggle(e); }}
 							aria-label={mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
 							className="p-2 rounded-xl hover:bg-foreground/10 transition-colors"
 						>
@@ -43,11 +38,18 @@ export function Landing() {
 						>
 							Sign In
 						</button>
-						<button
+						{/* <button
 							onClick={() => { void navigate('/register'); }}
 							className="bg-rose-500 hover:bg-rose-600 text-white text-sm font-semibold px-4 py-1.5 rounded-xl transition-all active:scale-95"
 						>
 							Get Started
+						</button> */}
+						<button
+							type="button"
+							onClick={() => { void navigate('/partner/apply'); }}
+							className={`${partnerCtaClass} text-sm font-semibold px-4 py-1.5 rounded-xl transition-all active:scale-95`}
+						>
+							Become a Partner
 						</button>
 					</div>
 				</div>
@@ -114,62 +116,41 @@ export function Landing() {
 						<h2 className="text-2xl sm:text-3xl font-bold mb-2">Featured Creators</h2>
 						<p className="text-muted text-sm">Browse a selection of highlighted creators</p>
 					</div>
-					<div className="relative space-y-3 md:space-y-4">
-						<div
-							ref={featuredRef}
-							className="flex gap-3 md:gap-4 overflow-x-auto pb-2 md:pb-4 scrollbar-hide -mx-4 px-4"
-						>
-							{mockCreators.slice(0, 8).map(creator => (
-								<button
-									type="button"
-									key={creator.id}
-									data-featured-card
-									onClick={() => { void navigate('/explore'); }}
-									className="bg-surface border border-border/20 rounded-2xl overflow-hidden cursor-pointer hover:border-rose-500/30 transition-all group flex-shrink-0 w-44 sm:w-52 md:w-60"
-								>
-									<div className="relative h-28 sm:h-32 md:h-40">
-										<img src={creator.banner} alt="" className="w-full h-full object-cover" />
-										<div className="absolute inset-0 bg-gradient-to-b from-transparent to-surface" />
-									</div>
-									<div className="px-3 pb-3 pt-2">
-										<div className="flex items-center gap-2 mb-1.5">
-											<img
-												src={creator.avatar}
-												alt={creator.name}
-												className="w-10 h-10 sm:w-11 sm:h-11 md:w-12 md:h-12 rounded-full border-2 border-surface object-cover"
-											/>
-											<div className="min-w-0">
-												<p className="text-sm md:text-base font-semibold text-foreground truncate group-hover:text-rose-500 transition-colors">
-													{creator.name}
-												</p>
-												<p className="text-[11px] md:text-xs text-muted truncate">{creator.category}</p>
-											</div>
+					<div
+						ref={featuredRef}
+						className="flex gap-3 md:gap-4 overflow-x-auto pb-2 md:pb-4 scrollbar-hide -mx-4 px-4"
+					>
+						{mockCreators.slice(0, 8).map(creator => (
+							<button
+								type="button"
+								key={creator.id}
+								onClick={() => { void navigate('/explore'); }}
+								className="bg-surface border border-border/20 rounded-2xl overflow-hidden cursor-pointer hover:border-rose-500/30 transition-all group flex-shrink-0 w-44 sm:w-52 md:w-60"
+							>
+								<div className="relative h-28 sm:h-32 md:h-40">
+									<img src={creator.banner} alt="" className="w-full h-full object-cover" />
+									<div className="absolute inset-0 bg-gradient-to-b from-transparent to-surface" />
+								</div>
+								<div className="px-3 pb-3 pt-2">
+									<div className="flex items-center gap-2 mb-1.5">
+										<img
+											src={creator.avatar}
+											alt={creator.name}
+											className="w-10 h-10 sm:w-11 sm:h-11 md:w-12 md:h-12 rounded-full border-2 border-surface object-cover"
+										/>
+										<div className="min-w-0">
+											<p className="text-sm md:text-base font-semibold text-foreground truncate group-hover:text-rose-500 transition-colors">
+												{creator.name}
+											</p>
+											<p className="text-[11px] md:text-xs text-muted truncate">{creator.category}</p>
 										</div>
-										<p className="text-[11px] md:text-xs text-rose-400 font-semibold mt-1">
-											${creator.subscriptionPrice}/month
-										</p>
 									</div>
-								</button>
-							))}
-						</div>
-						<div className="flex justify-center gap-3 md:gap-4">
-							<button
-								type="button"
-								onClick={() => scrollFeatured('left')}
-								className="px-3 py-1.5 md:px-4 md:py-2 rounded-full border border-border/20 bg-foreground/5 text-xs md:text-sm text-muted hover:bg-foreground/10 hover:text-foreground transition-colors"
-								aria-label="Scroll featured creators left"
-							>
-								←
+									<p className="text-[11px] md:text-xs text-rose-400 font-semibold mt-1">
+										${creator.subscriptionPrice}/month
+									</p>
+								</div>
 							</button>
-							<button
-								type="button"
-								onClick={() => scrollFeatured('right')}
-								className="px-3 py-1.5 md:px-4 md:py-2 rounded-full border border-border/20 bg-foreground/5 text-xs md:text-sm text-muted hover:bg-foreground/10 hover:text-foreground transition-colors"
-								aria-label="Scroll featured creators right"
-							>
-								→
-							</button>
-						</div>
+						))}
 					</div>
 				</div>
 			</section>
@@ -205,11 +186,11 @@ export function Landing() {
 				<div className="max-w-2xl mx-auto text-center">
 					<h2 className="text-2xl sm:text-3xl font-bold mb-3">Demo access</h2>
 					<p className="text-muted mb-8 text-sm">Explore the demo environment. No credit card required.</p>
-					<div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8">
+					<div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-8">
 						{[
 							{ role: 'Fan', email: 'fan@demo.com', desc: 'Browse, subscribe, tip', color: 'border-blue-500/30 bg-blue-500/5' },
 							{ role: 'Creator', email: 'creator@demo.com', desc: 'Dashboard, earnings, posts', color: 'border-rose-500/30 bg-rose-500/5' },
-							{ role: 'Admin', email: 'admin@demo.com', desc: 'Full platform control', color: 'border-emerald-500/30 bg-emerald-500/5' },
+							// { role: 'Admin', email: 'admin@demo.com', desc: 'Full platform control', color: 'border-emerald-500/30 bg-emerald-500/5' },
 						].map(({ role, email, desc, color }) => (
 							<div key={role} className={`border ${color} rounded-xl p-4 text-left`}>
 								<div className="flex items-center gap-1.5 mb-2">

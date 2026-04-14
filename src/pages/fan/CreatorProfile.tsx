@@ -16,12 +16,13 @@ import { useWallet } from '../../context/WalletContext';
 import { SessionPickerModal, type SessionPayMode } from '../../components/modals/SessionPickerModal';
 import type { Creator, SessionType } from '../../types';
 import { creatorsApi } from '../../services/creatorsApi';
+import { isPostsMockMode } from '../../services/postsMode';
 
 export function CreatorProfile() {
 	const { id } = useParams<{ id: string }>();
 	const navigate = useNavigate();
 	const { state: authState } = useAuth();
-	const { state: contentState, isSubscribed } = useContent();
+	const { state: contentState, isSubscribed, loadCreatorPosts } = useContent();
 	const { showToast } = useNotifications();
 	const { addConversation, getConversationForUser } = useChat();
 	const { startCall } = useCall();
@@ -65,6 +66,11 @@ export function CreatorProfile() {
 
 		return () => ac.abort();
 	}, [id, maybeCreator]);
+
+	useEffect(() => {
+		if (!id || isPostsMockMode()) return;
+		void loadCreatorPosts(id, true);
+	}, [id, loadCreatorPosts]);
 
 	if (!id) {
 		return (

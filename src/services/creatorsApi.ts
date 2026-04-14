@@ -14,6 +14,7 @@ export interface RegisterRequest {
 	email: string;
 	password: string;
 	displayName: string;
+	preferredRole?: PreferredRole;
 }
 
 export interface AuthTokenResponse {
@@ -107,10 +108,7 @@ export class ApiError extends Error {
 }
 
 function apiBaseUrl(): string {
-	if (import.meta.env.DEV) {
-		return '/creators-api';
-	}
-	return (import.meta.env.VITE_CREATORS_API_URL?.trim() || 'https://creatorsapi.pnine.me/').replace(/\/+$/, '');
+	return (import.meta.env.VITE_CREATORS_API_URL?.trim() || 'https://creatorsapi.pnine.me').replace(/\/+$/, '');
 }
 
 function readJsonSafe(res: Response): Promise<unknown> {
@@ -206,8 +204,7 @@ export const creatorsApi = {
 		},
 	},
 	creators: {
-		// Note: backend route assumed as /creators/:id. If your API uses a different path,
-		// adjust here and the UI will follow.
+		// Public creator profile for display (not in the core HTTP doc; must exist on your API).
 		getById(id: string, signal?: AbortSignal): Promise<CreatorProfileResponse> {
 			return requestJson<CreatorProfileResponse>(`/creators/${encodeURIComponent(id)}`, { method: 'GET', signal });
 		},

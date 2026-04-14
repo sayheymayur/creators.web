@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
 	TrendingUp,
@@ -15,10 +15,11 @@ import {
 	Clock,
 } from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';
-import { useCurrentCreator } from '../../context/AuthContext';
+import { useAuth, useCurrentCreator } from '../../context/AuthContext';
 import { useContent } from '../../context/ContentContext';
 import { useSession } from '../../context/SessionContext';
 import { mockCreators } from '../../data/users';
+import { isPostsMockMode } from '../../services/postsMode';
 
 function StatCard({ label, value, sub, icon, color, onClick }: {
 	label: string, value: string, sub?: string, icon: React.ReactNode, color: string, onClick?: () => void,
@@ -56,15 +57,33 @@ function formatDuration(secs: number): string {
 export function CreatorDashboard() {
 	const navigate = useNavigate();
 	const creator = useCurrentCreator();
-	const { state: contentState } = useContent();
+	const { state: authState } = useAuth();
+	const { state: contentState, loadCreatorPosts } = useContent();
 	const { state: sessionState } = useSession();
 	const [editingRate, setEditingRate] = useState(false);
 	const [rateInput, setRateInput] = useState('');
 
-	const creatorData = creator ?? mockCreators[0];
-	const creatorPosts = contentState.posts.filter(p => p.creatorId === creatorData.id);
+	const authedCreatorId = authState.user?.id ?? '';
+	const useMockPosts = isPostsMockMode();
+	const creatorData = creator ?? (authState.user?.role === 'creator' ? {
+		...mockCreators[0],
+		id: authState.user.id,
+		name: authState.user.name,
+		email: authState.user.email,
+		username: authState.user.username,
+		avatar: authState.user.avatar,
+	} : mockCreators[0]);
+	const creatorIdForPosts = authedCreatorId || creatorData.id;
 
-	const creatorSessions = sessionState.sessionHistory.filter(s => s.creatorId === creatorData.id);
+	useEffect(() => {
+		if (useMockPosts) return;
+		if (!creatorIdForPosts) return;
+		void loadCreatorPosts(creatorIdForPosts, true);
+	}, [useMockPosts, creatorIdForPosts, loadCreatorPosts]);
+
+	const creatorPosts = contentState.posts.filter(p => p.creatorId === creatorIdForPosts);
+
+	const creatorSessions = sessionState.sessionHistory.filter(s => s.creatorId === creatorIdForPosts);
 	const sessionEarnings = creatorSessions.reduce((sum, s) => sum + s.earnings, 0);
 
 	if (creatorData.kycStatus !== 'approved') {

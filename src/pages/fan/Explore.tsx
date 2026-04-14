@@ -1,16 +1,28 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, SlidersHorizontal, TrendingUp, Star, Users, Eye } from '../../components/icons';
+import { Search, SlidersHorizontal, TrendingUp, Star, Users, Eye, Compass } from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';
 import { CreatorCard } from '../../components/ui/CreatorCard';
+import { PostCard } from '../../components/ui/PostCard';
 import { mockCreators } from '../../data/users';
+import { useContent } from '../../context/ContentContext';
 import { useLiveStream } from '../../context/LiveStreamContext';
+import { isPostsMockMode } from '../../services/postsMode';
 import { useDragScroll } from '../../hooks/useDragScroll';
 
 const CATEGORIES = ['All', 'Fitness', 'Art', 'Tech', 'Travel', 'Music', 'Food', 'Gaming'];
 
 export function Explore() {
 	const navigate = useNavigate();
+	const { state: contentState, loadMoreExplore } = useContent();
+	const postsMock = isPostsMockMode();
+	const explorePosts = useMemo(
+		() =>
+			contentState.explorePostIds
+				.map(id => contentState.posts.find(p => p.id === id))
+				.filter((p): p is NonNullable<typeof p> => Boolean(p)),
+		[contentState.explorePostIds, contentState.posts]
+	);
 	const [search, setSearch] = useState('');
 	const [category, setCategory] = useState('All');
 	const [sortBy, setSortBy] = useState<'popular' | 'new' | 'price'>('popular');
@@ -66,6 +78,35 @@ export function Explore() {
 						))}
 					</div>
 				</div>
+
+				{!postsMock && (
+					<div className="mb-8 space-y-4">
+						<div className="flex items-center gap-2">
+							<Compass className="w-4 h-4 text-rose-400" />
+							<h2 className="font-semibold text-foreground text-sm">Discover posts</h2>
+						</div>
+						{contentState.postsWsStatus === 'connecting' && (
+							<p className="text-xs text-muted">Loading posts…</p>
+						)}
+						{contentState.postsWsStatus === 'error' && contentState.postsWsError && (
+							<p className="text-xs text-rose-400">{contentState.postsWsError}</p>
+						)}
+						<div className="space-y-4">
+							{explorePosts.map(post => (
+								<PostCard key={post.id} post={post} />
+							))}
+						</div>
+						{contentState.exploreNextCursor ? (
+							<button
+								type="button"
+								onClick={() => { void loadMoreExplore(); }}
+								className="text-sm font-medium text-rose-400 hover:text-rose-300"
+							>
+								Load more posts
+							</button>
+						) : null}
+					</div>
+				)}
 
 				{!search && category === 'All' && liveStreams.length > 0 && (
 					<div className="mb-8">

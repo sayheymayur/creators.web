@@ -1,0 +1,16 @@
+$kind: http-request
+url: "{{base_url}}/payments/razorpay/orders"
+method: POST
+headers:
+  Authorization: Bearer {{token}}
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "amountMinor": 10000,
+      "currency": "INR",
+      "receipt": "",
+      "notes": {}
+    }
+order: 1000

@@ -1,0 +1,15 @@
+$kind: http-request
+url: "{{base_url}}/payments/razorpay/confirm"
+method: POST
+headers:
+  Authorization: Bearer {{token}}
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "razorpayOrderId": "",
+      "razorpayPaymentId": "",
+      "razorpaySignature": ""
+    }
+order: 2000

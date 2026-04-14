@@ -1,0 +1,9 @@
+name: New Environment
+values:
+  - key: token
+    value: ""
+    enabled: true
+  - key: base_url
+    value: ""
+    enabled: true
+color: null

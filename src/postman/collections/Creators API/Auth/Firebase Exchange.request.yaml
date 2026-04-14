@@ -1,0 +1,13 @@
+$kind: http-request
+url: "{{base_url}}/auth/firebase/exchange"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "idToken": "",
+      "preferredRole": "fan"
+    }
+order: 3000

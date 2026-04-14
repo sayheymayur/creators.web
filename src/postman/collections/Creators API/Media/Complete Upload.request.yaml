@@ -1,0 +1,14 @@
+$kind: http-request
+url: "{{base_url}}/media/complete"
+method: POST
+headers:
+  Authorization: Bearer {{token}}
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "assetId": "29",
+      "metadata": {}
+    }
+order: 2000

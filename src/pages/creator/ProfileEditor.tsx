@@ -3,14 +3,17 @@ import { Camera, Save } from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';
 import { Button } from '../../components/ui/Button';
 import { useAuth, useCurrentCreator } from '../../context/AuthContext';
+import { useContent } from '../../context/ContentContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { mockCreators } from '../../data/users';
 import { ApiError, creatorsApi } from '../../services/creatorsApi';
 import { uploadMediaAsset } from '../../services/mediaUpload';
+import { isPostsMockMode } from '../../services/postsMode';
 
 export function ProfileEditor() {
 	const creator = useCurrentCreator();
 	const { updateUser } = useAuth();
+	const { creatorWsUpsert } = useContent();
 	const { showToast } = useNotifications();
 
 	const creatorData = creator ?? mockCreators[0];
@@ -70,6 +73,13 @@ export function ProfileEditor() {
 			)
 			.then(({ user }) => {
 				updateUser(user);
+				if (!isPostsMockMode()) {
+					void creatorWsUpsert(
+						username.trim() || creatorData.username,
+						name.trim() || creatorData.name,
+						bio.trim() || undefined
+					).catch(() => {});
+				}
 				showToast('Profile updated!');
 				setAvatarFile(null);
 				setBannerFile(null);

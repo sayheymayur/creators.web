@@ -1,0 +1,6 @@
+$kind: websocket-request
+url: '{{ws_url}}?token={{token}}'
+order: 5000
+headers:
+  - key: Sec-WebSocket-Protocol
+    value: text

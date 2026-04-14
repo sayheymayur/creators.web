@@ -1,23 +1,5 @@
 import { creatorsWsUrl } from './wsUrl';
-import { parseCreatorsWsLine } from './lineProtocolParse';
-
-export type PostsParsedFrame =
-	| { kind: 'success', command: string, requestId: string, json: unknown } |
-	{ kind: 'error', requestId: string, message: string } |
-	{ kind: 'event', event: string, json: unknown };
-
-/** @deprecated Prefer parseCreatorsWsLine — kept for callers that only handle posts frames. */
-export function parsePostsLine(line: string): PostsParsedFrame | null {
-	const f = parseCreatorsWsLine(line);
-	if (!f || f.service !== 'posts') return null;
-	if (f.kind === 'success') {
-		return { kind: 'success', command: f.command, requestId: f.requestId, json: f.json };
-	}
-	if (f.kind === 'error') {
-		return { kind: 'error', requestId: f.requestId, message: f.message };
-	}
-	return { kind: 'event', event: f.event, json: f.json };
-}
+import { parseCreatorsWsLine, type WsService } from './lineProtocolParse';
 
 function genRequestId(): string {
 	if (typeof globalThis.crypto?.randomUUID === 'function') {
@@ -32,25 +14,24 @@ type Pending = {
 	timer: ReturnType<typeof setTimeout>,
 };
 
-export interface PostsWsClientOptions {
-	onEvent: (event: string, payload: unknown) => void;
+export interface CreatorsMultiplexWsOptions {
+	onPostsEvent: (event: string, payload: unknown) => void;
 	onConnectionChange?: (status: 'connecting' | 'open' | 'closed', err?: Error) => void;
 	url?: string;
 	commandTimeoutMs?: number;
 }
 
 /**
- * Posts-only WebSocket client (opens its own connection).
- * Prefer CreatorsMultiplexWs in ContentContext for a single shared socket.
+ * One WebSocket for posts, user, and creator line services (same URL, `> <service> <requestId>`).
  */
-export class PostsWsClient {
+export class CreatorsMultiplexWs {
 	private ws: WebSocket | null = null;
 	private buffer = '';
 	private pending: Record<string, Pending> = {};
-	private readonly options: PostsWsClientOptions;
+	private readonly options: CreatorsMultiplexWsOptions;
 	private sendQueue: string[] = [];
 
-	constructor(options: PostsWsClientOptions) {
+	constructor(options: CreatorsMultiplexWsOptions) {
 		this.options = options;
 	}
 
@@ -64,7 +45,7 @@ export class PostsWsClient {
 			this.buffer = this.buffer.slice(nl + 1);
 			this.handleLine(line);
 		}
-		const maybeFrame = parsePostsLine(this.buffer);
+		const maybeFrame = parseCreatorsWsLine(this.buffer);
 		if (maybeFrame) {
 			this.handleLine(this.buffer);
 			this.buffer = '';
@@ -169,7 +150,7 @@ export class PostsWsClient {
 
 	private handleLine(line: string) {
 		if (!line.trim()) return;
-		const frame = parsePostsLine(line);
+		const frame = parseCreatorsWsLine(line);
 		if (!frame) return;
 
 		if (frame.kind === 'error') {
@@ -192,16 +173,16 @@ export class PostsWsClient {
 			return;
 		}
 
-		this.options.onEvent(frame.event, frame.json);
+		this.options.onPostsEvent(frame.event, frame.json);
 	}
 
-	sendCommand(commandLine: string): Promise<unknown> {
+	send(service: WsService, commandLine: string): Promise<unknown> {
 		const requestId = genRequestId();
 		const timeoutMs = this.options.commandTimeoutMs ?? 60_000;
 		return new Promise((resolve, reject) => {
 			const timer = setTimeout(() => {
 				delete this.pending[requestId];
-				reject(new Error(`Posts command timeout: ${commandLine}`));
+				reject(new Error(`${service} command timeout: ${commandLine}`));
 			}, timeoutMs);
 
 			this.pending[requestId] = {
@@ -216,7 +197,7 @@ export class PostsWsClient {
 				timer,
 			};
 
-			const lines = `> posts ${requestId}\n${commandLine}\n`;
+			const lines = `> ${service} ${requestId}\n${commandLine}\n`;
 			this.rawSend(lines);
 			this.flushQueue();
 		});
@@ -229,4 +210,15 @@ export class PostsWsClient {
 		this.buffer = '';
 		this.sendQueue = [];
 	}
+}
+
+/** Set by ContentProvider when the multiplex socket is active (for optional cross-context calls). */
+let multiplexSingleton: CreatorsMultiplexWs | null = null;
+
+export function setCreatorsMultiplexSingleton(client: CreatorsMultiplexWs | null) {
+	multiplexSingleton = client;
+}
+
+export function getCreatorsMultiplexSingleton(): CreatorsMultiplexWs | null {
+	return multiplexSingleton;
 }

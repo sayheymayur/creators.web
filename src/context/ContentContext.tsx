@@ -10,8 +10,17 @@ import type { Post, Comment } from '../types';
 import { mockPosts } from '../data/posts';
 import { creatorsApi } from '../services/creatorsApi';
 import { isPostsMockMode } from '../services/postsMode';
-import { PostsWsClient } from '../services/postsWs';
+import {
+	CreatorsMultiplexWs,
+	setCreatorsMultiplexSingleton,
+} from '../services/creatorsMultiplexWs';
 import { creatorsWsUrl } from '../services/wsUrl';
+import {
+	creatorWsGet,
+	creatorWsList,
+	creatorWsUpsertProfile,
+} from '../services/creatorWsService';
+import type { CreatorGetResponse, CreatorListResponse } from '../services/creatorWsTypes';
 import type {
 	CommentDTO,
 	DeletedPostEventPayload,
@@ -306,6 +315,14 @@ interface ContentContextValue {
 	loadCreatorPosts: (creatorId: string, reset?: boolean) => Promise<void>;
 	loadPostComments: (postId: string) => Promise<void>;
 	loadMorePostComments: (postId: string) => Promise<void>;
+	creatorWsSearch: (opts: {
+		q?: string,
+		category?: string,
+		limit?: number,
+		beforeCursor?: string,
+	}) => Promise<CreatorListResponse>;
+	creatorWsGetByPk: (creatorRowId: string) => Promise<CreatorGetResponse>;
+	creatorWsUpsert: (username: string, name: string, bio?: string) => Promise<void>;
 }
 
 const ContentContext = createContext<ContentContextValue | null>(null);
@@ -315,7 +332,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 	const { state: authState } = useAuth();
 	const authUserRef = useRef(authState.user);
 	authUserRef.current = authState.user;
-	const clientRef = useRef<PostsWsClient | null>(null);
+	const clientRef = useRef<CreatorsMultiplexWs | null>(null);
 	const stateRef = useRef(state);
 	stateRef.current = state;
 	const connectSeqRef = useRef(0);
@@ -447,8 +464,8 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 			clientRef.current = null;
 		}
 
-		const client = new PostsWsClient({
-			onEvent: handlePush,
+		const client = new CreatorsMultiplexWs({
+			onPostsEvent: handlePush,
 			onConnectionChange: (s, err) => {
 				if (seq !== connectSeqRef.current) return;
 				if (s === 'connecting') dispatch({ type: 'SET_WS', payload: { status: 'connecting' } });
@@ -462,6 +479,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 			},
 		});
 		clientRef.current = client;
+		setCreatorsMultiplexSingleton(client);
 
 		dispatch({ type: 'SET_WS', payload: { status: 'connecting' } });
 		void client
@@ -470,7 +488,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 				if (seq !== connectSeqRef.current) return Promise.reject(new Error('stale-ws'));
 
 				// Always fetch feed.
-				const feedP = client.sendCommand('/list feed 30').then(json =>
+				const feedP = client.send('posts', '/list feed 30').then(json =>
 					mapList(json).then(posts => {
 						if (seq !== connectSeqRef.current) return;
 						const body = json as ListPostsResponse;
@@ -485,7 +503,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 					})
 				);
 
-				const exploreP = client.sendCommand('/list explore 30').then(json =>
+				const exploreP = client.send('posts', '/list explore 30').then(json =>
 					mapList(json).then(posts => {
 						if (seq !== connectSeqRef.current) return;
 						const body = json as ListPostsResponse;
@@ -506,7 +524,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 				const myId = u?.id;
 				const canHaveOwnPosts = u?.role === 'creator' || u?.role === 'admin';
 				const creatorP = myId && canHaveOwnPosts ?
-					client.sendCommand(`/list creator ${myId} 30`).then(json =>
+					client.send('posts', `/list creator ${myId} 30`).then(json =>
 						mapList(json).then(posts => {
 							if (seq !== connectSeqRef.current) return;
 							const body = json as ListPostsResponse;
@@ -537,6 +555,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 		return () => {
 			// Only close if this effect instance is still the latest.
 			if (seq === connectSeqRef.current) {
+				setCreatorsMultiplexSingleton(null);
 				client.close();
 				clientRef.current = null;
 			}
@@ -555,12 +574,38 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 		return fn();
 	}, []);
 
+	const runRemoteTyped = useCallback((fn: (c: CreatorsMultiplexWs) => Promise<unknown>): Promise<unknown> => {
+		if (mockMode) return Promise.reject(new Error('WebSocket unavailable in mock mode'));
+		if (stateRef.current.postsWsStatus !== 'ready' || !clientRef.current) {
+			return Promise.reject(new Error('Posts connection is not ready yet'));
+		}
+		return fn(clientRef.current);
+	}, []);
+
+	const creatorWsSearch = useCallback(
+		(opts: { q?: string, category?: string, limit?: number, beforeCursor?: string }) =>
+			runRemoteTyped(c => creatorWsList(c, opts)) as Promise<CreatorListResponse>,
+		[runRemoteTyped]
+	);
+
+	const creatorWsGetByPk = useCallback(
+		(creatorRowId: string) =>
+			runRemoteTyped(c => creatorWsGet(c, creatorRowId)) as Promise<CreatorGetResponse>,
+		[runRemoteTyped]
+	);
+
+	const creatorWsUpsert = useCallback(
+		(username: string, name: string, bio?: string) =>
+			runRemoteTyped(c => creatorWsUpsertProfile(c, username, name, bio)).then(() => {}),
+		[runRemoteTyped]
+	);
+
 	const refreshFeed = useCallback(() => {
 		if (mockMode) return Promise.resolve();
 		return runRemote(() => {
 			const c = clientRef.current;
 			if (!c) return Promise.resolve();
-			return c.sendCommand('/list feed 30').then(json =>
+			return c.send('posts', '/list feed 30').then(json =>
 				mapList(json).then(posts => {
 					const body = json as ListPostsResponse;
 					dispatch({
@@ -588,7 +633,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 		return runRemote(() => {
 			const c = clientRef.current;
 			if (!c) return Promise.resolve();
-			return c.sendCommand(`/list feed 30 ${cursor}`).then(json =>
+			return c.send('posts', `/list feed 30 ${cursor}`).then(json =>
 				mapList(json).then(posts => {
 					const body = json as ListPostsResponse;
 					dispatch({
@@ -614,7 +659,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 		return runRemote(() => {
 			const c = clientRef.current;
 			if (!c) return Promise.resolve();
-			return c.sendCommand('/list explore 30').then(json =>
+			return c.send('posts', '/list explore 30').then(json =>
 				mapList(json).then(posts => {
 					const body = json as ListPostsResponse;
 					dispatch({
@@ -643,7 +688,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 		return runRemote(() => {
 			const c = clientRef.current;
 			if (!c) return Promise.resolve();
-			return c.sendCommand(`/list explore 30 ${cursor}`).then(json =>
+			return c.send('posts', `/list explore 30 ${cursor}`).then(json =>
 				mapList(json).then(posts => {
 					const body = json as ListPostsResponse;
 					dispatch({
@@ -675,7 +720,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 				const cmd = cursor ?
 					`/list creator ${creatorId} 30 ${cursor}` :
 					`/list creator ${creatorId} 30`;
-				return c.sendCommand(cmd).then(json =>
+				return c.send('posts', cmd).then(json =>
 					mapList(json).then(posts => {
 						const body = json as ListPostsResponse;
 						dispatch({
@@ -717,13 +762,14 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 	const loadPostComments = useCallback(
 		(postId: string) => {
 			if (mockMode) return Promise.resolve();
-			if (Object.hasOwn(stateRef.current.commentPagination, postId)) {
+			// eslint-disable-next-line prefer-object-has-own -- TS lib target doesn't include Object.hasOwn yet.
+			if (Object.prototype.hasOwnProperty.call(stateRef.current.commentPagination, postId)) {
 				return Promise.resolve();
 			}
 			return runRemote(() => {
 				const c = clientRef.current;
 				if (!c) return Promise.resolve();
-				return c.sendCommand(`/comments ${postId} 30`).then(json => {
+				return c.send('posts', `/comments ${postId} 30`).then(json => {
 					const body = json as ListCommentsResponse;
 					return mapCommentList(json).then(comments => {
 						dispatch({
@@ -750,7 +796,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 			return runRemote(() => {
 				const c = clientRef.current;
 				if (!c) return Promise.resolve();
-				return c.sendCommand(`/comments ${postId} 30 ${next}`).then(json => {
+				return c.send('posts', `/comments ${postId} 30 ${next}`).then(json => {
 					const body = json as ListCommentsResponse;
 					return mapCommentList(json).then(comments => {
 						dispatch({
@@ -779,7 +825,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 		const c = clientRef.current;
 		if (!c) return Promise.resolve();
 		return c
-			.sendCommand(liked ? `/unlike ${postId}` : `/like ${postId}`)
+			.send('posts', liked ? `/unlike ${postId}` : `/like ${postId}`)
 			.then(json => {
 				const body = json as { postId: string, like_count: number, likedByMe: boolean };
 				dispatch({
@@ -822,7 +868,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 			if (!c || !u) return Promise.resolve();
 			const trimmed = text.trim();
 			if (!trimmed) return Promise.resolve();
-			return c.sendCommand(`/comment ${postId} ${trimmed}`).then(json => {
+			return c.send('posts', `/comment ${postId} ${trimmed}`).then(json => {
 				const dto = (json as { comment: CommentDTO }).comment;
 				return fetchProfilesForIds([dto.user_id]).then(profiles => {
 					const prof = resolveCreatorDisplay(dto.user_id, profiles);
@@ -846,7 +892,18 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 		if (input.assetIds?.length) {
 			parts.push(`assets=${input.assetIds.join(',')}`);
 		}
-		const t = input.text.trim();
+		let t = input.text.trim();
+		// Backend spec: for public/subscribers, a bare integer as the 2nd token is reserved for PPV price.
+		// If the post text starts with digits and there are no assets, inject a zero-width space so the
+		// first text token is not a bare integer, while rendering the same to users.
+		if (
+			t &&
+			input.visibility !== 'ppv' &&
+			!input.assetIds?.length &&
+			/^\d/.test(t)
+		) {
+			t = `\u200B${t}`;
+		}
 		if (t) parts.push(t);
 		return parts.join(' ');
 	};
@@ -858,7 +915,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 			}
 			const c = clientRef.current;
 			if (!c) return Promise.reject(new Error('Posts connection not ready'));
-			return c.sendCommand(buildCreateCommand(input)).then(json => {
+			return c.send('posts', buildCreateCommand(input)).then(json => {
 				const dto = (json as { post: PostDTO }).post;
 				const id = String(dto.user_id);
 				return fetchProfilesForIds([id]).then(profiles => {
@@ -878,7 +935,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 		}
 		const c = clientRef.current;
 		if (!c) return Promise.resolve();
-		return c.sendCommand(`/delete ${postId}`).then(() => {
+		return c.send('posts', `/delete ${postId}`).then(() => {
 			dispatch({ type: 'DELETE_POST', payload: postId });
 		});
 	}, []);
@@ -899,7 +956,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 			text.trim() === '' ?
 				`/update ${post.id}` :
 				`/update ${post.id} ${text}`;
-		return c.sendCommand(cmd).then(() => {
+		return c.send('posts', cmd).then(() => {
 			dispatch({ type: 'UPDATE_POST', payload: post });
 		});
 	}, []);
@@ -942,6 +999,9 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 				loadCreatorPosts,
 				loadPostComments,
 				loadMorePostComments,
+				creatorWsSearch,
+				creatorWsGetByPk,
+				creatorWsUpsert,
 			}}
 		>
 			{children}

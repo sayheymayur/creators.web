@@ -1,12 +1,14 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, SlidersHorizontal, TrendingUp, Star, Users, Eye, Compass } from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';
 import { CreatorCard } from '../../components/ui/CreatorCard';
 import { PostCard } from '../../components/ui/PostCard';
 import { mockCreators } from '../../data/users';
+import type { Creator } from '../../types';
 import { useContent } from '../../context/ContentContext';
 import { useLiveStream } from '../../context/LiveStreamContext';
+import { creatorSummaryToCardCreator } from '../../services/creatorWsMap';
 import { isPostsMockMode } from '../../services/postsMode';
 import { useDragScroll } from '../../hooks/useDragScroll';
 
@@ -14,18 +16,21 @@ const CATEGORIES = ['All', 'Fitness', 'Art', 'Tech', 'Travel', 'Music', 'Food', 
 
 export function Explore() {
 	const navigate = useNavigate();
-	const { state: contentState, loadMoreExplore } = useContent();
+	const { state: contentState, loadMoreExplore, creatorWsSearch } = useContent();
 	const postsMock = isPostsMockMode();
 	const explorePosts = useMemo(
 		() =>
 			contentState.explorePostIds
-				.map(id => contentState.posts.find(p => p.id === id))
+				.map(pid => contentState.posts.find(p => p.id === pid))
 				.filter((p): p is NonNullable<typeof p> => Boolean(p)),
 		[contentState.explorePostIds, contentState.posts]
 	);
 	const [search, setSearch] = useState('');
 	const [category, setCategory] = useState('All');
 	const [sortBy, setSortBy] = useState<'popular' | 'new' | 'price'>('popular');
+	const [wsCreators, setWsCreators] = useState<Creator[]>([]);
+	const [wsDirCursor, setWsDirCursor] = useState<string | null>(null);
+	const [wsDirLoading, setWsDirLoading] = useState(false);
 	const { getLiveStreams } = useLiveStream();
 	const liveStreams = getLiveStreams();
 	const liveRef = useDragScroll();
@@ -34,22 +39,74 @@ export function Explore() {
 
 	const approvedCreators = mockCreators.filter(c => c.isKYCVerified);
 
-	const filtered = approvedCreators
-		.filter(c => {
-			const matchesSearch = !search ||
-				c.name.toLowerCase().includes(search.toLowerCase()) ||
-				c.username.toLowerCase().includes(search.toLowerCase()) ||
-				c.bio.toLowerCase().includes(search.toLowerCase());
-			const matchesCategory = category === 'All' || c.category === category;
-			return matchesSearch && matchesCategory;
-		})
-		.sort((a, b) => {
-			if (sortBy === 'popular') return b.subscriberCount - a.subscriberCount;
-			if (sortBy === 'new') return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-			return a.subscriptionPrice - b.subscriptionPrice;
-		});
+	useEffect(() => {
+		if (postsMock || contentState.postsWsStatus !== 'ready') {
+			if (!postsMock) {
+				setWsCreators([]);
+				setWsDirCursor(null);
+			}
+			return;
+		}
+		setWsDirLoading(true);
+		const cat = category === 'All' ? undefined : category;
+		const q = search.trim() || undefined;
+		void creatorWsSearch({ q, category: cat, limit: 30 })
+			.then(r => {
+				setWsCreators(r.creators.map(d => creatorSummaryToCardCreator(d, mockCreators[0])));
+				setWsDirCursor(r.nextCursor ?? null);
+			})
+			.catch(() => {
+				setWsCreators([]);
+				setWsDirCursor(null);
+			})
+			.finally(() => setWsDirLoading(false));
+	}, [postsMock, contentState.postsWsStatus, search, category, creatorWsSearch]);
 
-	const trendingCreators = approvedCreators.slice(0, 3);
+	const filtered = useMemo(() => {
+		if (!postsMock) {
+			return [...wsCreators].sort((a, b) => {
+				if (sortBy === 'popular') return b.subscriberCount - a.subscriberCount;
+				if (sortBy === 'new') return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+				return a.subscriptionPrice - b.subscriptionPrice;
+			});
+		}
+		return approvedCreators
+			.filter(c => {
+				const matchesSearch = !search ||
+					c.name.toLowerCase().includes(search.toLowerCase()) ||
+					c.username.toLowerCase().includes(search.toLowerCase()) ||
+					c.bio.toLowerCase().includes(search.toLowerCase());
+				const matchesCategory = category === 'All' || c.category === category;
+				return matchesSearch && matchesCategory;
+			})
+			.sort((a, b) => {
+				if (sortBy === 'popular') return b.subscriberCount - a.subscriberCount;
+				if (sortBy === 'new') return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+				return a.subscriptionPrice - b.subscriptionPrice;
+			});
+	}, [postsMock, wsCreators, approvedCreators, search, category, sortBy]);
+
+	const trendingCreators = !postsMock ?
+		(wsCreators.length ? wsCreators.slice(0, 3) : approvedCreators.slice(0, 3)) :
+		approvedCreators.slice(0, 3);
+
+	function loadMoreDirectory() {
+		if (postsMock || !wsDirCursor || contentState.postsWsStatus !== 'ready') return;
+		const cat = category === 'All' ? undefined : category;
+		const q = search.trim() || undefined;
+		void creatorWsSearch({ q, category: cat, limit: 30, beforeCursor: wsDirCursor })
+			.then(r => {
+				const next = r.creators.map(d => creatorSummaryToCardCreator(d, mockCreators[0]));
+				setWsCreators(prev => {
+					const seen: Record<string, true> = {};
+					for (const c of prev) seen[c.id] = true;
+					const add = next.filter(c => !seen[c.id]);
+					return [...prev, ...add];
+				});
+				setWsDirCursor(r.nextCursor ?? null);
+			})
+			.catch(() => {});
+	}
 
 	return (
 		<Layout>
@@ -111,10 +168,6 @@ export function Explore() {
 				{!search && category === 'All' && liveStreams.length > 0 && (
 					<div className="mb-8">
 						<div className="flex items-center gap-2 mb-4">
-							{/* <div className="flex items-center gap-1.5 bg-rose-500 rounded-lg px-2 py-0.5">
-								<div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
-								<span className="text-white text-[10px] font-bold">LIVE</span>
-							</div> */}
 							<h2 className="font-semibold text-foreground text-sm">Live Now</h2>
 						</div>
 						<div ref={liveRef} className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4 mb-8">
@@ -170,7 +223,9 @@ export function Explore() {
 				<div className="flex items-center justify-between mb-4">
 					<div className="flex items-center gap-1.5 text-muted text-sm">
 						<Users className="w-4 h-4" />
-						<span>{filtered.length} creator{filtered.length !== 1 ? 's' : ''}</span>
+						<span>
+							{wsDirLoading && !postsMock ? '…' : filtered.length} creator{filtered.length !== 1 ? 's' : ''}
+						</span>
 					</div>
 					<div className="flex items-center gap-2">
 						<SlidersHorizontal className="w-4 h-4 text-muted" />
@@ -200,6 +255,18 @@ export function Explore() {
 						))}
 					</div>
 				)}
+
+				{!postsMock && wsDirCursor ? (
+					<div className="mt-4 text-center">
+						<button
+							type="button"
+							onClick={() => { loadMoreDirectory(); }}
+							className="text-sm font-medium text-rose-400 hover:text-rose-300"
+						>
+							Load more creators
+						</button>
+					</div>
+				) : null}
 			</div>
 		</Layout>
 	);

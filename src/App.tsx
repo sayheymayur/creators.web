@@ -9,6 +9,7 @@ import { CallProvider } from './context/CallContext';
 import { SessionProvider } from './context/SessionContext';
 import { LiveStreamProvider } from './context/LiveStreamContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { WsProvider } from './context/WsContext';
 
 import { Landing } from './pages/Landing';
 import { Login } from './pages/auth/Login';
@@ -149,21 +150,23 @@ function Providers({ children }: { children: React.ReactNode }) {
 		<BrowserRouter>
 			<ThemeProvider>
 				<AuthProvider>
-					<NotificationProvider>
-						<ContentProvider>
-							<ChatProvider>
-								<WalletProvider>
-									<CallProvider>
-										<SessionProvider>
-											<LiveStreamProvider>
-												{children}
-											</LiveStreamProvider>
-										</SessionProvider>
-									</CallProvider>
-								</WalletProvider>
-							</ChatProvider>
-						</ContentProvider>
-					</NotificationProvider>
+					<WsProvider>
+						<NotificationProvider>
+							<ContentProvider>
+								<ChatProvider>
+									<WalletProvider>
+										<CallProvider>
+											<SessionProvider>
+												<LiveStreamProvider>
+													{children}
+												</LiveStreamProvider>
+											</SessionProvider>
+										</CallProvider>
+									</WalletProvider>
+								</ChatProvider>
+							</ContentProvider>
+						</NotificationProvider>
+					</WsProvider>
 				</AuthProvider>
 			</ThemeProvider>
 		</BrowserRouter>

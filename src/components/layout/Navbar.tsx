@@ -214,7 +214,7 @@ export function Navbar() {
 										icon={<User className="w-4 h-4" />}
 										label="Profile"
 										onClick={() => {
-											void navigate(isCreator ? `/creator/${user.id}` : '/settings');
+											void navigate(isCreator ? '/creator-dashboard/profile' : '/settings');
 											setShowUserMenu(false);
 										}}
 									/>

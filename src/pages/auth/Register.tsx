@@ -187,11 +187,25 @@ export function Register() {
 							<span className="text-rose-400 cursor-pointer">Terms of Service</span>{' '}
 							and confirm you are 18+.
 						</p>
+						{state.loginError && (
+							<p className="text-rose-400 text-sm bg-rose-500/10 border border-rose-500/20 rounded-xl px-3 py-2">
+								{state.loginError}
+							</p>
+						)}
 						<Button variant="primary" fullWidth size="lg" type="submit" isLoading={isLoading}>
 							Send Verification Code
 							<ArrowRight className="w-4 h-4" />
 						</Button>
-						<button type="button" onClick={() => setStep(1)} className="w-full text-center text-sm text-muted hover:text-foreground transition-colors">
+						<button
+							type="button"
+							onClick={() => { handleGoogleSignup(); }}
+							disabled={isLoading}
+							className="w-full flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl py-3 text-sm font-medium text-white/70 hover:text-white transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+						>
+							<FcGoogle className="w-4 h-4" />
+							Continue with Google
+						</button>
+						<button type="button" onClick={() => setStep(1)} className="w-full text-center text-sm text-white/30 hover:text-white/50 transition-colors">
 							Back
 						</button>
 					</form>

@@ -13,7 +13,9 @@ type ChatAction =
 	{ type: 'UNLOCK_MESSAGE', payload: { messageId: string, conversationId: string } } |
 	{ type: 'MARK_READ', payload: string } |
 	{ type: 'SET_ACTIVE', payload: string | null } |
-	{ type: 'ADD_CONVERSATION', payload: Conversation };
+	{ type: 'ADD_CONVERSATION', payload: Conversation } |
+	{ type: 'UPSERT_ROOM_MESSAGES', payload: { conversationId: string, messages: Message[] } } |
+	{ type: 'ADD_ROOM_MESSAGE', payload: Message };
 
 const initialState: ChatState = {
 	conversations: mockConversations,
@@ -68,6 +70,35 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
 				conversations: [action.payload, ...state.conversations],
 				messages: { ...state.messages, [action.payload.id]: [] },
 			};
+		case 'UPSERT_ROOM_MESSAGES': {
+			const { conversationId, messages: incoming } = action.payload;
+			const existing = state.messages[conversationId] ?? [];
+			const byId: Record<string, Message> = {};
+			for (const m of existing) byId[m.id] = m;
+			for (const m of incoming) byId[m.id] = m;
+			const merged = Object.values(byId).sort(
+				(a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+			);
+			return {
+				...state,
+				messages: { ...state.messages, [conversationId]: merged },
+			};
+		}
+		case 'ADD_ROOM_MESSAGE': {
+			const m = action.payload;
+			const convId = m.conversationId;
+			const existing = state.messages[convId] ?? [];
+			if (existing.some(x => x.id === m.id)) return state;
+			return {
+				...state,
+				messages: { ...state.messages, [convId]: [...existing, m] },
+				conversations: state.conversations.map(c =>
+					c.id === convId ?
+						{ ...c, lastMessage: m.content, lastMessageTime: m.createdAt } :
+						c
+				),
+			};
+		}
 		default:
 			return state;
 	}
@@ -80,6 +111,10 @@ interface ChatContextValue {
 	markRead: (conversationId: string) => void;
 	setActive: (conversationId: string | null) => void;
 	addConversation: (conv: Conversation) => void;
+	/** Merge/replace messages by id (e.g. WebSocket `/getmessages`). */
+	upsertRoomMessages: (conversationId: string, messages: Message[]) => void;
+	/** Append one message if id is new (e.g. `chat|newmessage`). */
+	addRoomMessage: (message: Message) => void;
 	getConversationForUser: (userId: string) => Conversation | null;
 	totalUnread: number;
 }
@@ -109,6 +144,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 		dispatch({ type: 'ADD_CONVERSATION', payload: conv });
 	}, []);
 
+	const upsertRoomMessages = useCallback((conversationId: string, messages: Message[]) => {
+		dispatch({ type: 'UPSERT_ROOM_MESSAGES', payload: { conversationId, messages } });
+	}, []);
+
+	const addRoomMessage = useCallback((message: Message) => {
+		dispatch({ type: 'ADD_ROOM_MESSAGE', payload: message });
+	}, []);
+
 	const getConversationForUser = useCallback((userId: string) => {
 		return state.conversations.find(c => c.participantIds.includes(userId)) ?? null;
 	}, [state.conversations]);
@@ -118,7 +161,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 	return (
 		<ChatContext.Provider value={{
 			state, sendMessage, unlockMessage, markRead,
-			setActive, addConversation, getConversationForUser, totalUnread,
+			setActive, addConversation, upsertRoomMessages, addRoomMessage,
+			getConversationForUser, totalUnread,
 		}}
 		>
 			{children}

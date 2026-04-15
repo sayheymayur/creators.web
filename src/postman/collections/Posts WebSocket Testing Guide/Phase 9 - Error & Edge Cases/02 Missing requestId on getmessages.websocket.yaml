@@ -1,0 +1,28 @@
+$kind: websocket-request
+name: '02 Missing requestId on getmessages'
+order: 2000
+description: |-
+  **Phase 9 — Error & Edge Cases: Missing requestId**
+
+  Test that `getmessages` requires a requestId and returns an error without one.
+
+  **Message to send** (`> chat` with NO requestId — two lines with a real newline):
+  ```
+  > chat
+  /getmessages 550e8400-e29b-41d4-a716-446655440001
+  ```
+
+  **Expected response:**
+  ```
+  |chat|error||{"message":"requestId required"}
+  ```
+  (exact wording may vary)
+
+  **Verify:**
+  - ✅ Server returns an error referencing "requestId"
+  - ✅ No message data is returned
+  - ✅ Server does not crash
+url: '{{ws_url}}'
+headers:
+  - key: Sec-WebSocket-Protocol
+    value: text

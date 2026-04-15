@@ -1,0 +1,30 @@
+$kind: websocket-request
+name: '01 Leave Room'
+order: 1000
+description: |-
+  **Phase 7 — Leave Room**
+
+  Leave the chat room. Use a **new** requestId (`r4`) to receive an acknowledgement.
+
+  **Prerequisites:** Must have joined the room first (Phase 2).
+
+  **Message to send** (two lines with a real newline between them):
+  ```
+  > chat r4
+  /leaveroom 550e8400-e29b-41d4-a716-446655440001
+  ```
+
+  **Expected response:**
+  ```
+  |chat|leaveroom|r4|{"ok":true,"room_id":"550e8400-e29b-41d4-a716-446655440001"}
+  ```
+
+  **Verify:**
+  - ✅ `ok: true` in the response
+  - ✅ `room_id` matches the UUID you sent
+  - ✅ requestId `r4` echoed back in the response frame
+  - ✅ After leaving, you should no longer receive `newmessage` broadcasts for this room
+url: '{{ws_url}}'
+headers:
+  - key: Sec-WebSocket-Protocol
+    value: text

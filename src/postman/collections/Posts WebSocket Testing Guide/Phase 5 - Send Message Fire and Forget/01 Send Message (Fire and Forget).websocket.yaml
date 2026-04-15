@@ -1,0 +1,29 @@
+$kind: websocket-request
+name: '01 Send Message (Fire and Forget)'
+order: 1000
+description: |-
+  **Phase 5 — Send Message (Fire & Forget / No Ack)**
+
+  Send a chat message WITHOUT a requestId. This matches `sendChatFireAndForget` in the app.
+  The sender receives no acknowledgement — but other joined connections still get the broadcast.
+
+  **Prerequisites:** Must have joined the room first (Phase 2).
+
+  **Message to send** (note: `> chat` with NO requestId — two lines with a real newline):
+  ```
+  > chat
+  /sendmsg 550e8400-e29b-41d4-a716-446655440001 Silent Hello
+  ```
+
+  **Expected:**
+  - ❌ **No ack frame** comes back to this sender connection
+  - ✅ Other joined connections receive: `|chat|newmessage|{...}`
+
+  **Verify:**
+  - ✅ No success/ack JSON is returned to this sender
+  - ✅ If you have a second connection open (Phase 8), it receives the `newmessage` broadcast
+  - ✅ This matches the `sendChatFireAndForget` behavior in the frontend app
+url: '{{ws_url}}'
+headers:
+  - key: Sec-WebSocket-Protocol
+    value: text

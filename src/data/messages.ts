@@ -1,8 +1,13 @@
 import type { Conversation, Message } from '../types';
 
+/** Stable UUID room ids for WebSocket `/joinroom` (spec: roomId must be UUID). */
+export const MOCK_ROOM_UUID_1 = '550e8400-e29b-41d4-a716-446655440001';
+export const MOCK_ROOM_UUID_2 = '550e8400-e29b-41d4-a716-446655440002';
+export const MOCK_ROOM_UUID_3 = '550e8400-e29b-41d4-a716-446655440003';
+
 export const mockConversations: Conversation[] = [
 	{
-		id: 'conv-1',
+		id: MOCK_ROOM_UUID_1,
 		participantIds: ['fan-1', 'creator-1'],
 		participantNames: ['Jamie Hart', 'Luna Rose'],
 		participantAvatars: [
@@ -15,7 +20,7 @@ export const mockConversations: Conversation[] = [
 		isOnline: true,
 	},
 	{
-		id: 'conv-2',
+		id: MOCK_ROOM_UUID_2,
 		participantIds: ['fan-1', 'creator-2'],
 		participantNames: ['Jamie Hart', 'Sophia Chen'],
 		participantAvatars: [
@@ -28,7 +33,7 @@ export const mockConversations: Conversation[] = [
 		isOnline: false,
 	},
 	{
-		id: 'conv-3',
+		id: MOCK_ROOM_UUID_3,
 		participantIds: ['fan-1', 'creator-5'],
 		participantNames: ['Jamie Hart', 'Alex Kim'],
 		participantAvatars: [
@@ -43,10 +48,10 @@ export const mockConversations: Conversation[] = [
 ];
 
 export const mockMessages: Record<string, Message[]> = {
-	'conv-1': [
+	[MOCK_ROOM_UUID_1]: [
 		{
 			id: 'msg-1',
-			conversationId: 'conv-1',
+			conversationId: MOCK_ROOM_UUID_1,
 			senderId: 'fan-1',
 			senderName: 'Jamie Hart',
 			senderAvatar: 'https://images.pexels.com/photos/1040880/pexels-photo-1040880.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&fit=crop',
@@ -58,7 +63,7 @@ export const mockMessages: Record<string, Message[]> = {
 		},
 		{
 			id: 'msg-2',
-			conversationId: 'conv-1',
+			conversationId: MOCK_ROOM_UUID_1,
 			senderId: 'creator-1',
 			senderName: 'Luna Rose',
 			senderAvatar: 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&fit=crop',
@@ -70,7 +75,7 @@ export const mockMessages: Record<string, Message[]> = {
 		},
 		{
 			id: 'msg-3',
-			conversationId: 'conv-1',
+			conversationId: MOCK_ROOM_UUID_1,
 			senderId: 'fan-1',
 			senderName: 'Jamie Hart',
 			senderAvatar: 'https://images.pexels.com/photos/1040880/pexels-photo-1040880.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&fit=crop',
@@ -82,7 +87,7 @@ export const mockMessages: Record<string, Message[]> = {
 		},
 		{
 			id: 'msg-4',
-			conversationId: 'conv-1',
+			conversationId: MOCK_ROOM_UUID_1,
 			senderId: 'creator-1',
 			senderName: 'Luna Rose',
 			senderAvatar: 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&fit=crop',
@@ -95,7 +100,7 @@ export const mockMessages: Record<string, Message[]> = {
 		},
 		{
 			id: 'msg-5',
-			conversationId: 'conv-1',
+			conversationId: MOCK_ROOM_UUID_1,
 			senderId: 'creator-1',
 			senderName: 'Luna Rose',
 			senderAvatar: 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&fit=crop',
@@ -106,10 +111,10 @@ export const mockMessages: Record<string, Message[]> = {
 			isSeen: false,
 		},
 	],
-	'conv-2': [
+	[MOCK_ROOM_UUID_2]: [
 		{
 			id: 'msg-6',
-			conversationId: 'conv-2',
+			conversationId: MOCK_ROOM_UUID_2,
 			senderId: 'fan-1',
 			senderName: 'Jamie Hart',
 			senderAvatar: 'https://images.pexels.com/photos/1040880/pexels-photo-1040880.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&fit=crop',
@@ -121,7 +126,7 @@ export const mockMessages: Record<string, Message[]> = {
 		},
 		{
 			id: 'msg-7',
-			conversationId: 'conv-2',
+			conversationId: MOCK_ROOM_UUID_2,
 			senderId: 'creator-2',
 			senderName: 'Sophia Chen',
 			senderAvatar: 'https://images.pexels.com/photos/1181686/pexels-photo-1181686.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&fit=crop',
@@ -132,10 +137,10 @@ export const mockMessages: Record<string, Message[]> = {
 			isSeen: true,
 		},
 	],
-	'conv-3': [
+	[MOCK_ROOM_UUID_3]: [
 		{
 			id: 'msg-8',
-			conversationId: 'conv-3',
+			conversationId: MOCK_ROOM_UUID_3,
 			senderId: 'creator-5',
 			senderName: 'Alex Kim',
 			senderAvatar: 'https://images.pexels.com/photos/2269872/pexels-photo-2269872.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&fit=crop',
@@ -147,7 +152,7 @@ export const mockMessages: Record<string, Message[]> = {
 		},
 		{
 			id: 'msg-9',
-			conversationId: 'conv-3',
+			conversationId: MOCK_ROOM_UUID_3,
 			senderId: 'fan-1',
 			senderName: 'Jamie Hart',
 			senderAvatar: 'https://images.pexels.com/photos/1040880/pexels-photo-1040880.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&fit=crop',

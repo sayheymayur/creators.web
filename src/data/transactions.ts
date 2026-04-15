@@ -166,7 +166,7 @@ export const mockNotifications: Notification[] = [
 		isRead: false,
 		createdAt: '2026-03-26T09:30:00Z',
 		fromAvatar: 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&fit=crop',
-		link: '/messages/conv-1',
+		link: '/messages/550e8400-e29b-41d4-a716-446655440001',
 	},
 	{
 		id: 'notif-3',

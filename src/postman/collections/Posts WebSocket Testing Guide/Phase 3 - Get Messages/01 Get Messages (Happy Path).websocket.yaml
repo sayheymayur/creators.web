@@ -1,0 +1,30 @@
+$kind: websocket-request
+name: '01 Get Messages (Happy Path)'
+order: 1000
+description: |-
+  **Phase 3 — Get Messages**
+
+  Fetch recent messages from a room. Use a **new** requestId (`r2`) to distinguish from the join request.
+
+  **Message to send** (two lines with a real newline between them):
+  ```
+  > chat r2
+  /getmessages 550e8400-e29b-41d4-a716-446655440001 30
+  ```
+
+  The `30` is the number of messages to fetch.
+
+  **Expected response:**
+  ```
+  |chat|getmessages|r2|{"recentCache":[...],"page":...,"nextCursor":"..."}
+  ```
+
+  **Verify:**
+  - ✅ `recentCache` field exists (array of messages)
+  - ✅ `page` field exists
+  - ✅ `nextCursor` field exists (for pagination)
+  - ✅ requestId `r2` echoed back in the response frame
+url: '{{ws_url}}'
+headers:
+  - key: Sec-WebSocket-Protocol
+    value: text

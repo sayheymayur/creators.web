@@ -1,0 +1,65 @@
+$kind: http-request
+name: '⚡ Quick Sanity Checklist'
+order: 9999
+description: |-
+  # ⚡ Quick Sanity Checklist — Before Each WebSocket Session
+
+  Run through this before starting any phase to avoid wasted debugging time.
+
+  ---
+
+  ## ✅ Pre-Session Checklist
+
+  - [ ] **JWT is fresh** — Run "Phase 1 / 01 Login to get JWT token" to get a new token. Expired tokens cause immediate disconnects.
+
+  - [ ] **Room UUID is valid** — Must be a proper UUID format (e.g. `550e8400-e29b-41d4-a716-446655440001`). The app uses an `isUuid` check on the client side — the server likely does too.
+
+  - [ ] **Every command that needs a response has a unique requestId** — Use `r1`, `r2`, `r3`... or a UUID. Reusing the same requestId across commands can cause response confusion.
+
+  - [ ] **Fire-and-forget commands use `> chat` with NO requestId** — This applies to:
+    - `/typing` (start and stop)
+    - `/sendmsg` when you don't need an ack (matches `sendChatFireAndForget` in the app)
+
+  - [ ] **Line breaks between the two command lines are REAL newlines** — Not the literal characters `\n`. In Postman's message editor, press **Enter** to create a real newline. If commands aren't being parsed, check line endings (see Phase 9 / 04 CRLF Test).
+
+  ---
+
+  ## 📋 Command Reference
+
+  | Command | Format | requestId needed? |
+  |---|---|---|
+  | Join room | `> chat r1` + newline + `/joinroom <uuid>` | ✅ Yes |
+  | Get messages | `> chat r2` + newline + `/getmessages <uuid> 30` | ✅ Yes |
+  | Send message (with ack) | `> chat r3` + newline + `/sendmsg <uuid> <text>` | ✅ Yes |
+  | Send message (fire & forget) | `> chat` + newline + `/sendmsg <uuid> <text>` | ❌ No |
+  | Typing start | `> chat` + newline + `/typing <uuid>` | ❌ No |
+  | Typing stop | `> chat` + newline + `/typing <uuid> 0` | ❌ No |
+  | Leave room | `> chat r4` + newline + `/leaveroom <uuid>` | ✅ Yes |
+
+  ---
+
+  ## 🔑 Response Frame Format
+
+  All server responses follow this pipe-delimited format:
+  ```
+  |chat|<command>|<requestId>|<JSON payload>
+  ```
+
+  Examples:
+  - `|chat|joinroom|r1|{"ok":true,"room_id":"..."}`
+  - `|chat|sendmsg|r3|{"ok":true,"message":{...}}`
+  - `|chat|newmessage|{...}` ← broadcast (no requestId segment)
+  - `|chat|typing|{"room_id":"...","user_id":"...","active":true}`
+  - `|chat|error|r1|<error message>`
+
+  ---
+
+  ## 🧪 Test Room UUID
+
+  ```
+  550e8400-e29b-41d4-a716-446655440001
+  ```
+
+  Replace with a real room UUID from your database for production testing.
+method: GET
+url: ''

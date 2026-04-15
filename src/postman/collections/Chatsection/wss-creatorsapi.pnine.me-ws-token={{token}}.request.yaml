@@ -1,0 +1,9 @@
+$kind: websocket-request
+name: wss://creatorsapi.pnine.me/ws?token={{token}}
+url: wss://creatorsapi.pnine.me/ws?token={{token}}
+headers:
+  Sec-WebSocket-Protocol: text
+queryParams:
+  token: "{{token}}"
+messages: .resources/wss-creatorsapi.pnine.me-ws-token={{token}}.resources/messages
+order: 1776233876960

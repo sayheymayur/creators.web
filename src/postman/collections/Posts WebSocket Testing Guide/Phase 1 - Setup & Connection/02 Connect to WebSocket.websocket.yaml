@@ -1,0 +1,26 @@
+$kind: websocket-request
+name: '02 Connect to WebSocket'
+order: 2000
+description: |-
+  **Phase 1 — Setup & Connection**
+
+  Connect to the WebSocket server using your JWT token.
+
+  **URL:** `wss://<host>/ws?token=<YOUR_JWT>`
+  - Match the path from `VITE_CREATORS_WS_PATH` in your env
+  - Match the token query param name from `wsUrl.ts`
+  - Uses `{{ws_url}}` which should already include `?token={{token}}`
+
+  **Steps:**
+  1. ✅ Run "01 Login to get JWT token" first to populate `{{token}}`
+  2. ✅ Add header: `Sec-WebSocket-Protocol: text`
+  3. ✅ Click **Connect** — confirm status shows **"Connected"**
+
+  **If connection drops immediately:**
+  - Check URL path matches your backend route
+  - Check token is fresh and not expired
+  - Check the token query param name matches `wsUrl.ts`
+url: '{{ws_url}}'
+headers:
+  - key: Sec-WebSocket-Protocol
+    value: text

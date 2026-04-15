@@ -1,0 +1,28 @@
+$kind: websocket-request
+name: '02 Get Messages (Failure - Missing requestId)'
+order: 2000
+description: |-
+  **Phase 3 — Get Messages: Failure Test**
+
+  Test that the server rejects a `getmessages` command sent without a requestId.
+
+  **Message to send** (note: `> chat` with NO requestId after it):
+  ```
+  > chat
+  /getmessages 550e8400-e29b-41d4-a716-446655440001 30
+  ```
+
+  **Expected response:**
+  ```
+  |chat|error||{"message":"requestId required"}
+  ```
+  (or similar — the exact wording may vary)
+
+  **Verify:**
+  - ✅ Server returns an error (not a silent failure)
+  - ✅ Error message references "requestId" or similar
+  - ✅ No message data is returned
+url: '{{ws_url}}'
+headers:
+  - key: Sec-WebSocket-Protocol
+    value: text

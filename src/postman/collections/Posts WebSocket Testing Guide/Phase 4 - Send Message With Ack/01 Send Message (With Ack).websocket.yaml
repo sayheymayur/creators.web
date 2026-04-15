@@ -1,0 +1,39 @@
+$kind: websocket-request
+name: '01 Send Message (With Ack)'
+order: 1000
+description: |-
+  **Phase 4 — Send Message (With Ack)**
+
+  Send a chat message with a requestId to receive an acknowledgement frame back.
+  Use a **new** requestId (`r3`).
+
+  **Prerequisites:** Must have joined the room first (Phase 2).
+
+  **Message to send** (two lines with a real newline between them):
+  ```
+  > chat r3
+  /sendmsg 550e8400-e29b-41d4-a716-446655440001 Hello World
+  ```
+
+  **Expected — two frames back:**
+
+  1. **Ack frame** (to this connection only):
+  ```
+  |chat|sendmsg|r3|{"ok":true,"message":{...}}
+  ```
+
+  2. **Push/broadcast frame** (to ALL joined connections including this one):
+  ```
+  |chat|newmessage|{...}
+  ```
+
+  **Verify:**
+  - ✅ `ok: true` in the ack frame
+  - ✅ `message` object contains the content you sent ("Hello World")
+  - ✅ requestId `r3` echoed back in the ack frame
+  - ✅ A separate `newmessage` broadcast frame is also received
+  - ✅ Message content in the `message` object matches what you sent
+url: '{{ws_url}}'
+headers:
+  - key: Sec-WebSocket-Protocol
+    value: text

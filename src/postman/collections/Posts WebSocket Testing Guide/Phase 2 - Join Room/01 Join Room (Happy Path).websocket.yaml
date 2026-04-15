@@ -1,0 +1,29 @@
+$kind: websocket-request
+name: '01 Join Room (Happy Path)'
+order: 1000
+description: |-
+  **Phase 2 — Join Room**
+
+  After connecting, join a chat room by sending a two-line message.
+
+  **Message to send** (two lines with a real newline between them):
+  ```
+  > chat r1
+  /joinroom 550e8400-e29b-41d4-a716-446655440001
+  ```
+
+  **Expected response:**
+  ```
+  |chat|joinroom|r1|{"ok":true,"room_id":"550e8400-e29b-41d4-a716-446655440001"}
+  ```
+
+  **Verify:**
+  - ✅ `ok: true` in the response
+  - ✅ `room_id` matches the UUID you sent
+  - ✅ requestId `r1` echoed back in the response frame
+
+  **Important:** The two lines must be separated by a **real newline** (`\n`), not the literal characters `\n`.
+url: '{{ws_url}}'
+headers:
+  - key: Sec-WebSocket-Protocol
+    value: text

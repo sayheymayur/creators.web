@@ -8,6 +8,7 @@ import { useChat } from '../../context/ChatContext';
 import { formatDistanceToNow } from '../../utils/date';
 import { mockCreators } from '../../data/users';
 import { useContent } from '../../context/ContentContext';
+import { randomUuid } from '../../utils/isUuid';
 
 export function MessagesList() {
 	const { state: authState } = useAuth();
@@ -43,7 +44,7 @@ export function MessagesList() {
 			navigate(`/messages/${existing.id}`);
 			return;
 		}
-		const convId = `conv-${Date.now()}`;
+		const convId = randomUuid();
 		addConversation({
 			id: convId,
 			participantIds: [userId, creatorId],

@@ -1,0 +1,33 @@
+$kind: websocket-request
+name: '01 Connection 1 - Join Room'
+order: 1000
+description: |-
+  **Phase 8 — Room Fanout (Multi-Connection Test): Connection 1**
+
+  This is the FIRST of two WebSocket connections for the fanout test.
+  Open this tab AND a second WebSocket tab (or use the running app as the second client).
+
+  **Setup:**
+  1. Open this tab → Connect
+  2. Open "02 Connection 2 - Join Room" in a separate tab → Connect
+  3. Both must join the **same** room UUID
+
+  **Message to send on this connection** (two lines with a real newline):
+  ```
+  > chat r1
+  /joinroom 550e8400-e29b-41d4-a716-446655440001
+  ```
+
+  **Then proceed to:**
+  - "03 Connection 1 - Send Message" to send a message
+  - Verify Connection 2 receives the broadcast
+
+  **Full fanout test sequence:**
+  1. ✅ Both connections join the same room
+  2. ✅ Connection 1 sends a message → Connection 2 receives `|chat|newmessage|{...}`
+  3. ✅ Connection 2 leaves the room (`/leaveroom`)
+  4. ✅ Connection 1 sends another message → Connection 2 does NOT receive it
+url: '{{ws_url}}'
+headers:
+  - key: Sec-WebSocket-Protocol
+    value: text

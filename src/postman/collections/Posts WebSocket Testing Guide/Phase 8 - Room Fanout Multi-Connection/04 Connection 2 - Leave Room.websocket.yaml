@@ -1,0 +1,29 @@
+$kind: websocket-request
+name: '04 Connection 2 - Leave Room'
+order: 4000
+description: |-
+  **Phase 8 — Room Fanout: Connection 2 Leaves**
+
+  Have Connection 2 leave the room. After this, Connection 2 should stop receiving broadcasts.
+
+  **Message to send on Connection 2** (two lines with a real newline):
+  ```
+  > chat r2
+  /leaveroom 550e8400-e29b-41d4-a716-446655440001
+  ```
+
+  **Expected response on Connection 2:**
+  ```
+  |chat|leaveroom|r2|{"ok":true,"room_id":"550e8400-e29b-41d4-a716-446655440001"}
+  ```
+
+  **Next step:** Go back to Connection 1 and send another message.
+  Connection 2 should NOT receive the new `newmessage` broadcast.
+
+  **Verify:**
+  - ✅ Connection 2 receives the leaveroom ack
+  - ✅ After leaving, Connection 2 receives NO further `newmessage` frames
+url: '{{ws_url}}'
+headers:
+  - key: Sec-WebSocket-Protocol
+    value: text

@@ -1,0 +1,27 @@
+$kind: websocket-request
+name: '01 Invalid UUID'
+order: 1000
+description: |-
+  **Phase 9 — Error & Edge Cases: Invalid UUID**
+
+  Test that the server rejects a command with a non-UUID room identifier.
+
+  **Message to send** (two lines with a real newline):
+  ```
+  > chat r1
+  /joinroom not-a-uuid
+  ```
+
+  **Expected response:**
+  ```
+  |chat|error|r1|<error message>
+  ```
+
+  **Verify:**
+  - ✅ Response contains `error` in the second segment
+  - ✅ requestId `r1` is echoed back
+  - ✅ Server does not crash or silently fail
+url: '{{ws_url}}'
+headers:
+  - key: Sec-WebSocket-Protocol
+    value: text

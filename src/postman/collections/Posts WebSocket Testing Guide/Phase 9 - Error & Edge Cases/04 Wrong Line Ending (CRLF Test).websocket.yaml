@@ -1,0 +1,32 @@
+$kind: websocket-request
+name: '04 Wrong Line Ending (CRLF Test)'
+order: 4000
+description: |-
+  **Phase 9 — Error & Edge Cases: Line Ending Test**
+
+  If commands are not being parsed correctly, the issue may be line endings.
+  Postman uses `\n` (LF) by default. Some servers may require `\r\n` (CRLF).
+
+  **Steps:**
+  1. Send a normal join command with `\n` line endings (default Postman behavior)
+  2. If the server doesn't respond correctly, try switching to `\r\n` in the message
+
+  **Test message with LF (default):**
+  ```
+  > chat r1
+  /joinroom 550e8400-e29b-41d4-a716-446655440001
+  ```
+
+  **If that fails, try CRLF** (add `\r` before the newline in the raw message editor).
+
+  **Expected after fix:**
+  - ✅ Connection stabilizes
+  - ✅ Commands are parsed and responded to correctly
+
+  **Verify:**
+  - ✅ Identify which line ending your server expects
+  - ✅ Document the finding for the team
+url: '{{ws_url}}'
+headers:
+  - key: Sec-WebSocket-Protocol
+    value: text

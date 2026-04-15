@@ -30,8 +30,6 @@ export function Register() {
 		);
 	}
 
-
-	
 	function handleGoogleSignup() {
 		setIsLoading(true);
 		void loginWithGoogle(role).then(user => {

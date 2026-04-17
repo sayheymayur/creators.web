@@ -298,6 +298,8 @@ function contentReducer(state: ContentState, action: ContentAction): ContentStat
 
 interface ContentContextValue {
 	state: ContentState;
+	/** Multiplex WebSocket status (feed + chat share this connection when not in posts mock mode). */
+	postsWsStatus: PostsWsStatus;
 	toggleLike: (postId: string, userId: string) => Promise<void>;
 	addComment: (postId: string, text: string) => Promise<void>;
 	unlockPost: (postId: string, userId: string) => void;
@@ -982,6 +984,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 		<ContentContext.Provider
 			value={{
 				state,
+				postsWsStatus: state.postsWsStatus,
 				toggleLike,
 				addComment,
 				unlockPost,

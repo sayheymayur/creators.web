@@ -14,15 +14,19 @@ type Pending = {
 	timer: ReturnType<typeof setTimeout>,
 };
 
+export type ChatEventHandler = (event: string, payload: unknown) => void;
+
 export interface CreatorsMultiplexWsOptions {
 	onPostsEvent: (event: string, payload: unknown) => void;
 	onConnectionChange?: (status: 'connecting' | 'open' | 'closed', err?: Error) => void;
+	/** When a chat error line arrives but no matching pending request (e.g. fire-and-forget commands). */
+	onChatOrphanError?: (message: string) => void;
 	url?: string;
 	commandTimeoutMs?: number;
 }
 
 /**
- * One WebSocket for posts, user, and creator line services (same URL, `> <service> <requestId>`).
+ * One WebSocket for posts, user, creator, and chat line services (same URL, `> <service> <requestId>`).
  */
 export class CreatorsMultiplexWs {
 	private ws: WebSocket | null = null;
@@ -30,9 +34,57 @@ export class CreatorsMultiplexWs {
 	private pending: Record<string, Pending> = {};
 	private readonly options: CreatorsMultiplexWsOptions;
 	private sendQueue: string[] = [];
+	private chatListeners: ChatEventHandler[] = [];
+	private chatOrphanErrorListeners: ((message: string) => void)[] = [];
 
 	constructor(options: CreatorsMultiplexWsOptions) {
 		this.options = options;
+	}
+
+	/** Subscribe to `|chat|<event>|<JSON>` push frames. Returns unsubscribe. */
+	subscribeChatEvents(handler: ChatEventHandler): () => void {
+		this.chatListeners.push(handler);
+		return () => {
+			const i = this.chatListeners.indexOf(handler);
+			if (i !== -1) this.chatListeners.splice(i, 1);
+		};
+	}
+
+	/** Subscribe to chat error lines with no matching pending request (e.g. fire-and-forget). */
+	subscribeChatOrphanErrors(handler: (message: string) => void): () => void {
+		this.chatOrphanErrorListeners.push(handler);
+		return () => {
+			const i = this.chatOrphanErrorListeners.indexOf(handler);
+			if (i !== -1) this.chatOrphanErrorListeners.splice(i, 1);
+		};
+	}
+
+	/** True when the underlying WebSocket is open (commands may be sent). */
+	isOpen(): boolean {
+		return this.ws?.readyState === WebSocket.OPEN;
+	}
+
+	private emitChatEvent(event: string, payload: unknown) {
+		const list = [...this.chatListeners];
+		for (const h of list) {
+			try {
+				h(event, payload);
+			} catch {
+				/* listener errors should not break the socket */
+			}
+		}
+	}
+
+	private emitChatOrphanError(message: string) {
+		this.options.onChatOrphanError?.(message);
+		const list = [...this.chatOrphanErrorListeners];
+		for (const h of list) {
+			try {
+				h(message);
+			} catch {
+				/* ignore */
+			}
+		}
 	}
 
 	private appendTextChunk(chunk: string) {
@@ -159,6 +211,8 @@ export class CreatorsMultiplexWs {
 				clearTimeout(p.timer);
 				delete this.pending[frame.requestId];
 				p.reject(new Error(frame.message));
+			} else if (frame.service === 'chat') {
+				this.emitChatOrphanError(frame.message);
 			}
 			return;
 		}
@@ -170,6 +224,11 @@ export class CreatorsMultiplexWs {
 				delete this.pending[frame.requestId];
 				p.resolve(frame.json);
 			}
+			return;
+		}
+
+		if (frame.service === 'chat') {
+			this.emitChatEvent(frame.event, frame.json);
 			return;
 		}
 
@@ -203,8 +262,19 @@ export class CreatorsMultiplexWs {
 		});
 	}
 
+	/**
+	 * `> chat` with no requestId — for commands that do not return success JSON (`/sendmsg` broadcast-only, `/typing`).
+	 */
+	sendChatFireAndForget(commandLine: string): void {
+		const lines = `> chat\n${commandLine}\n`;
+		this.rawSend(lines);
+		this.flushQueue();
+	}
+
 	close() {
 		this.rejectAllPending(new Error('WebSocket closed'));
+		this.chatListeners = [];
+		this.chatOrphanErrorListeners = [];
 		this.ws?.close();
 		this.ws = null;
 		this.buffer = '';

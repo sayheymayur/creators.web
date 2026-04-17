@@ -1,15 +1,15 @@
 /**
- * Shared line-based WebSocket framing for creators API services (posts, user, creator).
+ * Shared line-based WebSocket framing for creators API services (posts, user, creator, chat).
  * Success: |<svc>|<command>|<requestId>|<JSON>
  * Error: |<svc>|error|<requestId>|<message>
- * Posts push: |posts|<event>|<JSON> (no requestId)
+ * Push: |<svc>|<event>|<JSON> (no requestId) — posts and chat
  */
-export type WsService = 'posts' | 'user' | 'creator';
+export type WsService = 'posts' | 'user' | 'creator' | 'chat';
 
 export type ParsedCreatorsWsLine =
 	| { kind: 'success', service: WsService, command: string, requestId: string, json: unknown } |
 	{ kind: 'error', service: WsService, requestId: string, message: string } |
-	{ kind: 'event', service: 'posts', event: string, json: unknown };
+	{ kind: 'event', service: 'posts' | 'chat', event: string, json: unknown };
 
 export function parseCreatorsWsLine(line: string): ParsedCreatorsWsLine | null {
 	const trimmed = line.trim();
@@ -18,7 +18,7 @@ export function parseCreatorsWsLine(line: string): ParsedCreatorsWsLine | null {
 	if (parts.length < 4) return null;
 
 	const svc = parts[1];
-	if (svc !== 'posts' && svc !== 'user' && svc !== 'creator') return null;
+	if (svc !== 'posts' && svc !== 'user' && svc !== 'creator' && svc !== 'chat') return null;
 	const service = svc as WsService;
 
 	if (parts[2] === 'error') {
@@ -29,12 +29,12 @@ export function parseCreatorsWsLine(line: string): ParsedCreatorsWsLine | null {
 	}
 
 	if (parts.length === 4) {
-		if (service !== 'posts') return null;
+		if (service !== 'posts' && service !== 'chat') return null;
 		const event = parts[2];
 		const jsonStr = parts[3];
 		try {
 			const json = JSON.parse(jsonStr) as unknown;
-			return { kind: 'event', service: 'posts', event, json };
+			return { kind: 'event', service, event, json };
 		} catch {
 			return null;
 		}

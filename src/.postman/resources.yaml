@@ -1,0 +1,21 @@
+# Use this workspace to collaborate
+workspace:
+  id: 20b6e8ce-70ea-4d84-8820-8d32b58c4edf
+
+# Each entry here maps a local resource to one or more corresponding objects in Postman Cloud
+
+cloudResources:
+  collections:
+    ..\postman\collections\Creators API: 53841109-90b586af-3668-4a41-afc8-029c6553776c
+    ..\postman\collections\New Collection: 69dc9e7ff969bc2663a55d0b
+    ..\postman\collections\My Collection: 53841109-b9c14185-eafa-4242-a3e3-f44fb2df48fa
+    ..\postman\collections\Posts WebSocket Testing Guide: 53841109-ccc238b7-e6e1-427d-8894-0d6bde94d48e
+  environments:
+    ..\postman\environments\New Environment.environment.yaml: 53841109-59490757-05c5-4652-92cd-c56316c59231
+    ..\postman\environments\Creators API Env.environment.yaml: 53841109-88b04a00-f9a9-4890-ba13-e96f5ba4c6ba
+
+# All resources in the `postman/` folder are automatically registered in Local View.
+# Point to additional files outside the `postman/` folder to register them individually. Example:
+#localResources:
+#  collections:
+#    - ../tests/E2E Test Collection/

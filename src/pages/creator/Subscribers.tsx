@@ -7,6 +7,7 @@ import { mockCreators, mockUsers } from '../../data/users';
 import { mockSubscriptions } from '../../data/transactions';
 import { formatDate } from '../../utils/date';
 import { useChat } from '../../context/ChatContext';
+import { randomUuid } from '../../utils/isUuid';
 
 export function Subscribers() {
 	const creator = useCurrentCreator();
@@ -33,7 +34,7 @@ export function Subscribers() {
 		if (existing) {
 			navigate(`/messages/${existing.id}`);
 		} else {
-			const convId = `conv-${Date.now()}`;
+			const convId = randomUuid();
 			addConversation({
 				id: convId,
 				participantIds: [creatorData.id, userId],

@@ -18,6 +18,7 @@ import type { Creator, SessionType } from '../../types';
 import { creatorsApi } from '../../services/creatorsApi';
 import { creatorProfileDtoToCreator } from '../../services/creatorWsMap';
 import { isPostsMockMode } from '../../services/postsMode';
+import { randomUuid } from '../../utils/isUuid';
 
 export function CreatorProfile() {
 	const { id } = useParams<{ id: string }>();
@@ -209,7 +210,7 @@ export function CreatorProfile() {
 		if (existing) {
 			navigate(`/messages/${existing.id}`);
 		} else {
-			const convId = `conv-${Date.now()}`;
+			const convId = randomUuid();
 			addConversation({
 				id: convId,
 				participantIds: [authState.user.id, creatorForDisplay.id],

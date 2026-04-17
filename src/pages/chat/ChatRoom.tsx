@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Send, Image as ImageIcon, Zap, Lock, Unlock, CheckCheck, Check, Phone, Video } from '../../components/icons';
 import { useAuth } from '../../context/AuthContext';
 import { useChat } from '../../context/ChatContext';
+import { useContent } from '../../context/ContentContext';
 import { useWallet } from '../../context/WalletContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { useCall } from '../../context/CallContext';
@@ -12,22 +13,62 @@ import { formatDistanceToNow } from '../../utils/date';
 import type { Message } from '../../types';
 import { ToastContainer } from '../../components/ui/Toast';
 import { Navbar } from '../../components/layout/Navbar';
+import { useRoomChat } from '../../hooks/useRoomChat';
 
 export function ChatRoom() {
 	const { id: convId } = useParams<{ id: string }>();
 	const navigate = useNavigate();
 	const { state: authState } = useAuth();
-	const { state: chatState, sendMessage, markRead, unlockMessage } = useChat();
+	const {
+		state: chatState,
+		sendMessage,
+		markRead,
+		unlockMessage,
+		upsertRoomMessages,
+		addRoomMessage,
+	} = useChat();
+	const { state: contentState } = useContent();
 	const { deductFunds } = useWallet();
 	const { showToast } = useNotifications();
 	const { startCall } = useCall();
 	const [text, setText] = useState('');
 	const [showTipModal, setShowTipModal] = useState(false);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
+	const replyIdxRef = useRef(0);
 
 	const conv = chatState.conversations.find(c => c.id === convId);
 	const messages = convId ? (chatState.messages[convId] ?? []) : [];
 	const userId = authState.user?.id ?? '';
+
+	const getParticipantMeta = useCallback(
+		(uid: string) => {
+			if (!conv) return { name: 'User', avatar: '' };
+			const idx = conv.participantIds.indexOf(uid);
+			if (idx === -1) return { name: 'User', avatar: '' };
+			return {
+				name: conv.participantNames[idx] ?? 'User',
+				avatar: conv.participantAvatars[idx] ?? '',
+			};
+		},
+		[conv]
+	);
+
+	const onProtocolError = useCallback(
+		(msg: string) => {
+			showToast(msg, 'error');
+		},
+		[showToast]
+	);
+
+	const { otherTyping, realtimeActive, notifyTyping, sendRealtime } = useRoomChat({
+		roomUuid: conv && convId ? convId : undefined,
+		currentUserId: userId,
+		postsWsStatus: contentState.postsWsStatus,
+		getParticipantMeta,
+		upsertRoomMessages,
+		addRoomMessage,
+		onProtocolError,
+	});
 
 	useEffect(() => {
 		if (convId) markRead(convId);
@@ -45,21 +86,47 @@ export function ChatRoom() {
 		);
 	}
 
+	const roomId = convId;
+
 	const otherIdx = conv.participantIds.indexOf(userId) === 0 ? 1 : 0;
 	const otherName = conv.participantNames[otherIdx];
 	const otherAvatar = conv.participantAvatars[otherIdx];
 	const otherId = conv.participantIds[otherIdx];
 
+	const replies = [
+		'Thank you for the message.',
+		'I appreciate the feedback. New content is planned.',
+		'Thanks for the support. Let me know if you have any requests.',
+		'I appreciate you being here.',
+		'That took some time to prepare, glad you noticed.',
+	];
+	function getAutoReply() {
+		const reply = replies[replyIdxRef.current % replies.length];
+		replyIdxRef.current++;
+		return reply;
+	}
+
 	function handleSend(e: React.FormEvent) {
 		e.preventDefault();
 		if (!text.trim() || !authState.user) return;
+		const trimmed = text.trim();
+
+		if (realtimeActive) {
+			void sendRealtime(trimmed).then(() => {
+				setText('');
+			}).catch(err => {
+				showToast(err instanceof Error ? err.message : 'Send failed', 'error');
+			});
+			return;
+		}
+
 		const msg: Message = {
 			id: `msg-${Date.now()}`,
-			conversationId: convId!,
+			conversationId: roomId,
 			senderId: userId,
 			senderName: authState.user.name,
 			senderAvatar: authState.user.avatar,
-			content: text.trim(),
+			content: trimmed,
 			isPaid: false,
 			isUnlocked: true,
 			createdAt: new Date().toISOString(),
@@ -71,7 +138,7 @@ export function ChatRoom() {
 		setTimeout(() => {
 			const reply: Message = {
 				id: `msg-${Date.now()}-reply`,
-				conversationId: convId!,
+				conversationId: roomId,
 				senderId: otherId,
 				senderName: otherName,
 				senderAvatar: otherAvatar,
@@ -89,26 +156,18 @@ export function ChatRoom() {
 		if (!msg.price) return;
 		const ok = deductFunds(msg.price, 'ppv', `Unlock message from ${otherName}`, otherId, otherName);
 		if (ok) {
-			unlockMessage(msg.id, convId!);
+			unlockMessage(msg.id, roomId);
 			showToast('Message unlocked!');
 		} else {
 			showToast('Insufficient balance', 'error');
 		}
 	}
 
-	const replies = [
-		'Thank you for the message.',
-		'I appreciate the feedback. New content is planned.',
-		'Thanks for the support. Let me know if you have any requests.',
-		'I appreciate you being here.',
-		'That took some time to prepare, glad you noticed.',
-	];
-	let replyIdx = 0;
-	function getAutoReply() {
-		const reply = replies[replyIdx % replies.length];
-		replyIdx++;
-		return reply;
-	}
+	const statusLine = otherTyping ?
+		'Typing…' :
+		conv.isOnline ?
+			'Online now' :
+			'Offline';
 
 	return (
 		<div className="min-h-screen bg-background text-foreground flex flex-col">
@@ -123,7 +182,7 @@ export function ChatRoom() {
 					<Avatar src={otherAvatar} alt={otherName} size="md" isOnline={conv.isOnline} />
 					<div>
 						<p className="text-sm font-semibold text-foreground">{otherName}</p>
-						<p className="text-xs text-muted">{conv.isOnline ? 'Online now' : 'Offline'}</p>
+						<p className="text-xs text-muted">{statusLine}</p>
 					</div>
 					<div className="ml-auto flex items-center gap-2">
 						<button
@@ -217,7 +276,14 @@ export function ChatRoom() {
 						</button>
 						<input
 							value={text}
-							onChange={e => setText(e.target.value)}
+							onChange={e => {
+								const v = e.target.value;
+								setText(v);
+								if (realtimeActive && v.trim()) notifyTyping(true);
+							}}
+							onBlur={() => {
+								if (realtimeActive) notifyTyping(false);
+							}}
 							placeholder="Type a message..."
 							className="flex-1 bg-input border border-border/20 rounded-2xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
 						/>

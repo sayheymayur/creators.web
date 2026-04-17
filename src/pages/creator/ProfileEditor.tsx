@@ -12,7 +12,7 @@ import { isPostsMockMode } from '../../services/postsMode';
 
 export function ProfileEditor() {
 	const creator = useCurrentCreator();
-	const { updateUser } = useAuth();
+	const { state: authState, updateUser } = useAuth();
 	const { creatorWsUpsert } = useContent();
 	const { showToast } = useNotifications();
 

@@ -6,7 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useWallet } from '../../context/WalletContext';
 import { useContent } from '../../context/ContentContext';
 import { useNotifications } from '../../context/NotificationContext';
-import { usdToInr, formatINR } from '../../services/razorpay';
+import { formatINR, getExternalPayShortLabel, usdToInr } from '../../services/payments';
 import type { Creator } from '../../types';
 import { delayMs } from '../../utils/delay';
 
@@ -23,16 +23,16 @@ const PERKS = [
 	'Exclusive behind-the-scenes content',
 ];
 
-type PayMode = 'razorpay' | 'wallet';
+type PayMode = 'external' | 'wallet';
 
 export function SubscribeModal({ isOpen, onClose, creator }: SubscribeModalProps) {
 	const { state: authState } = useAuth();
-	const { deductFunds, payViaRazorpay, addSubscription } = useWallet();
+	const { deductFunds, payExternally, addSubscription } = useWallet();
 	const { subscribe } = useContent();
 	const { showToast } = useNotifications();
 	const [isLoading, setIsLoading] = useState(false);
 	const [success, setSuccess] = useState(false);
-	const [payMode, setPayMode] = useState<PayMode>('razorpay');
+	const [payMode, setPayMode] = useState<PayMode>('external');
 	const [error, setError] = useState('');
 
 	const balance = authState.user?.walletBalance ?? 0;
@@ -66,8 +66,8 @@ export function SubscribeModal({ isOpen, onClose, creator }: SubscribeModalProps
 		void delayMs(900).then(() => {
 			setError('');
 
-			if (payMode === 'razorpay') {
-				void payViaRazorpay(
+			if (payMode === 'external') {
+				void payExternally(
 					creator.subscriptionPrice,
 					'subscription',
 					`Subscription to ${creator.name}`,
@@ -141,9 +141,9 @@ export function SubscribeModal({ isOpen, onClose, creator }: SubscribeModalProps
 						<p className="text-xs font-semibold text-muted uppercase tracking-widest mb-2">Payment Method</p>
 						<div className="flex gap-2 mb-4">
 							<button
-								onClick={() => setPayMode('razorpay')}
+								onClick={() => setPayMode('external')}
 								className={`flex-1 py-2.5 rounded-xl text-xs font-semibold border transition-all ${
-									payMode === 'razorpay' ? 'border-rose-500/40 bg-rose-500/10 text-rose-500' : 'border-border/20 bg-foreground/5 text-muted hover:bg-foreground/10'
+									payMode === 'external' ? 'border-rose-500/40 bg-rose-500/10 text-rose-500' : 'border-border/20 bg-foreground/5 text-muted hover:bg-foreground/10'
 								}`}
 							>
 								Pay {formatINR(inrPrice)}
@@ -176,7 +176,7 @@ export function SubscribeModal({ isOpen, onClose, creator }: SubscribeModalProps
 						</Button>
 						{payMode === 'wallet' && balance < creator.subscriptionPrice && (
 							<p className="text-center text-xs text-rose-400 mt-2">
-								Insufficient balance. Switch to Razorpay or add funds.
+								{`Insufficient balance. Switch to ${getExternalPayShortLabel()} or add funds.`}
 							</p>
 						)}
 						<p className="text-center text-xs text-muted/80 mt-2">Auto-renews monthly. Cancel anytime.</p>

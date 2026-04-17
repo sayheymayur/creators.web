@@ -6,7 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useWallet } from '../../context/WalletContext';
 import { useContent } from '../../context/ContentContext';
 import { useNotifications } from '../../context/NotificationContext';
-import { usdToInr, formatINR } from '../../services/razorpay';
+import { formatINR, getExternalPayShortLabel, usdToInr } from '../../services/payments';
 import type { Post } from '../../types';
 import { delayMs } from '../../utils/delay';
 
@@ -16,16 +16,16 @@ interface PPVUnlockModalProps {
 	post: Post;
 }
 
-type PayMode = 'razorpay' | 'wallet';
+type PayMode = 'external' | 'wallet';
 
 export function PPVUnlockModal({ isOpen, onClose, post }: PPVUnlockModalProps) {
 	const { state: authState } = useAuth();
-	const { deductFunds, payViaRazorpay } = useWallet();
+	const { deductFunds, payExternally } = useWallet();
 	const { unlockPost } = useContent();
 	const { showToast } = useNotifications();
 	const [isLoading, setIsLoading] = useState(false);
 	const [success, setSuccess] = useState(false);
-	const [payMode, setPayMode] = useState<PayMode>('razorpay');
+	const [payMode, setPayMode] = useState<PayMode>('external');
 	const [error, setError] = useState('');
 
 	const price = post.ppvPrice ?? 0;
@@ -39,8 +39,8 @@ export function PPVUnlockModal({ isOpen, onClose, post }: PPVUnlockModalProps) {
 		void delayMs(800).then(() => {
 			setError('');
 
-			if (payMode === 'razorpay') {
-				void payViaRazorpay(price, 'ppv', `PPV unlock: ${post.creatorName}`, post.creatorId, post.creatorName).then(result => {
+			if (payMode === 'external') {
+				void payExternally(price, 'ppv', `PPV unlock: ${post.creatorName}`, post.creatorId, post.creatorName).then(result => {
 					if (!result.ok) {
 						if (!result.cancelled) setError(result.error || 'Payment failed.');
 						setIsLoading(false);
@@ -111,9 +111,9 @@ export function PPVUnlockModal({ isOpen, onClose, post }: PPVUnlockModalProps) {
 						<p className="text-xs font-semibold text-muted uppercase tracking-widest mb-2">Payment Method</p>
 						<div className="flex gap-2 mb-4">
 							<button
-								onClick={() => setPayMode('razorpay')}
+								onClick={() => setPayMode('external')}
 								className={`flex-1 py-2.5 rounded-xl text-xs font-semibold border transition-all ${
-									payMode === 'razorpay' ? 'border-rose-500/40 bg-rose-500/10 text-rose-500' : 'border-border/20 bg-foreground/5 text-muted hover:bg-foreground/10'
+									payMode === 'external' ? 'border-rose-500/40 bg-rose-500/10 text-rose-500' : 'border-border/20 bg-foreground/5 text-muted hover:bg-foreground/10'
 								}`}
 							>
 								Pay {formatINR(inrPrice)}
@@ -146,7 +146,9 @@ export function PPVUnlockModal({ isOpen, onClose, post }: PPVUnlockModalProps) {
 							Unlock for ${price.toFixed(2)}
 						</Button>
 						{payMode === 'wallet' && balance < price && (
-							<p className="text-center text-xs text-rose-400 mt-2">Insufficient balance. Switch to Razorpay or add funds.</p>
+							<p className="text-center text-xs text-rose-400 mt-2">
+								{`Insufficient balance. Switch to ${getExternalPayShortLabel()} or add funds.`}
+							</p>
 						)}
 					</>
 				)}

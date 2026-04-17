@@ -16,6 +16,8 @@ type PendingReq = {
 type AnyListener = (frame: WsFrame) => void;
 type EventListener = (data: unknown, frame: Extract<WsFrame, { type: 'event' }>) => void;
 
+const DEFAULT_CREATORS_API_ORIGIN = 'https://creatorsapi.pnine.me';
+
 /**
  * Showdown-like connection manager:
  * - one socket
@@ -261,16 +263,42 @@ export class WsClient {
 
 	private buildUrl(): string {
 		if (this.options.url) return this.options.url;
-		const envUrl = (import.meta.env.VITE_WS_URL ?? '').trim();
-		if (envUrl) return envUrl;
-		const wsPath = this.options.wsPath ?? import.meta.env.VITE_WS_PATH ?? '/ws';
-		const token = this.options.getToken?.() ?? null;
 
-		const loc = window.location;
-		const proto = loc.protocol === 'https:' ? 'wss:' : 'ws:';
-		const base = `${proto}//${loc.host}${wsPath}`;
+		// Prefer the newer creators.* env keys (used by `creatorsWsUrl()`), but keep the legacy keys as fallback.
+		const explicit =
+			(import.meta.env.VITE_CREATORS_WS_URL ?? '').trim() ||
+			(import.meta.env.VITE_WS_URL ?? '').trim();
+		if (explicit) return explicit;
+
+		const wsPath =
+			this.options.wsPath ??
+			(
+				(import.meta.env.VITE_CREATORS_WS_PATH ?? '').trim() ||
+				(import.meta.env.VITE_WS_PATH ?? '').trim() ||
+				'/ws'
+			);
+
+		const token = this.options.getToken?.() ?? null;
+		const tokenParam = (import.meta.env.VITE_CREATORS_WS_TOKEN_PARAM ?? '').trim() || 'token';
+
+		// Derive ws(s):// from the configured API origin, falling back to current host.
+		const apiOrigin = (import.meta.env.VITE_CREATORS_API_URL ?? '').trim() || DEFAULT_CREATORS_API_ORIGIN;
+		let base: string;
+		try {
+			const u = new URL(apiOrigin);
+			u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
+			u.pathname = wsPath.startsWith('/') ? wsPath : `/${wsPath}`;
+			u.search = '';
+			u.hash = '';
+			base = u.toString();
+		} catch {
+			const loc = window.location;
+			const proto = loc.protocol === 'https:' ? 'wss:' : 'ws:';
+			base = `${proto}//${loc.host}${wsPath}`;
+		}
+
 		if (!token) return base;
 		const sep = base.includes('?') ? '&' : '?';
-		return `${base}${sep}token=${encodeURIComponent(token)}`;
+		return `${base}${sep}${encodeURIComponent(tokenParam)}=${encodeURIComponent(token)}`;
 	}
 }

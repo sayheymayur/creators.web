@@ -115,4 +115,3 @@ export function callEnd(ws: WsClient, sessionId: string, requestId?: string): Pr
 	const sid = assertSessionId(sessionId);
 	return ws.request('call', 'end', [sid], requestId).then(json => json as CallOkResponse);
 }
-

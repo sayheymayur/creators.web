@@ -45,4 +45,3 @@ export interface CallEndedEventPayload {
 	session_id: string;
 	room_id?: string;
 }
-

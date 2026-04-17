@@ -33,3 +33,10 @@ dist-ssr
 firebase-adminsdk*.json
 secrets.json
 credentials.json
+<<<<<<< HEAD
+=======
+*.postman_collection.json
+*.postman_environment.json
+.postman/
+postman/
+>>>>>>> d8e2405 (Resolve .gitignore merge conflict)

@@ -154,7 +154,6 @@ export function CreatorProfile() {
 
 		const userId = authState.user.id;
 		const userName = authState.user.name;
-		const c = creatorForDisplay;
 
 		const startAndNavigate = () => {
 			startSession(

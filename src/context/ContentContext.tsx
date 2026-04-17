@@ -762,7 +762,8 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 	const loadPostComments = useCallback(
 		(postId: string) => {
 			if (mockMode) return Promise.resolve();
-			if (Object.hasOwn(stateRef.current.commentPagination, postId)) {
+			// eslint-disable-next-line prefer-object-has-own -- TS lib target doesn't include Object.hasOwn yet.
+			if (Object.prototype.hasOwnProperty.call(stateRef.current.commentPagination, postId)) {
 				return Promise.resolve();
 			}
 			return runRemote(() => {

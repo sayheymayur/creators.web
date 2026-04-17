@@ -1,7 +1,0 @@
-$kind: websocket-request
-name: "{{ws_url}}?token={{token}}"
-url: "{{ws_url}}?token={{token}}"
-queryParams:
-  token: "{{token}}"
-messages: .resources/{{ws_url}}-token={{token}}.resources/messages
-order: 2000

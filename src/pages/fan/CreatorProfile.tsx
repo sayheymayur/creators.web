@@ -29,7 +29,7 @@ export function CreatorProfile() {
 	const { addConversation, getConversationForUser } = useChat();
 	const { startCall } = useCall();
 	const { startSession } = useSession();
-	const { deductFunds, payViaRazorpay } = useWallet();
+	const { deductFunds, payExternally } = useWallet();
 	const [showTipModal, setShowTipModal] = useState(false);
 	const [showSubscribeModal, setShowSubscribeModal] = useState(false);
 	const [showSessionModal, setShowSessionModal] = useState(false);
@@ -177,8 +177,8 @@ export function CreatorProfile() {
 			void navigate('/call');
 		};
 
-		if (payMode === 'razorpay') {
-			void payViaRazorpay(
+		if (payMode === 'external') {
+			void payExternally(
 				totalCost,
 				'session',
 				`${type} session with ${creatorForDisplay.name} (${durationMinutes}min)`,

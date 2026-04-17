@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:mock": "dotenv -e .env.mock -- vite",
+    "dev:api": "dotenv -e .env.api -- vite",
     "build": "vite build",
     "lint": "eslint src eslint.config.js",
     "lint:fix": "eslint src eslint.config.js --fix",
@@ -12,6 +14,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.app.json"
   },
   "dependencies": {
+    "@stripe/stripe-js": "^5.10.0",
     "@supabase/supabase-js": "^2.57.4",
     "agora-rtc-sdk-ng": "^4.24.3",
     "firebase": "^12.11.0",
@@ -27,6 +30,7 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.18",
+    "dotenv-cli": "^11.0.0",
     "eslint": "^9.9.1",
     "eslint-plugin-react-hooks": "^5.1.0-rc.0",
     "eslint-plugin-react-refresh": "^0.4.11",

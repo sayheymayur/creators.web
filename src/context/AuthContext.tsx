@@ -9,6 +9,7 @@ import { exchangeFirebaseToken } from '../services/authApi';
 import { creatorsApi, ApiError } from '../services/creatorsApi';
 import { clearSessionToken, getSessionToken } from '../services/sessionToken';
 import { isPostsMockMode } from '../services/postsMode';
+import { clearPaymentGatewayCache } from '../services/payments';
 
 interface AuthState {
 	user: User | null;
@@ -178,13 +179,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 				}
 				dispatch({ type: 'LOGIN', payload: user });
 			})
-			.catch(() => {
-				// If token is invalid/expired, drop it; otherwise keep it.
-				clearSessionToken();
+			.catch(err => {
+				// Only drop the token when the backend explicitly rejects it.
+				// For transient network/CORS/5xx errors, keep the token so the user isn't "signed out" on refresh.
+				if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+					clearSessionToken();
+				} else {
+					console.warn('[auth] session restore failed; keeping token', err);
+				}
 			});
 
 		return () => ac.abort();
 	}, []);
+
+	const wasAuthenticatedRef = useRef(false);
+	useEffect(() => {
+		if (state.isAuthenticated) {
+			if (!wasAuthenticatedRef.current) {
+				clearPaymentGatewayCache();
+			}
+			wasAuthenticatedRef.current = true;
+		} else {
+			wasAuthenticatedRef.current = false;
+		}
+	}, [state.isAuthenticated]);
 
 	const login = useCallback((email: string, password: string): Promise<boolean> => {
 		dispatch({ type: 'CLEAR_ERROR' });
@@ -296,6 +314,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 	}, []);
 
 	const logout = useCallback(() => {
+		clearPaymentGatewayCache();
 		clearSessionToken();
 		void creatorsApi.auth.logout().catch(() => {});
 		if (isFirebaseConfigured) {

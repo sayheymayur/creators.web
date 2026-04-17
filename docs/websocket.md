@@ -34,8 +34,11 @@ export function Example() {
 
 | Source | Effect |
 |--------|--------|
-| `VITE_WS_URL` | If set (e.g. `wss://creatorsapi.example.com/ws`), used as the full WebSocket URL. |
-| `VITE_WS_PATH` | If no `VITE_WS_URL`, path defaults to `/ws` (or this env value) on **current host** (`ws:` / `wss:` from `window.location`). |
+| `VITE_CREATORS_WS_URL` | If set (e.g. `wss://creatorsapi.example.com/ws`), used as the full WebSocket URL (**preferred**). |
+| `VITE_WS_URL` | Legacy alias for `VITE_CREATORS_WS_URL` (still supported). |
+| `VITE_CREATORS_WS_PATH` | If no explicit WS URL is set, this path defaults to `/ws` (or this env value) and is combined with `VITE_CREATORS_API_URL` to build the socket URL. |
+| `VITE_WS_PATH` | Legacy alias for `VITE_CREATORS_WS_PATH` (still supported). |
+| `VITE_CREATORS_WS_TOKEN_PARAM` | Query param name for JWT when appended to WS URL (default: `token`). |
 | `WsClient` options | `url`, `wsPath`, or `getToken` override defaults. `getToken` is also used to append `?token=…` when building URL from host+path. |
 
 ## Connection behavior

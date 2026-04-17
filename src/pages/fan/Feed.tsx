@@ -5,10 +5,12 @@ import { Layout } from '../../components/layout/Layout';
 import { PostCard } from '../../components/ui/PostCard';
 import { useContent } from '../../context/ContentContext';
 import { mockCreators } from '../../data/users';
+import { isPostsMockMode } from '../../services/postsMode';
 import { useDragScroll } from '../../hooks/useDragScroll';
 
 export function Feed() {
-	const { state: contentState, isSubscribed } = useContent();
+	const { state: contentState, isSubscribed, loadMoreFeed, refreshFeed } = useContent();
+	const postsRemote = !isPostsMockMode();
 	const navigate = useNavigate();
 	const [filter, setFilter] = useState<'all' | 'subscribed'>('all');
 	const followingRef = useDragScroll();
@@ -89,11 +91,36 @@ export function Feed() {
 						</button>
 					</div>
 				) : (
-					<div className="space-y-4">
-						{posts.map(post => (
-							<PostCard key={post.id} post={post} />
-						))}
-					</div>
+					<>
+						{postsRemote && contentState.postsWsError && (
+							<div className="mb-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-sm text-rose-200 flex items-center justify-between gap-2">
+								<span>{contentState.postsWsError}</span>
+								<button
+									type="button"
+									onClick={() => { void refreshFeed(); }}
+									className="shrink-0 text-xs font-semibold px-3 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30"
+								>
+									Retry
+								</button>
+							</div>
+						)}
+						<div className="space-y-4">
+							{posts.map(post => (
+								<PostCard key={post.id} post={post} />
+							))}
+						</div>
+						{postsRemote && contentState.feedNextCursor && (
+							<div className="pt-4 flex justify-center">
+								<button
+									type="button"
+									onClick={() => { void loadMoreFeed(); }}
+									className="text-sm font-medium text-rose-400 hover:text-rose-300 px-4 py-2 rounded-xl border border-border/30 hover:bg-foreground/5 transition-colors"
+								>
+									Load more
+								</button>
+							</div>
+						)}
+					</>
 				)}
 			</div>
 		</Layout>

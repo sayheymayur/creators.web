@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Heart, MessageCircle, Lock, Zap, MoreHorizontal, Bookmark, Send } from '../icons';
 import { useNavigate } from 'react-router-dom';
 import type { Post } from '../../types';
@@ -17,7 +17,7 @@ interface PostCardProps {
 
 export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 	const { state: authState } = useAuth();
-	const { toggleLike, addComment, isSubscribed } = useContent();
+	const { toggleLike, addComment, isSubscribed, loadPostComments, loadMorePostComments, state: contentState } = useContent();
 	const { showToast } = useNotifications();
 	const navigate = useNavigate();
 	const [commentText, setCommentText] = useState('');
@@ -31,25 +31,30 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 	const isOwner = userId === post.creatorId;
 	const isContentVisible = isOwner || !post.isLocked || (post.isPPV && post.unlockedBy.includes(userId)) || (!post.isPPV && isSubscribedToCreator);
 
+	const commentNext = contentState.commentPagination[post.id];
+	const commentCountShown = Math.max(post.commentCount, post.comments.length);
+
+	useEffect(() => {
+		if (!showComments) return;
+		void loadPostComments(post.id);
+	}, [showComments, post.id, loadPostComments]);
+
 	function handleLike() {
 		if (!authState.user) { void navigate('/login'); return; }
-		toggleLike(post.id, userId);
+		void toggleLike(post.id, userId);
 	}
 
 	function handleComment(e: React.FormEvent) {
 		e.preventDefault();
 		if (!authState.user || !commentText.trim()) return;
-		addComment(post.id, {
-			id: `c-${Date.now()}`,
-			userId,
-			userName: authState.user.name,
-			userAvatar: authState.user.avatar,
-			text: commentText.trim(),
-			createdAt: new Date().toISOString(),
-			likes: 0,
-		});
-		setCommentText('');
-		showToast('Comment posted!');
+		void addComment(post.id, commentText.trim())
+			.then(() => {
+				setCommentText('');
+				showToast('Comment posted!');
+			})
+			.catch(() => {
+				showToast('Could not post comment', 'error');
+			});
 	}
 
 	function handleCreatorClick() {
@@ -131,7 +136,7 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 						className="flex items-center gap-1.5 text-muted hover:text-foreground transition-colors"
 					>
 						<MessageCircle className="w-5 h-5" />
-						<span className="text-xs font-medium">{post.comments.length}</span>
+						<span className="text-xs font-medium">{commentCountShown}</span>
 					</button>
 					<button className="flex items-center gap-1.5 text-muted hover:text-foreground transition-colors">
 						<Send className="w-5 h-5" />
@@ -156,17 +161,28 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 
 			{showComments && (
 				<div className="px-4 pb-4 border-t border-border/10 pt-3 space-y-3">
-					{post.comments.slice(0, 3).map(comment => (
-						<div key={comment.id} className="flex gap-2">
-							<Avatar src={comment.userAvatar} alt={comment.userName} size="xs" />
-							<div className="bg-foreground/5 rounded-xl px-3 py-2 flex-1">
-								<p className="text-xs font-semibold text-foreground/80">{comment.userName}</p>
-								<p className="text-xs text-muted mt-0.5">{comment.text}</p>
+					<div className="max-h-64 overflow-y-auto space-y-3">
+						{post.comments.map(comment => (
+							<div key={comment.id} className="flex gap-2">
+								<Avatar src={comment.userAvatar} alt={comment.userName} size="xs" />
+								<div className="bg-foreground/5 rounded-xl px-3 py-2 flex-1">
+									<p className="text-xs font-semibold text-foreground/80">{comment.userName}</p>
+									<p className="text-xs text-muted mt-0.5">{comment.text}</p>
+								</div>
 							</div>
-						</div>
-					))}
+						))}
+					</div>
+					{typeof commentNext === 'string' && commentNext ? (
+						<button
+							type="button"
+							onClick={() => { void loadMorePostComments(post.id); }}
+							className="text-xs text-rose-400 hover:text-rose-300 font-medium"
+						>
+							Load older comments
+						</button>
+					) : null}
 					{authState.user && (
-						<form onSubmit={handleComment} className="flex gap-2">
+						<form onSubmit={e => { handleComment(e); }} className="flex gap-2">
 							<Avatar src={authState.user.avatar} alt={authState.user.name} size="xs" />
 							<input
 								value={commentText}

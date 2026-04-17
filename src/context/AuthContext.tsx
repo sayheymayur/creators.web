@@ -8,6 +8,7 @@ import { getFirebaseAuth, getGoogleProvider } from '../lib/firebaseClient';
 import { exchangeFirebaseToken } from '../services/authApi';
 import { creatorsApi, ApiError } from '../services/creatorsApi';
 import { clearSessionToken, getSessionToken } from '../services/sessionToken';
+import { isPostsMockMode } from '../services/postsMode';
 
 interface AuthState {
 	user: User | null;
@@ -72,7 +73,16 @@ function createCreatorProfileFromUser(user: User): Creator {
 function authReducer(state: AuthState, action: AuthAction): AuthState {
 	switch (action.type) {
 		case 'LOGIN':
-			return { ...state, user: action.payload, isAuthenticated: true, loginError: '' };
+			return {
+				...state,
+				user: {
+					...action.payload,
+					// Backend may return numeric ids; normalize to string for consistent comparisons.
+					id: String((action.payload as unknown as { id: unknown }).id),
+				},
+				isAuthenticated: true,
+				loginError: '',
+			};
 		case 'LOGOUT':
 			return { ...initialState };
 		case 'SET_AGE_VERIFIED':
@@ -133,7 +143,7 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
 interface AuthContextValue {
 	state: AuthState;
 	login: (email: string, password: string) => Promise<boolean>;
-	register: (email: string, password: string, displayName: string) => Promise<boolean>;
+	register: (email: string, password: string, displayName: string, role: 'fan' | 'creator') => Promise<boolean>;
 	loginWithGoogle: (role: 'fan' | 'creator') => Promise<User | null>;
 	logout: () => void;
 	verifyAge: () => void;
@@ -181,20 +191,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 		return delayMs(250).then(() => {
 			const emailLower = email.toLowerCase().trim();
 
-			if (emailLower === DEMO_ACCOUNTS.fan.email && password === DEMO_ACCOUNTS.fan.password) {
-				dispatch({ type: 'LOGIN', payload: mockFanUser });
-				return true;
-			}
+			// Only use local demo users when posts are mocked; otherwise prefer real backend auth
+			// to avoid mixing mock ids (creator-1) with backend numeric ids ("27") and breaking filters.
+			if (isPostsMockMode()) {
+				if (emailLower === DEMO_ACCOUNTS.fan.email && password === DEMO_ACCOUNTS.fan.password) {
+					dispatch({ type: 'LOGIN', payload: mockFanUser });
+					return true;
+				}
 
-			if (emailLower === DEMO_ACCOUNTS.creator.email && password === DEMO_ACCOUNTS.creator.password) {
-				const creatorUser = mockCreators[0];
-				dispatch({ type: 'LOGIN', payload: creatorUser });
-				return true;
-			}
+				if (emailLower === DEMO_ACCOUNTS.creator.email && password === DEMO_ACCOUNTS.creator.password) {
+					const creatorUser = mockCreators[0];
+					dispatch({ type: 'LOGIN', payload: creatorUser });
+					return true;
+				}
 
-			if (emailLower === DEMO_ACCOUNTS.admin.email && password === DEMO_ACCOUNTS.admin.password) {
-				dispatch({ type: 'LOGIN', payload: mockAdminUser });
-				return true;
+				if (emailLower === DEMO_ACCOUNTS.admin.email && password === DEMO_ACCOUNTS.admin.password) {
+					dispatch({ type: 'LOGIN', payload: mockAdminUser });
+					return true;
+				}
 			}
 
 			return creatorsApi.auth.login({ email, password })
@@ -218,9 +232,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 		});
 	}, []);
 
-	const register = useCallback((email: string, password: string, displayName: string): Promise<boolean> => {
+	const register = useCallback((email: string, password: string, displayName: string, role: 'fan' | 'creator'): Promise<boolean> => {
 		dispatch({ type: 'CLEAR_ERROR' });
-		return creatorsApi.auth.register({ email, password, displayName })
+		return creatorsApi.auth.register({ email, password, displayName, preferredRole: role })
 			.then(() => creatorsApi.auth.me())
 			.then(({ user }) => {
 				if (!user) {

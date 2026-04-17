@@ -16,12 +16,14 @@ import { useWallet } from '../../context/WalletContext';
 import { SessionPickerModal, type SessionPayMode } from '../../components/modals/SessionPickerModal';
 import type { Creator, SessionType } from '../../types';
 import { creatorsApi } from '../../services/creatorsApi';
+import { creatorProfileDtoToCreator } from '../../services/creatorWsMap';
+import { isPostsMockMode } from '../../services/postsMode';
 
 export function CreatorProfile() {
 	const { id } = useParams<{ id: string }>();
 	const navigate = useNavigate();
 	const { state: authState } = useAuth();
-	const { state: contentState, isSubscribed } = useContent();
+	const { state: contentState, isSubscribed, loadCreatorPosts, creatorWsGetByPk } = useContent();
 	const { showToast } = useNotifications();
 	const { addConversation, getConversationForUser } = useChat();
 	const { startCall } = useCall();
@@ -39,32 +41,61 @@ export function CreatorProfile() {
 	useEffect(() => {
 		if (!id) return;
 		const ac = new AbortController();
+		const base = maybeCreator ?? mockCreators[0];
+
+		if (isPostsMockMode()) {
+			setIsLoadingCreator(false);
+			setRemoteCreator(null);
+			return () => ac.abort();
+		}
+
 		setIsLoadingCreator(true);
-		void creatorsApi.creators.getById(id, ac.signal)
-			.then(data => {
-				// Map minimal API user->Creator by merging with mock defaults.
-				const base = maybeCreator ?? mockCreators[0];
-				const mapped: Creator = {
-					...base,
-					id: data.id,
-					email: data.email,
-					name: data.name,
-					username: data.username,
-					avatar: data.avatar,
-					bio: data.bio ?? base.bio,
-					banner: data.banner ?? base.banner,
-					category: data.category ?? base.category,
-				};
-				setRemoteCreator(mapped);
+
+		const mapHttp = () =>
+			creatorsApi.creators.getById(id, ac.signal)
+				.then(data => {
+					if (ac.signal.aborted) return;
+					const mapped: Creator = {
+						...base,
+						id: data.id,
+						email: data.email,
+						name: data.name,
+						username: data.username,
+						avatar: data.avatar,
+						bio: data.bio ?? base.bio,
+						banner: data.banner ?? base.banner,
+						category: data.category ?? base.category,
+					};
+					setRemoteCreator(mapped);
+				})
+				.catch(() => {
+					if (!ac.signal.aborted) setRemoteCreator(null);
+				});
+
+		void creatorWsGetByPk(id)
+			.then(r => {
+				if (ac.signal.aborted) return;
+				if (r.creator) {
+					setRemoteCreator(creatorProfileDtoToCreator(r.creator, base));
+					return;
+				}
+				return mapHttp();
 			})
 			.catch(() => {
-				// Keep mock fallback if API is unavailable.
-				setRemoteCreator(null);
+				if (ac.signal.aborted) return;
+				return mapHttp();
 			})
-			.finally(() => setIsLoadingCreator(false));
+			.finally(() => {
+				if (!ac.signal.aborted) setIsLoadingCreator(false);
+			});
 
 		return () => ac.abort();
-	}, [id, maybeCreator]);
+	}, [id, maybeCreator, creatorWsGetByPk]);
+
+	useEffect(() => {
+		if (!id || isPostsMockMode()) return;
+		void loadCreatorPosts(id, true);
+	}, [id, loadCreatorPosts]);
 
 	if (!id) {
 		return (
@@ -123,7 +154,6 @@ export function CreatorProfile() {
 
 		const userId = authState.user.id;
 		const userName = authState.user.name;
-		const c = creatorForDisplay;
 
 		const startAndNavigate = () => {
 			startSession(

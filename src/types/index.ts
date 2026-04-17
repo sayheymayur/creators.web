@@ -157,6 +157,8 @@ export interface Post {
 	likes: number;
 	likedBy: string[];
 	comments: Comment[];
+	/** Server `comment_count` on PostDTO; used before comments are loaded. */
+	commentCount: number;
 	createdAt: string;
 	isPinned: boolean;
 	unlockedBy: string[];

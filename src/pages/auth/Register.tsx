@@ -22,7 +22,7 @@ export function Register() {
 		if (step === 1) { setStep(2); return; }
 		setIsLoading(true);
 		void delayMs(150).then(() =>
-			register(email, password, name).then(success => {
+			register(email, password, name, role).then(success => {
 				setIsLoading(false);
 				if (!success) return;
 				void navigate(role === 'creator' ? '/creator-dashboard' : '/feed');

@@ -3,13 +3,17 @@ import { Camera, Save } from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';
 import { Button } from '../../components/ui/Button';
 import { useAuth, useCurrentCreator } from '../../context/AuthContext';
+import { useContent } from '../../context/ContentContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { mockCreators } from '../../data/users';
-import { delayMs } from '../../utils/delay';
+import { ApiError, creatorsApi } from '../../services/creatorsApi';
+import { uploadMediaAsset } from '../../services/mediaUpload';
+import { isPostsMockMode } from '../../services/postsMode';
 
 export function ProfileEditor() {
 	const creator = useCurrentCreator();
-	const { state: authState, updateUser, updateCreatorProfile } = useAuth();
+	const { state: authState, updateUser } = useAuth();
+	const { creatorWsUpsert } = useContent();
 	const { showToast } = useNotifications();
 
 	const creatorData = creator ?? mockCreators[0];
@@ -76,6 +80,13 @@ export function ProfileEditor() {
 			)
 			.then(({ user }) => {
 				updateUser(user);
+				if (!isPostsMockMode()) {
+					void creatorWsUpsert(
+						username.trim() || creatorData.username,
+						name.trim() || creatorData.name,
+						bio.trim() || undefined
+					).catch(() => {});
+				}
 				showToast('Profile updated!');
 				setAvatarFile(null);
 				setBannerFile(null);
@@ -105,8 +116,12 @@ export function ProfileEditor() {
 
 				<div className="relative mb-6">
 					<div className="h-32 rounded-2xl overflow-hidden relative">
-						<img src={bannerUrl} alt="" className="w-full h-full object-cover" />
-						<button className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 hover:opacity-100 transition-opacity">
+						<img src={bannerPreviewUrl ?? bannerUrl} alt="" className="w-full h-full object-cover" />
+						<button
+							type="button"
+							onClick={() => bannerInputRef.current?.click()}
+							className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 hover:opacity-100 transition-opacity"
+						>
 							<div className="bg-black/60 rounded-xl px-3 py-2 flex items-center gap-2 text-white text-sm">
 								<Camera className="w-4 h-4" />
 								Change Banner
@@ -126,8 +141,16 @@ export function ProfileEditor() {
 
 					<div className="absolute -bottom-6 left-4">
 						<div className="relative">
-							<img src={avatarUrl} alt="" className="w-16 h-16 rounded-2xl border-4 border-[#0d0d0d] object-cover" />
-							<button className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-2xl opacity-0 hover:opacity-100 transition-opacity">
+							<img
+								src={avatarPreviewUrl ?? avatarUrl}
+								alt=""
+								className="w-16 h-16 rounded-2xl border-4 border-[#0d0d0d] object-cover"
+							/>
+							<button
+								type="button"
+								onClick={() => avatarInputRef.current?.click()}
+								className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-2xl opacity-0 hover:opacity-100 transition-opacity"
+							>
 								<Camera className="w-4 h-4 text-white" />
 							</button>
 							<input
@@ -167,17 +190,8 @@ export function ProfileEditor() {
 						<label className="block text-sm font-medium text-muted mb-1.5">Username</label>
 						<input
 							value={username}
-							onChange={e => setUsername(e.target.value)}
-							className="w-full bg-input border border-border/20 rounded-xl px-4 py-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
-						/>
-					</div>
-
-					<div>
-						<label className="block text-sm font-medium text-white/60 mb-1.5">Username</label>
-						<input
-							value={username}
 							onChange={e => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
-							className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-rose-500/50"
+							className="w-full bg-input border border-border/20 rounded-xl px-4 py-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
 						/>
 					</div>
 

@@ -20,9 +20,15 @@ export function Login() {
 		void login(email, password).then(success => {
 			setIsLoading(false);
 			if (success) {
-				const role = email.toLowerCase() === DEMO_ACCOUNTS.admin.email ? 'admin' :
+				const role = state.user?.role;
+				if (role) {
+					void navigate(role === 'admin' ? '/admin' : role === 'creator' ? '/creator-dashboard' : '/feed');
+					return;
+				}
+				// Fallback (should rarely happen): infer from email.
+				const inferred = email.toLowerCase() === DEMO_ACCOUNTS.admin.email ? 'admin' :
 					email.toLowerCase() === DEMO_ACCOUNTS.creator.email ? 'creator' : 'fan';
-				void navigate(role === 'admin' ? '/admin' : role === 'creator' ? '/creator-dashboard' : '/feed');
+				void navigate(inferred === 'admin' ? '/admin' : inferred === 'creator' ? '/creator-dashboard' : '/feed');
 			}
 		});
 	}

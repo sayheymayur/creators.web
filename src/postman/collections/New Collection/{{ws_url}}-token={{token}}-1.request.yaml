@@ -1,6 +1,0 @@
-$kind: websocket-request
-name: "{{ws_url}}?token={{token}}"
-url: "{{ws_url}}?token={{token}}"
-queryParams:
-  token: "{{token}}"
-order: 1463

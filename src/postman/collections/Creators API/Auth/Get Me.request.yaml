@@ -1,6 +1,0 @@
-$kind: http-request
-url: "{{base_url}}/me"
-method: GET
-headers:
-  Authorization: Bearer {{token}}
-order: 4000

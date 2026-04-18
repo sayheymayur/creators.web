@@ -9,6 +9,7 @@ import { mockCreators } from '../../data/users';
 import { ApiError, creatorsApi } from '../../services/creatorsApi';
 import { uploadMediaAsset } from '../../services/mediaUpload';
 import { isPostsMockMode } from '../../services/postsMode';
+import { formatINR } from '../../services/razorpay';
 
 export function ProfileEditor() {
 	const creator = useCurrentCreator();
@@ -243,9 +244,9 @@ export function ProfileEditor() {
 					</div>
 
 					<div>
-						<label className="block text-sm font-medium text-muted mb-1.5">Subscription Price ($/month)</label>
+						<label className="block text-sm font-medium text-muted mb-1.5">Subscription Price (₹/month)</label>
 						<div className="relative">
-							<span className="absolute left-4 top-1/2 -translate-y-1/2 text-muted">$</span>
+							<span className="absolute left-4 top-1/2 -translate-y-1/2 text-muted">₹</span>
 							<input
 								type="number"
 								value={price}
@@ -255,7 +256,7 @@ export function ProfileEditor() {
 								className="w-full bg-input border border-border/20 rounded-xl pl-8 pr-4 py-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
 							/>
 						</div>
-						<p className="text-xs text-muted/80 mt-1">Platform fee 20%. You receive ${((parseFloat(price) || 0) * 0.8).toFixed(2)} per subscriber.</p>
+						<p className="text-xs text-muted/80 mt-1">Platform fee 20%. You receive {formatINR((parseFloat(price) || 0) * 0.8)} per subscriber.</p>
 					</div>
 
 					<Button variant="primary" fullWidth isLoading={isSaving} onClick={() => { void handleSave(); }} leftIcon={<Save className="w-4 h-4" />}>

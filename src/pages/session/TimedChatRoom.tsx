@@ -5,6 +5,7 @@ import { useSession } from '../../context/SessionContext';
 import { useAuth } from '../../context/AuthContext';
 import { mockCreators } from '../../data/users';
 import { Avatar } from '../../components/ui/Avatar';
+import { formatINR } from '../../services/razorpay';
 
 interface ChatMsg {
 	id: string;
@@ -161,7 +162,7 @@ export function TimedChatRoom() {
 			{session && (
 				<div className={`px-4 py-2 flex items-center justify-between shrink-0 ${isWarning ? 'bg-rose-500/10 border-b border-rose-500/20' : 'bg-amber-500/5 border-b border-amber-500/10'}`}>
 					<p className="text-xs text-muted">
-						Session: {session.durationMinutes}min · ${session.ratePerMinute.toFixed(2)}/min · Total: ${session.totalCost.toFixed(2)}
+						Session: {session.durationMinutes}min · {formatINR(session.ratePerMinute)}/min · Total: {formatINR(session.totalCost)}
 					</p>
 					<button
 						onClick={handleEndEarly}

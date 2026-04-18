@@ -7,7 +7,8 @@ import { useAuth } from '../../context/AuthContext';
 import { useWallet } from '../../context/WalletContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { buildLiveChannel, fetchAgoraRtcToken, getAgoraAppId, stringToAgoraUid } from '../../services/agoraRtc';
-import { usdToInr, formatINR } from '../../services/razorpay';
+import { formatINR } from '../../services/razorpay';
+import { compareMinor, inrRupeesToMinor } from '../../utils/money';
 import type { VirtualGift } from '../../types';
 
 function formatElapsed(startedAt: string): string {
@@ -128,11 +129,11 @@ export function LiveStreamRoom() {
 		if (!user || giftLoading) return;
 		setGiftLoading(true);
 
-		const balance = user.walletBalance ?? 0;
-		let ok = false;
+		const giftMinor = inrRupeesToMinor(gift.value);
+		const canAffordGift = compareMinor(user.walletBalanceMinor, '>=', giftMinor);
 
-		if (balance >= gift.value) {
-			ok = deductFunds(gift.value, 'gift', `Gift "${gift.name}" to ${stream!.creatorName}`, stream!.creatorId, stream!.creatorName);
+		if (canAffordGift) {
+			const ok = deductFunds(gift.value, 'gift', `Gift "${gift.name}" to ${stream!.creatorName}`, stream!.creatorId, stream!.creatorName);
 			if (ok) {
 				sendGift(stream!.id, user.id, user.name, user.avatar, gift);
 				setShowGifts(false);
@@ -145,14 +146,13 @@ export function LiveStreamRoom() {
 		}
 
 		void payViaRazorpay(gift.value, 'gift', `Gift "${gift.name}" to ${stream!.creatorName}`, stream!.creatorId, stream!.creatorName).then(result => {
-			ok = result.ok;
-			if (!ok && !result.cancelled) {
+			if (!result.ok && !result.cancelled) {
 				showToast(result.error || 'Payment failed', 'error');
 				setGiftLoading(false);
 				return;
 			}
 
-			if (ok) {
+			if (result.ok) {
 				sendGift(stream!.id, user.id, user.name, user.avatar, gift);
 				setShowGifts(false);
 				setFloatingGift({ emoji: gift.emoji, name: gift.name });
@@ -292,7 +292,7 @@ export function LiveStreamRoom() {
 							>
 								<span className="text-2xl">{gift.emoji}</span>
 								<span className="text-xs text-foreground font-medium">{gift.name}</span>
-								<span className="text-[10px] text-amber-400 font-semibold">{formatINR(usdToInr(gift.value))}</span>
+								<span className="text-[10px] text-amber-400 font-semibold">{formatINR(gift.value)}</span>
 							</button>
 						))}
 					</div>

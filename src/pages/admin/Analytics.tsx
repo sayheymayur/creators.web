@@ -24,10 +24,10 @@ export function reports() {
 
 				<div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
 					{[
-						{ label: 'Platform Revenue', value: `$${(totalPlatformRevenue / 1000).toFixed(1)}K`, icon: DollarSign, color: 'bg-emerald-500/15 text-emerald-400' },
+						{ label: 'Platform Revenue', value: `₹${(totalPlatformRevenue / 1000).toFixed(1)}K`, icon: DollarSign, color: 'bg-emerald-500/15 text-emerald-400' },
 						{ label: 'Total Creators', value: mockCreators.filter(c => c.isKYCVerified).length.toString(), icon: Star, color: 'bg-rose-500/15 text-rose-400' },
 						{ label: 'Total Users', value: mockUsers.filter(u => u.role === 'fan').length.toString(), icon: Users, color: 'bg-blue-500/15 text-blue-400' },
-						{ label: 'Avg Creator Revenue', value: `$${(avgEarningsPerCreator / 1000).toFixed(1)}K`, icon: TrendingUp, color: 'bg-amber-500/15 text-amber-400' },
+						{ label: 'Avg Creator Revenue', value: `₹${(avgEarningsPerCreator / 1000).toFixed(1)}K`, icon: TrendingUp, color: 'bg-amber-500/15 text-amber-400' },
 					].map(({ label, value, icon: Icon, color }) => (
 						<div key={label} className="bg-surface border border-border/20 rounded-2xl p-4">
 							<div className={`w-9 h-9 ${color} rounded-xl flex items-center justify-center mb-2`}>
@@ -70,7 +70,7 @@ export function reports() {
 											<div className="h-full bg-gradient-to-r from-rose-600 to-rose-400 rounded-full" style={{ width: `${pct}%` }} />
 										</div>
 										<p className="text-xs font-semibold text-muted w-14 text-right shrink-0">
-											${(creator.totalEarnings / 1000).toFixed(1)}K
+											₹{(creator.totalEarnings / 1000).toFixed(1)}K
 										</p>
 									</div>
 								);
@@ -89,7 +89,7 @@ export function reports() {
 						].map(({ label, value, pct, color }) => (
 							<div key={label} className="bg-foreground/5 rounded-xl p-4 text-center">
 								<div className={`w-3 h-3 ${color} rounded-full mx-auto mb-2`} />
-								<p className="text-xl font-black text-foreground">${(value / 1000).toFixed(1)}K</p>
+								<p className="text-xl font-black text-foreground">₹{(value / 1000).toFixed(1)}K</p>
 								<p className="text-xs text-muted">{label}</p>
 								<p className="text-xs text-muted/80 mt-0.5">{pct} of revenue</p>
 							</div>

@@ -6,6 +6,7 @@ import { useLiveStream, VIRTUAL_GIFTS } from '../../context/LiveStreamContext';
 import { useCurrentCreator } from '../../context/AuthContext';
 import { buildLiveChannel, fetchAgoraRtcToken, getAgoraAppId, stringToAgoraUid } from '../../services/agoraRtc';
 import type { LiveStream } from '../../types';
+import { formatINR } from '../../services/razorpay';
 
 function formatElapsed(startedAt: string): string {
 	const diff = Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000);
@@ -245,7 +246,7 @@ export function GoLivePage() {
 					</div>
 					<div className="ml-auto flex items-center gap-1.5 bg-amber-500/20 backdrop-blur-sm border border-amber-500/30 rounded-xl px-3 py-1.5">
 						<DollarSign className="w-3.5 h-3.5 text-amber-400" />
-						<span className="text-amber-400 text-xs font-semibold">${totalGiftValue.toFixed(2)}</span>
+						<span className="text-amber-400 text-xs font-semibold">{formatINR(totalGiftValue)}</span>
 					</div>
 				</div>
 

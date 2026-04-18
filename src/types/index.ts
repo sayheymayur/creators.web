@@ -112,7 +112,8 @@ export interface User {
 	createdAt: string;
 	isAgeVerified: boolean;
 	status: AccountStatus;
-	walletBalance: number;
+	/** INR paise as decimal string (API `balance_cents` / `amount_cents` scale). */
+	walletBalanceMinor: string;
 }
 
 export interface Creator extends User {

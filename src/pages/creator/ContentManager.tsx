@@ -10,6 +10,7 @@ import { mockCreators } from '../../data/users';
 import { isPostsMockMode } from '../../services/postsMode';
 import { uploadPostMediaFile } from '../../services/uploadPostMedia';
 import type { Post } from '../../types';
+import { formatINR } from '../../services/razorpay';
 
 export function ContentManager() {
 	const creator = useCurrentCreator();
@@ -256,7 +257,7 @@ export function ContentManager() {
 												<span className="text-[10px] bg-rose-500/15 text-rose-400 px-2 py-0.5 rounded-full">Subscribers only</span>
 											)}
 											{post.isPPV && (
-												<span className="text-[10px] bg-amber-500/15 text-amber-400 px-2 py-0.5 rounded-full">PPV ${post.ppvPrice}</span>
+												<span className="text-[10px] bg-amber-500/15 text-amber-400 px-2 py-0.5 rounded-full">PPV {formatINR(post.ppvPrice ?? 0)}</span>
 											)}
 											{post.isPinned && (
 												<span className="text-[10px] bg-foreground/10 text-muted px-2 py-0.5 rounded-full">Pinned</span>
@@ -364,7 +365,7 @@ export function ContentManager() {
 
 						{newPostPPV && (
 							<div className="flex items-center gap-2">
-								<span className="text-muted text-sm">$</span>
+								<span className="text-muted text-sm">₹</span>
 								<input
 									value={newPostPrice}
 									onChange={e => setNewPostPrice(e.target.value)}

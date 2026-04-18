@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { formatINR } from '../services/razorpay';
 import { Star, Shield, Zap, Users, TrendingUp, Lock, Play, ArrowRight, CheckCircle, Sun, Moon } from '../components/icons';
 import { mockCreators } from '../data/users';
 import { useDragScroll } from '../hooks/useDragScroll';
@@ -98,7 +99,7 @@ export function Landing() {
 					<div className="grid grid-cols-3 gap-4 max-w-sm mx-auto">
 						{[
 							{ value: '50K+', label: 'Creators' },
-							{ value: '$2M+', label: 'Paid Out' },
+							{ value: '₹2M+', label: 'Paid Out' },
 							{ value: '1M+', label: 'Fans' },
 						].map(stat => (
 							<div key={stat.label} className="text-center">
@@ -146,7 +147,7 @@ export function Landing() {
 										</div>
 									</div>
 									<p className="text-[11px] md:text-xs text-rose-400 font-semibold mt-1">
-										${creator.subscriptionPrice}/month
+										{formatINR(creator.subscriptionPrice)}/month
 									</p>
 								</div>
 							</button>

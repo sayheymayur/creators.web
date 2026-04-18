@@ -64,12 +64,20 @@ export interface RazorpayCreateOrderResponse {
 	orderId: string;
 	amountMinor: number;
 	currency: string;
+	/** Public Razorpay key for Checkout; null when unset (local dev). */
+	keyId: string | null;
 }
 
 export interface RazorpayConfirmRequest {
 	razorpayOrderId: string;
 	razorpayPaymentId: string;
 	razorpaySignature: string;
+}
+
+export interface RazorpayConfirmResponse {
+	ok: true;
+	balance_after_cents: string;
+	alreadyConfirmed?: true;
 }
 
 export interface MediaCreateUploadRequest {
@@ -191,8 +199,8 @@ export const creatorsApi = {
 		razorpayCreateOrder(body: RazorpayCreateOrderRequest): Promise<RazorpayCreateOrderResponse> {
 			return requestJson<RazorpayCreateOrderResponse>('/payments/razorpay/orders', { method: 'POST', body, auth: true });
 		},
-		razorpayConfirm(body: RazorpayConfirmRequest): Promise<{ ok: true }> {
-			return requestJson<{ ok: true }>('/payments/razorpay/confirm', { method: 'POST', body, auth: true });
+		razorpayConfirm(body: RazorpayConfirmRequest): Promise<RazorpayConfirmResponse> {
+			return requestJson<RazorpayConfirmResponse>('/payments/razorpay/confirm', { method: 'POST', body, auth: true });
 		},
 	},
 	media: {

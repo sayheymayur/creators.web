@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { X, MessageCircle, Phone, Video, Clock, Zap, AlertCircle, Wallet } from '../icons';
-import { usdToInr, formatINR } from '../../services/razorpay';
+import { formatINR } from '../../services/razorpay';
+import { compareMinor, formatINRFromMinor, inrRupeesToMinor } from '../../utils/money';
 import type { SessionType } from '../../types';
 
 const DURATION_OPTIONS = [5, 10, 15, 20, 30, 60];
@@ -13,7 +14,7 @@ interface Props {
 	creatorName: string;
 	creatorAvatar: string;
 	ratePerMinute: number;
-	walletBalance: number;
+	walletBalanceMinor: string;
 	onConfirm: (type: SessionType, durationMinutes: number, totalCost: number, payMode: SessionPayMode) => void;
 }
 
@@ -23,7 +24,7 @@ const SESSION_TYPES: { type: SessionType, label: string, icon: React.ElementType
 	{ type: 'video', label: 'Video Call', icon: Video, color: 'text-rose-400', bg: 'bg-rose-500/15 border-rose-500/30' },
 ];
 
-export function SessionPickerModal({ isOpen, onClose, creatorName, creatorAvatar, ratePerMinute, walletBalance, onConfirm }: Props) {
+export function SessionPickerModal({ isOpen, onClose, creatorName, creatorAvatar, ratePerMinute, walletBalanceMinor, onConfirm }: Props) {
 	const [selectedType, setSelectedType] = useState<SessionType | null>(null);
 	const [selectedDuration, setSelectedDuration] = useState<number | null>(null);
 	const [payMode, setPayMode] = useState<SessionPayMode>('razorpay');
@@ -31,8 +32,8 @@ export function SessionPickerModal({ isOpen, onClose, creatorName, creatorAvatar
 	if (!isOpen) return null;
 
 	const totalCost = selectedDuration ? parseFloat((selectedDuration * ratePerMinute).toFixed(2)) : 0;
-	const inrCost = usdToInr(totalCost);
-	const canAfford = payMode === 'razorpay' || walletBalance >= totalCost;
+	const totalMinor = inrRupeesToMinor(totalCost);
+	const canAfford = payMode === 'razorpay' || compareMinor(walletBalanceMinor, '>=', totalMinor);
 	const canStart = selectedType && selectedDuration && canAfford;
 
 	function handleConfirm() {
@@ -84,13 +85,14 @@ export function SessionPickerModal({ isOpen, onClose, creatorName, creatorAvatar
 							<p className="text-xs font-semibold text-muted uppercase tracking-widest">Duration</p>
 							<div className="flex items-center gap-1 text-xs text-amber-400">
 								<Zap className="w-3 h-3 fill-amber-400" />
-								<span>${ratePerMinute.toFixed(2)}/min</span>
+								<span>{formatINR(ratePerMinute)}/min</span>
 							</div>
 						</div>
 						<div className="grid grid-cols-3 gap-2">
 							{DURATION_OPTIONS.map(min => {
 								const cost = parseFloat((min * ratePerMinute).toFixed(2));
-								const affordable = payMode === 'razorpay' || walletBalance >= cost;
+								const costMinor = inrRupeesToMinor(cost);
+								const affordable = payMode === 'razorpay' || compareMinor(walletBalanceMinor, '>=', costMinor);
 								return (
 									<button
 										key={min}
@@ -108,7 +110,7 @@ export function SessionPickerModal({ isOpen, onClose, creatorName, creatorAvatar
 											<Clock className="w-3 h-3" />
 											<span className="text-sm font-bold">{min}m</span>
 										</div>
-										<span className="text-[10px]">${cost.toFixed(2)}</span>
+										<span className="text-[10px]">{formatINR(cost)}</span>
 									</button>
 								);
 							})}
@@ -124,7 +126,7 @@ export function SessionPickerModal({ isOpen, onClose, creatorName, creatorAvatar
 									payMode === 'razorpay' ? 'border-rose-500/40 bg-rose-500/10 text-rose-500' : 'border-border/20 bg-foreground/5 text-muted hover:bg-foreground/10'
 								}`}
 							>
-								{totalCost > 0 ? `Pay ${formatINR(inrCost)}` : 'Razorpay'}
+								{totalCost > 0 ? `Pay ${formatINR(totalCost)}` : 'Checkout'}
 							</button>
 							<button
 								onClick={() => setPayMode('wallet')}
@@ -133,7 +135,7 @@ export function SessionPickerModal({ isOpen, onClose, creatorName, creatorAvatar
 								}`}
 							>
 								<Wallet className="w-3 h-3 inline mr-1" />
-								Wallet (${walletBalance.toFixed(2)})
+								Wallet ({formatINRFromMinor(walletBalanceMinor)})
 							</button>
 						</div>
 					</div>
@@ -142,14 +144,14 @@ export function SessionPickerModal({ isOpen, onClose, creatorName, creatorAvatar
 						<div className="bg-foreground/5 rounded-2xl p-4 flex items-center justify-between">
 							<div>
 								<p className="text-xs text-muted mb-0.5">Total cost</p>
-								<p className="text-xl font-bold text-foreground">${totalCost.toFixed(2)}</p>
+								<p className="text-xl font-bold text-foreground">{formatINR(totalCost)}</p>
 							</div>
 							<div className="text-right">
 								<p className="text-xs text-muted mb-0.5">
 									{payMode === 'razorpay' ? 'INR amount' : 'Wallet balance'}
 								</p>
 								<p className={`text-sm font-semibold ${canAfford ? 'text-emerald-400' : 'text-rose-400'}`}>
-									{payMode === 'razorpay' ? formatINR(inrCost) : `$${walletBalance.toFixed(2)}`}
+									{payMode === 'razorpay' ? formatINR(totalCost) : formatINRFromMinor(walletBalanceMinor)}
 								</p>
 							</div>
 						</div>
@@ -158,7 +160,7 @@ export function SessionPickerModal({ isOpen, onClose, creatorName, creatorAvatar
 					{!canAfford && selectedDuration && (
 						<div className="flex items-center gap-2 bg-rose-500/10 border border-rose-500/20 rounded-xl px-3 py-2.5">
 							<AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-							<p className="text-xs text-rose-300">Insufficient balance. Switch to Razorpay or add funds.</p>
+							<p className="text-xs text-rose-300">Insufficient balance. Use checkout or add funds.</p>
 						</div>
 					)}
 
@@ -173,7 +175,7 @@ export function SessionPickerModal({ isOpen, onClose, creatorName, creatorAvatar
 								'Select duration' :
 								!canAfford ?
 									'Insufficient balance' :
-									`Start ${selectedType === 'chat' ? 'Chat' : selectedType === 'audio' ? 'Audio Call' : 'Video Call'} for $${totalCost.toFixed(2)}`}
+									`Start ${selectedType === 'chat' ? 'Chat' : selectedType === 'audio' ? 'Audio Call' : 'Video Call'} for ${formatINR(totalCost)}`}
 					</button>
 				</div>
 			</div>

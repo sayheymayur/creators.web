@@ -6,7 +6,8 @@ import { useAuth } from '../../context/AuthContext';
 import { useWallet } from '../../context/WalletContext';
 import { useContent } from '../../context/ContentContext';
 import { useNotifications } from '../../context/NotificationContext';
-import { usdToInr, formatINR } from '../../services/razorpay';
+import { formatINR } from '../../services/razorpay';
+import { compareMinor, formatINRFromMinor, inrRupeesToMinor } from '../../utils/money';
 import type { Post } from '../../types';
 import { delayMs } from '../../utils/delay';
 
@@ -29,8 +30,9 @@ export function PPVUnlockModal({ isOpen, onClose, post }: PPVUnlockModalProps) {
 	const [error, setError] = useState('');
 
 	const price = post.ppvPrice ?? 0;
-	const balance = authState.user?.walletBalance ?? 0;
-	const inrPrice = usdToInr(price);
+	const balanceMinor = authState.user?.walletBalanceMinor ?? '0';
+	const priceMinor = inrRupeesToMinor(price);
+	const canAffordWallet = compareMinor(balanceMinor, '>=', priceMinor);
 
 	function handleUnlock() {
 		const user = authState.user;
@@ -98,12 +100,12 @@ export function PPVUnlockModal({ isOpen, onClose, post }: PPVUnlockModalProps) {
 						<div className="bg-foreground/5 rounded-xl p-4 mb-4">
 							<div className="flex justify-between items-center mb-2">
 								<span className="text-muted text-sm">Pay-per-view price</span>
-								<span className="text-foreground font-semibold">${price.toFixed(2)}</span>
+								<span className="text-foreground font-semibold">{formatINR(price)}</span>
 							</div>
 							<div className="flex justify-between items-center">
 								<span className="text-muted text-sm flex items-center gap-1"><Wallet className="w-3.5 h-3.5" /> Your balance</span>
-								<span className={`font-semibold text-sm ${balance < price ? 'text-rose-400' : 'text-emerald-400'}`}>
-									${balance.toFixed(2)}
+								<span className={`font-semibold text-sm ${!canAffordWallet ? 'text-rose-400' : 'text-emerald-400'}`}>
+									{formatINRFromMinor(balanceMinor)}
 								</span>
 							</div>
 						</div>
@@ -116,7 +118,7 @@ export function PPVUnlockModal({ isOpen, onClose, post }: PPVUnlockModalProps) {
 									payMode === 'razorpay' ? 'border-rose-500/40 bg-rose-500/10 text-rose-500' : 'border-border/20 bg-foreground/5 text-muted hover:bg-foreground/10'
 								}`}
 							>
-								Pay {formatINR(inrPrice)}
+								Pay {formatINR(price)}
 							</button>
 							<button
 								onClick={() => setPayMode('wallet')}
@@ -125,7 +127,7 @@ export function PPVUnlockModal({ isOpen, onClose, post }: PPVUnlockModalProps) {
 								}`}
 							>
 								<Wallet className="w-3 h-3 inline mr-1" />
-								Wallet (${balance.toFixed(2)})
+								Wallet ({formatINRFromMinor(balanceMinor)})
 							</button>
 						</div>
 
@@ -140,13 +142,13 @@ export function PPVUnlockModal({ isOpen, onClose, post }: PPVUnlockModalProps) {
 							fullWidth
 							isLoading={isLoading}
 							onClick={() => { void handleUnlock(); }}
-							disabled={payMode === 'wallet' && balance < price}
+							disabled={payMode === 'wallet' && !canAffordWallet}
 						>
 							<Unlock className="w-4 h-4" />
-							Unlock for ${price.toFixed(2)}
+							Unlock for {formatINR(price)}
 						</Button>
-						{payMode === 'wallet' && balance < price && (
-							<p className="text-center text-xs text-rose-400 mt-2">Insufficient balance. Switch to Razorpay or add funds.</p>
+						{payMode === 'wallet' && !canAffordWallet && (
+							<p className="text-center text-xs text-rose-400 mt-2">Insufficient balance. Use checkout or add funds.</p>
 						)}
 					</>
 				)}

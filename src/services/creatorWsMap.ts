@@ -30,7 +30,7 @@ export function creatorProfileDtoToCreator(dto: CreatorProfileDTO, base?: Partia
 		createdAt: dto.created_at,
 		isAgeVerified: base?.isAgeVerified ?? true,
 		status: base?.status ?? 'active',
-		walletBalance: base?.walletBalance ?? 0,
+		walletBalanceMinor: base?.walletBalanceMinor ?? '0',
 	};
 }
 

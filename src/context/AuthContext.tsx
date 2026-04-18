@@ -9,6 +9,7 @@ import { exchangeFirebaseToken } from '../services/authApi';
 import { creatorsApi, ApiError } from '../services/creatorsApi';
 import { clearSessionToken, getSessionToken } from '../services/sessionToken';
 import { isPostsMockMode } from '../services/postsMode';
+import { ZERO_MINOR } from '../utils/money';
 
 interface AuthState {
 	user: User | null;
@@ -27,7 +28,7 @@ type AuthAction =
 	{ type: 'SET_ERROR', payload: string } |
 	{ type: 'CLEAR_ERROR' } |
 	{ type: 'UPDATE_USER', payload: Partial<User> } |
-	{ type: 'UPDATE_WALLET', payload: number } |
+	{ type: 'UPDATE_WALLET_MINOR', payload: string } |
 	{ type: 'UPDATE_CREATOR_PROFILE', payload: Partial<Creator> };
 
 const initialState: AuthState = {
@@ -38,6 +39,23 @@ const initialState: AuthState = {
 	loginError: '',
 	creatorProfiles: {},
 };
+
+/** Ensure `walletBalanceMinor` and string `id` for API / mock user payloads. */
+function normalizeUserFromApi(payload: User): User {
+	const raw = payload as unknown as Record<string, unknown>;
+	const id = String(raw.id ?? '');
+	let minor = raw.walletBalanceMinor != null ? String(raw.walletBalanceMinor) : '';
+	if (!minor && raw.walletBalance != null && typeof raw.walletBalance === 'number') {
+		// Legacy demo payloads used USD-like numbers; treat as INR rupees → paise for migration.
+		minor = String(Math.max(0, Math.round(raw.walletBalance * 100)));
+	}
+	if (!minor) minor = ZERO_MINOR;
+	return {
+		...payload,
+		id,
+		walletBalanceMinor: /^\d+$/.test(minor) ? minor : ZERO_MINOR,
+	};
+}
 
 function createCreatorProfileFromUser(user: User): Creator {
 	return {
@@ -50,7 +68,7 @@ function createCreatorProfileFromUser(user: User): Creator {
 		createdAt: user.createdAt,
 		isAgeVerified: user.isAgeVerified,
 		status: user.status,
-		walletBalance: user.walletBalance,
+		walletBalanceMinor: user.walletBalanceMinor,
 		bio: 'Tell fans about your content and what they can expect.',
 		banner: 'https://images.pexels.com/photos/3756766/pexels-photo-3756766.jpeg?auto=compress&cs=tinysrgb&w=1200&h=400&fit=crop',
 		subscriptionPrice: 9.99,
@@ -75,11 +93,7 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
 		case 'LOGIN':
 			return {
 				...state,
-				user: {
-					...action.payload,
-					// Backend may return numeric ids; normalize to string for consistent comparisons.
-					id: String((action.payload as unknown as { id: unknown }).id),
-				},
+				user: normalizeUserFromApi(action.payload),
 				isAuthenticated: true,
 				loginError: '',
 			};
@@ -108,16 +122,16 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
 					} :
 					state.creatorProfiles,
 			};
-		case 'UPDATE_WALLET':
+		case 'UPDATE_WALLET_MINOR':
 			return {
 				...state,
-				user: state.user ? { ...state.user, walletBalance: action.payload } : null,
+				user: state.user ? { ...state.user, walletBalanceMinor: action.payload } : null,
 				creatorProfiles: state.user?.role === 'creator' && state.creatorProfiles[state.user.id] ?
 					{
 						...state.creatorProfiles,
 						[state.user.id]: {
 							...state.creatorProfiles[state.user.id],
-							walletBalance: action.payload,
+							walletBalanceMinor: action.payload,
 						},
 					} :
 					state.creatorProfiles,
@@ -150,7 +164,7 @@ interface AuthContextValue {
 	setPendingEmail: (email: string) => void;
 	updateUser: (data: Partial<User>) => void;
 	updateCreatorProfile: (data: Partial<Creator>) => void;
-	updateWallet: (amount: number) => void;
+	updateWalletMinor: (balanceMinor: string) => void;
 	clearError: () => void;
 }
 
@@ -281,7 +295,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 					createdAt: new Date().toISOString(),
 					isAgeVerified: true,
 					status: 'active',
-					walletBalance: 0,
+					walletBalanceMinor: ZERO_MINOR,
 				};
 
 				const user = apiUser ?? fallbackUser;
@@ -328,8 +342,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 		dispatch({ type: 'UPDATE_CREATOR_PROFILE', payload: data });
 	}, []);
 
-	const updateWallet = useCallback((amount: number) => {
-		dispatch({ type: 'UPDATE_WALLET', payload: amount });
+	const updateWalletMinor = useCallback((balanceMinor: string) => {
+		dispatch({ type: 'UPDATE_WALLET_MINOR', payload: balanceMinor });
 	}, []);
 
 	const clearError = useCallback(() => {
@@ -347,7 +361,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 			setPendingEmail,
 			updateUser,
 			updateCreatorProfile,
-			updateWallet,
+			updateWalletMinor,
 			clearError,
 		}}
 		>
@@ -381,6 +395,6 @@ export function useCurrentCreator(): Creator | null {
 		category: currentUser.category ?? mockCreators[0].category,
 		createdAt: currentUser.createdAt,
 		status: currentUser.status,
-		walletBalance: currentUser.walletBalance,
+		walletBalanceMinor: currentUser.walletBalanceMinor,
 	};
 }

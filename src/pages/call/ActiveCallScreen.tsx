@@ -6,6 +6,7 @@ import { useCall } from '../../context/CallContext';
 import { useSession } from '../../context/SessionContext';
 import { useAuth } from '../../context/AuthContext';
 import { buildCallChannel, fetchAgoraRtcToken, getAgoraAppId, stringToAgoraUid } from '../../services/agoraRtc';
+import { formatINR } from '../../services/razorpay';
 
 function formatDuration(secs: number): string {
 	const m = Math.floor(secs / 60).toString().padStart(2, '0');
@@ -255,7 +256,7 @@ export function ActiveCallScreen() {
 
 					{isTimedSession && (
 						<p className="text-xs text-white/30 mt-1">
-							${session.ratePerMinute.toFixed(2)}/min · ${session.totalCost.toFixed(2)} total
+							{formatINR(session.ratePerMinute)}/min · {formatINR(session.totalCost)} total
 						</p>
 					)}
 				</div>

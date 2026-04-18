@@ -19,6 +19,7 @@ import { creatorsApi } from '../../services/creatorsApi';
 import { creatorProfileDtoToCreator } from '../../services/creatorWsMap';
 import { isPostsMockMode } from '../../services/postsMode';
 import { randomUuid } from '../../utils/isUuid';
+import { formatINR } from '../../services/razorpay';
 
 export function CreatorProfile() {
 	const { id } = useParams<{ id: string }>();
@@ -310,7 +311,7 @@ export function CreatorProfile() {
 										onClick={() => setShowSubscribeModal(true)}
 										className="bg-rose-500 hover:bg-rose-600 text-white font-bold px-5 py-2 rounded-xl text-sm transition-all active:scale-95 shadow-lg shadow-rose-500/25"
 									>
-										Subscribe ${creatorForDisplay.subscriptionPrice}/mo
+										Subscribe {formatINR(creatorForDisplay.subscriptionPrice)}/mo
 									</button>
 								)}
 							</div>
@@ -356,7 +357,7 @@ export function CreatorProfile() {
 								</div>
 								<div className="flex-1">
 									<p className="text-sm font-semibold text-white mb-0.5">Subscribe to unlock all content</p>
-									<p className="text-xs text-white/40">{creatorForDisplay.postCount} posts · Starting at ${creatorForDisplay.subscriptionPrice}/mo</p>
+									<p className="text-xs text-white/40">{creatorForDisplay.postCount} posts · Starting at {formatINR(creatorForDisplay.subscriptionPrice)}/mo</p>
 								</div>
 								<button
 									onClick={() => setShowSubscribeModal(true)}
@@ -420,7 +421,7 @@ export function CreatorProfile() {
 				creatorName={creatorForDisplay.name}
 				creatorAvatar={creatorForDisplay.avatar}
 				ratePerMinute={creatorForDisplay.perMinuteRate}
-				walletBalance={authState.user?.walletBalance ?? 0}
+				walletBalanceMinor={authState.user?.walletBalanceMinor ?? '0'}
 				onConfirm={handleStartSession}
 			/>
 		</Layout>

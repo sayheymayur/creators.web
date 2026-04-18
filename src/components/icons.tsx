@@ -1,4 +1,5 @@
 import * as Fi from 'react-icons/fi';
+import { TbCurrencyRupee } from 'react-icons/tb';
 
 // Generic icon aliases used across the app.
 // Using namespace import avoids build-time errors if some icons
@@ -8,7 +9,8 @@ export const Users = Fi.FiUsers;
 export const TrendingUp = Fi.FiTrendingUp;
 export const Shield = Fi.FiShield;
 export const AlertTriangle = Fi.FiAlertTriangle;
-export const DollarSign = Fi.FiDollarSign;
+/** Revenue / wallet stats (INR). */
+export const DollarSign = TbCurrencyRupee;
 export const Star = Fi.FiStar;
 export const ArrowRight = Fi.FiArrowRight;
 

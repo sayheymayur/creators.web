@@ -1,15 +1,17 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, ArrowUpRight, ArrowDownLeft, Wallet as WalletIcon, CreditCard, TrendingUp, RefreshCw, CheckCircle } from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';
 import { Modal } from '../../components/ui/Toast';
 import { Button } from '../../components/ui/Button';
 import { useAuth } from '../../context/AuthContext';
 import { useWallet } from '../../context/WalletContext';
-import { formatDate, formatCurrency } from '../../utils/date';
+import { formatDate } from '../../utils/date';
 import { delayMs } from '../../utils/delay';
 import type { Transaction } from '../../types';
+import { formatINRFromMinor } from '../../utils/money';
+import type { RazorpayOrderRow } from '../../services/paymentWs';
 
-const ADD_FUND_PRESETS = [10, 25, 50, 100, 200, 500];
+const ADD_FUND_PRESETS_INR = [100, 250, 500, 1000, 2000, 5000];
 
 function TransactionItem({ tx }: { tx: Transaction }) {
 	const isPositive = tx.amount > 0;
@@ -34,6 +36,13 @@ function TransactionItem({ tx }: { tx: Transaction }) {
 		refund: <ArrowDownLeft className="w-4 h-4" />,
 	};
 
+	const amountLabel = new Intl.NumberFormat('en-IN', {
+		style: 'currency',
+		currency: 'INR',
+		minimumFractionDigits: 0,
+		maximumFractionDigits: 2,
+	}).format(Math.abs(tx.amount));
+
 	return (
 		<div className="flex items-center gap-3 py-3 border-b border-border/10 last:border-0">
 			<div className={`w-9 h-9 rounded-xl flex items-center justify-center bg-foreground/5 ${typeColors[tx.type]}`}>
@@ -45,7 +54,7 @@ function TransactionItem({ tx }: { tx: Transaction }) {
 			</div>
 			<div className="text-right shrink-0">
 				<p className={`text-sm font-semibold ${isPositive ? 'text-emerald-400' : 'text-foreground/80'}`}>
-					{isPositive ? '+' : ''}{formatCurrency(tx.amount)}
+					{isPositive ? '+' : '−'}{amountLabel}
 				</p>
 				<p className={`text-[10px] capitalize ${tx.status === 'completed' ? 'text-emerald-400/60' : 'text-amber-400/60'}`}>
 					{tx.status}
@@ -55,16 +64,50 @@ function TransactionItem({ tx }: { tx: Transaction }) {
 	);
 }
 
+function OrderRow({ o }: { o: RazorpayOrderRow }) {
+	const amount = formatINRFromMinor(o.amount_minor);
+	const paid = o.status === 'paid' || o.status === 'captured';
+	const pending = o.status === 'created' || o.status === 'attempted';
+	return (
+		<div className="flex items-center gap-3 py-3 border-b border-border/10 last:border-0">
+			<div className="w-9 h-9 rounded-xl flex items-center justify-center bg-foreground/5 text-muted">
+				<CreditCard className="w-4 h-4" />
+			</div>
+			<div className="flex-1 min-w-0">
+				<p className="text-sm font-medium text-foreground truncate font-mono text-xs">{o.razorpay_order_id}</p>
+				<p className="text-xs text-muted/80">{formatDate(o.created_at)}</p>
+			</div>
+			<div className="text-right shrink-0">
+				<p className="text-sm font-semibold text-foreground">{amount}</p>
+				<p className={`text-[10px] capitalize ${paid ? 'text-emerald-400/80' : pending ? 'text-amber-400/80' : 'text-rose-400/80'}`}>
+					{o.status}
+				</p>
+			</div>
+		</div>
+	);
+}
+
 export function Wallet() {
 	const { state: authState } = useAuth();
-	const { addFundsViaRazorpay, getUserTransactions, getUserSubscriptions, cancelSubscription, toggleAutoRenew } = useWallet();
+	const {
+		addFundsViaRazorpay,
+		getUserTransactions,
+		getUserSubscriptions,
+		cancelSubscription,
+		toggleAutoRenew,
+		razorpayOrders,
+		historyNextCursor,
+		loadMoreLedger,
+		refreshWalletData,
+		state: walletState,
+	} = useWallet();
 	const [showAddFunds, setShowAddFunds] = useState(false);
-	const [addAmount, setAddAmount] = useState(50);
+	const [addAmount, setAddAmount] = useState(500);
 	const [customAmount, setCustomAmount] = useState('');
 	const [isLoading, setIsLoading] = useState(false);
 	const [addSuccess, setAddSuccess] = useState(false);
 	const [payError, setPayError] = useState('');
-	const [activeTab, setActiveTab] = useState<'transactions' | 'subscriptions'>('transactions');
+	const [activeTab, setActiveTab] = useState<'transactions' | 'subscriptions' | 'orders'>('transactions');
 
 	const user = authState.user;
 	const userId = user?.id ?? '';
@@ -72,14 +115,20 @@ export function Wallet() {
 	const subscriptions = getUserSubscriptions(userId);
 	const activeSubscriptions = subscriptions.filter(s => s.isActive);
 
+	const balanceMinor = user?.walletBalanceMinor ?? '0';
+
 	const totalSpent = transactions.filter(t => t.amount < 0).reduce((sum, t) => sum + Math.abs(t.amount), 0);
-	const totalDeposited = transactions.filter(t => t.type === 'deposit').reduce((sum, t) => sum + t.amount, 0);
+	const totalDeposited = transactions.filter(t => t.type === 'deposit' && t.amount > 0).reduce((sum, t) => sum + t.amount, 0);
+
+	useEffect(() => {
+		setPayError(walletState.walletError ?? '');
+	}, [walletState.walletError]);
 
 	function handleAddFunds() {
 		const amount = customAmount ? parseFloat(customAmount) : addAmount;
 		if (!amount || amount <= 0) return;
 		setIsLoading(true);
-		void delayMs(1000).then(() => {
+		void delayMs(400).then(() => {
 			setPayError('');
 			void addFundsViaRazorpay(amount).then(ok => {
 				if (ok) {
@@ -90,8 +139,6 @@ export function Wallet() {
 						setCustomAmount('');
 						setPayError('');
 					}, 1500);
-				} else {
-					setPayError('');
 				}
 				setIsLoading(false);
 			});
@@ -101,11 +148,21 @@ export function Wallet() {
 	return (
 		<Layout>
 			<div className="max-w-2xl mx-auto px-4 py-6">
+				<div className="flex justify-end mb-2">
+					<button
+						type="button"
+						onClick={() => { void refreshWalletData(); }}
+						className="text-xs text-muted hover:text-foreground flex items-center gap-1"
+					>
+						<RefreshCw className="w-3.5 h-3.5" />
+						Refresh
+					</button>
+				</div>
 				<div className="bg-gradient-to-br from-rose-500/20 via-rose-900/10 to-transparent border border-rose-500/20 rounded-3xl p-6 mb-6">
 					<div className="flex items-start justify-between mb-4">
 						<div>
 							<p className="text-xs text-muted font-medium uppercase tracking-wider mb-1">Available Balance</p>
-							<p className="text-4xl font-black text-foreground">${(user?.walletBalance ?? 0).toFixed(2)}</p>
+							<p className="text-4xl font-black text-foreground">{formatINRFromMinor(balanceMinor)}</p>
 						</div>
 						<div className="w-12 h-12 bg-rose-500/20 rounded-2xl flex items-center justify-center">
 							<WalletIcon className="w-6 h-6 text-rose-400" />
@@ -113,12 +170,16 @@ export function Wallet() {
 					</div>
 					<div className="grid grid-cols-2 gap-3 mb-4">
 						<div className="bg-foreground/5 rounded-xl p-3">
-							<p className="text-xs text-muted mb-0.5">Total Deposited</p>
-							<p className="text-base font-bold text-emerald-400">${totalDeposited.toFixed(2)}</p>
+							<p className="text-xs text-muted mb-0.5">Total Deposited (view)</p>
+							<p className="text-base font-bold text-emerald-400">
+								{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(totalDeposited)}
+							</p>
 						</div>
 						<div className="bg-foreground/5 rounded-xl p-3">
-							<p className="text-xs text-muted mb-0.5">Total Spent</p>
-							<p className="text-base font-bold text-foreground/80">${totalSpent.toFixed(2)}</p>
+							<p className="text-xs text-muted mb-0.5">Total Spent (view)</p>
+							<p className="text-base font-bold text-foreground/80">
+								{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(totalSpent)}
+							</p>
 						</div>
 					</div>
 					<Button
@@ -131,12 +192,12 @@ export function Wallet() {
 					</Button>
 				</div>
 
-				<div className="flex gap-1 bg-foreground/5 p-0.5 rounded-xl mb-4">
-					{(['transactions', 'subscriptions'] as const).map(tab => (
+				<div className="flex gap-1 bg-foreground/5 p-0.5 rounded-xl mb-4 overflow-x-auto">
+					{(['transactions', 'orders', 'subscriptions'] as const).map(tab => (
 						<button
 							key={tab}
 							onClick={() => setActiveTab(tab)}
-							className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all capitalize ${
+							className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all capitalize whitespace-nowrap px-2 ${
 								activeTab === tab ? 'bg-foreground/10 text-foreground' : 'text-muted'
 							}`}
 						>
@@ -150,7 +211,30 @@ export function Wallet() {
 						{transactions.length === 0 ? (
 							<p className="text-center text-muted py-8 text-sm">No transactions yet</p>
 						) : (
-							transactions.map(tx => <TransactionItem key={tx.id} tx={tx} />)
+							<>
+								{transactions.map(tx => <TransactionItem key={tx.id} tx={tx} />)}
+								{historyNextCursor && (
+									<div className="py-4 flex justify-center">
+										<button
+											type="button"
+											onClick={() => { void loadMoreLedger(); }}
+											className="text-sm text-rose-400 hover:underline"
+										>
+											Load older
+										</button>
+									</div>
+								)}
+							</>
+						)}
+					</div>
+				)}
+
+				{activeTab === 'orders' && (
+					<div className="bg-surface border border-border/20 rounded-2xl px-4">
+						{razorpayOrders.length === 0 ? (
+							<p className="text-center text-muted py-8 text-sm">No Razorpay orders yet</p>
+						) : (
+							razorpayOrders.map(o => <OrderRow key={o.id} o={o} />)
 						)}
 					</div>
 				)}
@@ -171,7 +255,9 @@ export function Wallet() {
 											<p className="text-sm font-semibold text-foreground">{sub.creatorName}</p>
 											<p className="text-xs text-muted">Renews {formatDate(sub.endDate)}</p>
 										</div>
-										<span className="text-sm font-bold text-rose-400">${sub.price}/mo</span>
+										<span className="text-sm font-bold text-rose-400">
+											{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(sub.price)}/mo
+										</span>
 									</div>
 									<div className="flex gap-2">
 										<button
@@ -208,14 +294,14 @@ export function Wallet() {
 							</div>
 							<p className="text-foreground font-semibold">Funds Added!</p>
 							<p className="text-muted text-sm mt-1">
-								${(customAmount ? parseFloat(customAmount) : addAmount).toFixed(2)} added to your wallet
+								{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(customAmount ? parseFloat(customAmount) || 0 : addAmount)} added to your wallet
 							</p>
 						</div>
 					) : (
 						<>
 							<div className="flex items-center gap-2 bg-foreground/5 rounded-xl p-3 mb-4">
 								<CreditCard className="w-4 h-4 text-muted" />
-								<span className="text-sm text-muted">Secure payment via Razorpay</span>
+								<span className="text-sm text-muted">Secure payment via Razorpay (INR)</span>
 							</div>
 							{payError && (
 								<div className="bg-rose-500/10 border border-rose-500/20 rounded-xl p-3 mb-3">
@@ -223,9 +309,9 @@ export function Wallet() {
 								</div>
 							)}
 
-							<p className="text-xs text-muted font-medium mb-2 uppercase tracking-wide">Select Amount</p>
+							<p className="text-xs text-muted font-medium mb-2 uppercase tracking-wide">Select Amount (₹)</p>
 							<div className="grid grid-cols-3 gap-2 mb-3">
-								{ADD_FUND_PRESETS.map(p => (
+								{ADD_FUND_PRESETS_INR.map(p => (
 									<button
 										key={p}
 										onClick={() => { setAddAmount(p); setCustomAmount(''); }}
@@ -233,7 +319,7 @@ export function Wallet() {
 											addAmount === p && !customAmount ? 'bg-rose-500 text-white' : 'bg-foreground/5 text-muted hover:bg-foreground/10'
 										}`}
 									>
-										${p}
+										₹{p.toLocaleString('en-IN')}
 									</button>
 								))}
 							</div>
@@ -241,11 +327,11 @@ export function Wallet() {
 								type="number"
 								value={customAmount}
 								onChange={e => setCustomAmount(e.target.value)}
-								placeholder="Custom amount..."
+								placeholder="Custom amount (₹)..."
 								className="w-full bg-input border border-border/20 rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40 mb-4"
 							/>
 							<Button variant="primary" fullWidth isLoading={isLoading} onClick={() => { void handleAddFunds(); }}>
-								Add ${(customAmount ? parseFloat(customAmount) || 0 : addAmount).toFixed(2)}
+								Add {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(customAmount ? parseFloat(customAmount) || 0 : addAmount)}
 							</Button>
 						</>
 					)}

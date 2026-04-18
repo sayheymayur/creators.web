@@ -14,6 +14,7 @@ import type { Message } from '../../types';
 import { ToastContainer } from '../../components/ui/Toast';
 import { Navbar } from '../../components/layout/Navbar';
 import { useRoomChat } from '../../hooks/useRoomChat';
+import { formatINR } from '../../services/razorpay';
 
 export function ChatRoom() {
 	const { id: convId } = useParams<{ id: string }>();
@@ -223,7 +224,7 @@ export function ChatRoom() {
 											<div className="px-4 py-3 flex items-center gap-2">
 												<Lock className="w-4 h-4 text-rose-400 shrink-0" />
 												<div className="flex-1">
-													<p className="text-xs text-foreground/70">Paid message (${msg.price?.toFixed(2)})</p>
+													<p className="text-xs text-foreground/70">Paid message ({formatINR(msg.price ?? 0)})</p>
 													<p className="text-[10px] text-muted/80">Select to unlock and view this message.</p>
 												</div>
 												{!isMe && (

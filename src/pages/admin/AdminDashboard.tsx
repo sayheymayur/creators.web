@@ -5,6 +5,7 @@ import { ToastContainer } from '../../components/ui/Toast';
 import { mockCreators, mockUsers } from '../../data/users';
 import { mockKYCApplications, mockReports } from '../../data/transactions';
 import { mockPosts } from '../../data/posts';
+import { formatINR } from '../../services/razorpay';
 
 export function AdminDashboard() {
 	const navigate = useNavigate();
@@ -18,7 +19,7 @@ export function AdminDashboard() {
 	const stats = [
 		{ label: 'Total Users', value: mockUsers.length.toString(), icon: Users, color: 'bg-blue-500/15 text-blue-400', path: '/admin/users' },
 		{ label: 'Active Creators', value: totalCreators.toString(), icon: Star, color: 'bg-rose-500/15 text-rose-400', path: '/admin/creators' },
-		{ label: 'Platform Revenue', value: `$${(platformRevenue / 1000).toFixed(1)}K`, icon: DollarSign, color: 'bg-emerald-500/15 text-emerald-400', path: '/admin/reports' },
+		{ label: 'Platform Revenue', value: `₹${(platformRevenue / 1000).toFixed(1)}K`, icon: DollarSign, color: 'bg-emerald-500/15 text-emerald-400', path: '/admin/reports' },
 		{ label: 'Pending KYC', value: pendingKYC.toString(), icon: Shield, color: 'bg-amber-500/15 text-amber-400', path: '/admin/creators' },
 		{ label: 'Open Reports', value: pendingReports.toString(), icon: AlertTriangle, color: 'bg-red-500/15 text-red-400', path: '/admin/moderation' },
 		{ label: 'Total Content', value: mockPosts.length.toString(), icon: TrendingUp, color: 'bg-foreground/10 text-muted', path: '/admin/moderation' },
@@ -67,7 +68,7 @@ export function AdminDashboard() {
 										<p className="text-sm font-medium text-foreground truncate">{creator.name}</p>
 										<p className="text-xs text-muted">{creator.subscriberCount.toLocaleString()} subscribers</p>
 									</div>
-									<span className="text-xs font-semibold text-emerald-400">${creator.monthlyEarnings.toLocaleString()}/mo</span>
+									<span className="text-xs font-semibold text-emerald-400">{formatINR(creator.monthlyEarnings)}/mo</span>
 								</div>
 							))}
 						</div>

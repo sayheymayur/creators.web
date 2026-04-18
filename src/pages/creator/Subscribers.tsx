@@ -8,6 +8,7 @@ import { mockSubscriptions } from '../../data/transactions';
 import { formatDate } from '../../utils/date';
 import { useChat } from '../../context/ChatContext';
 import { randomUuid } from '../../utils/isUuid';
+import { formatINR } from '../../services/razorpay';
 
 export function Subscribers() {
 	const creator = useCurrentCreator();
@@ -69,7 +70,7 @@ export function Subscribers() {
 						<p className="text-xs text-muted">Active</p>
 					</div>
 					<div className="bg-surface border border-border/20 rounded-2xl p-4 text-center">
-						<p className="text-2xl font-black text-rose-400">${(creatorSubs.reduce((s, sub) => s + sub.price, 0)).toFixed(2)}</p>
+						<p className="text-2xl font-black text-rose-400">{formatINR(creatorSubs.reduce((s, sub) => s + sub.price, 0))}</p>
 						<p className="text-xs text-muted">MRR</p>
 					</div>
 				</div>
@@ -101,7 +102,7 @@ export function Subscribers() {
 								<div className="flex-1 min-w-0">
 									<p className="text-sm font-medium text-foreground truncate">{sub.user?.name ?? 'Unknown'}</p>
 									<p className="text-xs text-muted truncate">
-										Subscribed {formatDate(sub.startDate)} · ${sub.price}/mo
+										Subscribed {formatDate(sub.startDate)} · {formatINR(sub.price)}/mo
 									</p>
 								</div>
 								<button

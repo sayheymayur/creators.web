@@ -1,4 +1,5 @@
 import { formatCommandLine, formatServiceLine, parseFrame, type WsFrame } from './wsProtocol';
+import { creatorsWsUrl } from './wsUrl';
 
 export interface WsClientOptions {
 	url?: string;
@@ -263,14 +264,7 @@ export class WsClient {
 		if (this.options.url) return this.options.url;
 		const envUrl = (import.meta.env.VITE_WS_URL ?? '').trim();
 		if (envUrl) return envUrl;
-		const wsPath = this.options.wsPath ?? import.meta.env.VITE_WS_PATH ?? '/ws';
-		const token = this.options.getToken?.() ?? null;
-
-		const loc = window.location;
-		const proto = loc.protocol === 'https:' ? 'wss:' : 'ws:';
-		const base = `${proto}//${loc.host}${wsPath}`;
-		if (!token) return base;
-		const sep = base.includes('?') ? '&' : '?';
-		return `${base}${sep}token=${encodeURIComponent(token)}`;
+		// Same host/path/token as HTTP API (`VITE_CREATORS_API_URL`, `VITE_CREATORS_WS_URL`).
+		return creatorsWsUrl();
 	}
 }

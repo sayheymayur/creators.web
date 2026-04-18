@@ -6,7 +6,8 @@ import { useAuth } from '../../context/AuthContext';
 import { useWallet } from '../../context/WalletContext';
 import { useContent } from '../../context/ContentContext';
 import { useNotifications } from '../../context/NotificationContext';
-import { usdToInr, formatINR } from '../../services/razorpay';
+import { formatINR } from '../../services/razorpay';
+import { compareMinor, formatINRFromMinor, inrRupeesToMinor } from '../../utils/money';
 import type { Creator } from '../../types';
 import { delayMs } from '../../utils/delay';
 
@@ -35,8 +36,10 @@ export function SubscribeModal({ isOpen, onClose, creator }: SubscribeModalProps
 	const [payMode, setPayMode] = useState<PayMode>('razorpay');
 	const [error, setError] = useState('');
 
-	const balance = authState.user?.walletBalance ?? 0;
-	const inrPrice = usdToInr(creator.subscriptionPrice);
+	const balanceMinor = authState.user?.walletBalanceMinor ?? '0';
+	const inrPrice = creator.subscriptionPrice;
+	const subMinor = inrRupeesToMinor(creator.subscriptionPrice);
+	const canAffordWallet = compareMinor(balanceMinor, '>=', subMinor);
 
 	function completeSubscription() {
 		if (!authState.user) return;
@@ -124,7 +127,7 @@ export function SubscribeModal({ isOpen, onClose, creator }: SubscribeModalProps
 								<p className="text-xs text-muted">@{creator.username}</p>
 							</div>
 							<div className="text-right">
-								<p className="text-lg font-bold text-rose-400">${creator.subscriptionPrice}</p>
+								<p className="text-lg font-bold text-rose-400">{formatINR(inrPrice)}</p>
 								<p className="text-xs text-muted">per month</p>
 							</div>
 						</div>
@@ -155,7 +158,7 @@ export function SubscribeModal({ isOpen, onClose, creator }: SubscribeModalProps
 								}`}
 							>
 								<Wallet className="w-3 h-3 inline mr-1" />
-								Wallet (${balance.toFixed(2)})
+								Wallet ({formatINRFromMinor(balanceMinor)})
 							</button>
 						</div>
 
@@ -170,13 +173,13 @@ export function SubscribeModal({ isOpen, onClose, creator }: SubscribeModalProps
 							fullWidth
 							isLoading={isLoading}
 							onClick={() => { void handleSubscribe(); }}
-							disabled={payMode === 'wallet' && balance < creator.subscriptionPrice}
+							disabled={payMode === 'wallet' && !canAffordWallet}
 						>
-							Subscribe for ${creator.subscriptionPrice}/month
+							Subscribe for {formatINR(creator.subscriptionPrice)}/month
 						</Button>
-						{payMode === 'wallet' && balance < creator.subscriptionPrice && (
+						{payMode === 'wallet' && !canAffordWallet && (
 							<p className="text-center text-xs text-rose-400 mt-2">
-								Insufficient balance. Switch to Razorpay or add funds.
+								Insufficient balance. Use checkout or add funds.
 							</p>
 						)}
 						<p className="text-center text-xs text-muted/80 mt-2">Auto-renews monthly. Cancel anytime.</p>

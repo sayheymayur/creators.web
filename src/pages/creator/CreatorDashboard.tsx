@@ -20,6 +20,7 @@ import { useContent } from '../../context/ContentContext';
 import { useSession } from '../../context/SessionContext';
 import { mockCreators } from '../../data/users';
 import { isPostsMockMode } from '../../services/postsMode';
+import { formatINR } from '../../services/razorpay';
 
 function StatCard({ label, value, sub, icon, color, onClick }: {
 	label: string, value: string, sub?: string, icon: React.ReactNode, color: string, onClick?: () => void,
@@ -151,7 +152,7 @@ export function CreatorDashboard() {
 				<div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
 					<StatCard
 						label="Monthly Earnings"
-						value={`$${creatorData.monthlyEarnings.toLocaleString()}`}
+						value={formatINR(creatorData.monthlyEarnings)}
 						sub={`+${earningsGrowth}% vs last month`}
 						icon={<DollarSign className="w-5 h-5 text-emerald-400" />}
 						color="bg-emerald-500/15"
@@ -167,14 +168,14 @@ export function CreatorDashboard() {
 					/>
 					<StatCard
 						label="Session Earnings"
-						value={`$${sessionEarnings.toFixed(2)}`}
+						value={formatINR(sessionEarnings)}
 						sub={`${creatorSessions.length} sessions`}
 						icon={<Zap className="w-5 h-5 text-amber-400" />}
 						color="bg-amber-500/15"
 					/>
 					<StatCard
 						label="Total Earnings"
-						value={`$${creatorData.totalEarnings.toLocaleString()}`}
+						value={formatINR(creatorData.totalEarnings)}
 						sub="All time"
 						icon={<TrendingUp className="w-5 h-5 text-rose-400" />}
 						color="bg-rose-500/15"
@@ -206,7 +207,7 @@ export function CreatorDashboard() {
 					{editingRate ? (
 						<div className="flex items-center gap-3">
 							<div className="flex-1 flex items-center gap-2 bg-input border border-border/20 rounded-xl px-3 py-2">
-								<span className="text-muted text-sm">$</span>
+								<span className="text-muted text-sm">₹</span>
 								<input
 									type="number"
 									min="0.50"
@@ -227,13 +228,13 @@ export function CreatorDashboard() {
 						</div>
 					) : (
 						<div className="flex items-center gap-3">
-							<div className="text-3xl font-black text-foreground">${creatorData.perMinuteRate.toFixed(2)}</div>
+							<div className="text-3xl font-black text-foreground">{formatINR(creatorData.perMinuteRate)}</div>
 							<span className="text-muted/80 text-sm">/minute</span>
 							<div className="ml-auto flex flex-col items-end gap-1">
 								{[5, 10, 15].map(m => (
 									<div key={m} className="flex items-center gap-2 text-xs text-muted/80">
 										<Clock className="w-3 h-3" />
-										{m}min = <span className="text-foreground/80 font-semibold">${(m * creatorData.perMinuteRate).toFixed(2)}</span>
+										{m}min = <span className="text-foreground/80 font-semibold">{formatINR(m * creatorData.perMinuteRate)}</span>
 									</div>
 								))}
 							</div>
@@ -289,7 +290,7 @@ export function CreatorDashboard() {
 													{sess.actualDurationSeconds && ` · ${formatDuration(sess.actualDurationSeconds)}`}
 												</p>
 											</div>
-											<span className="text-xs font-bold text-emerald-400">+${sess.earnings.toFixed(2)}</span>
+											<span className="text-xs font-bold text-emerald-400">+{formatINR(sess.earnings)}</span>
 										</div>
 									);
 								})}

@@ -7,6 +7,7 @@ import { useContent } from '../../context/ContentContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { Avatar } from './Avatar';
 import { formatDistanceToNow } from '../../utils/date';
+import { formatINR } from '../../services/razorpay';
 import { TipModal } from '../modals/TipModal';
 import { PPVUnlockModal } from '../modals/PPVUnlockModal';
 
@@ -95,12 +96,12 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 								{post.isPPV ? (
 									<>
 										<p className="text-foreground font-semibold text-sm mb-1">Pay-per-view</p>
-										<p className="text-muted text-xs mb-3">Unlock this post for ${post.ppvPrice?.toFixed(2)}</p>
+										<p className="text-muted text-xs mb-3">Unlock this post for {post.ppvPrice != null ? formatINR(post.ppvPrice) : '—'}</p>
 										<button
 											onClick={() => setShowPPVModal(true)}
 											className="w-full bg-rose-500 hover:bg-rose-600 text-white text-sm font-semibold py-2 rounded-lg transition-colors"
 										>
-											Unlock for ${post.ppvPrice?.toFixed(2)}
+											Unlock for {post.ppvPrice != null ? formatINR(post.ppvPrice) : '—'}
 										</button>
 									</>
 								) : (

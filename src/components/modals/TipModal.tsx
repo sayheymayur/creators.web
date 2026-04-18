@@ -5,7 +5,8 @@ import { Button } from '../ui/Button';
 import { useAuth } from '../../context/AuthContext';
 import { useWallet } from '../../context/WalletContext';
 import { useNotifications } from '../../context/NotificationContext';
-import { usdToInr, formatINR } from '../../services/razorpay';
+import { formatINR } from '../../services/razorpay';
+import { compareMinor, formatINRFromMinor, inrRupeesToMinor } from '../../utils/money';
 import { delayMs } from '../../utils/delay';
 
 const TIP_PRESETS = [3, 5, 10, 20, 50, 100];
@@ -32,8 +33,9 @@ export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvata
 	const [error, setError] = useState('');
 
 	const tipAmount = customAmount ? parseFloat(customAmount) || 0 : amount;
-	const balance = authState.user?.walletBalance ?? 0;
-	const inrTip = usdToInr(tipAmount);
+	const balanceMinor = authState.user?.walletBalanceMinor ?? '0';
+	const tipMinor = inrRupeesToMinor(tipAmount);
+	const canAffordWallet = compareMinor(balanceMinor, '>=', tipMinor);
 
 	function handleSendTip() {
 		if (!tipAmount || tipAmount <= 0) return;
@@ -50,7 +52,7 @@ export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvata
 					}
 
 					setSuccess(true);
-					showToast(`Sent $${tipAmount.toFixed(2)} tip to ${creatorName}!`);
+					showToast(`Sent ${formatINR(tipAmount)} tip to ${creatorName}!`);
 					setTimeout(onClose, 1500);
 					setIsLoading(false);
 				});
@@ -65,7 +67,7 @@ export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvata
 			}
 
 			setSuccess(true);
-			showToast(`Sent $${tipAmount.toFixed(2)} tip to ${creatorName}!`);
+			showToast(`Sent ${formatINR(tipAmount)} tip to ${creatorName}!`);
 			setTimeout(onClose, 1500);
 			setIsLoading(false);
 		});
@@ -80,7 +82,7 @@ export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvata
 							<Zap className="w-8 h-8 text-amber-400 fill-amber-400" />
 						</div>
 						<p className="text-foreground font-semibold text-lg">Tip Sent!</p>
-						<p className="text-muted text-sm mt-1">${tipAmount.toFixed(2)} sent to {creatorName}</p>
+						<p className="text-muted text-sm mt-1">{formatINR(tipAmount)} sent to {creatorName}</p>
 					</div>
 				) : (
 					<>
@@ -104,7 +106,7 @@ export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvata
 											'bg-foreground/5 text-muted hover:bg-foreground/10'
 									}`}
 								>
-									${preset}
+									{formatINR(preset)}
 								</button>
 							))}
 						</div>
@@ -124,7 +126,7 @@ export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvata
 									payMode === 'razorpay' ? 'border-amber-500/40 bg-amber-500/10 text-amber-500' : 'border-border/20 bg-foreground/5 text-muted hover:bg-foreground/10'
 								}`}
 							>
-								Pay {tipAmount > 0 ? formatINR(inrTip) : 'via Razorpay'}
+								Pay {tipAmount > 0 ? formatINR(tipAmount) : 'Checkout'}
 							</button>
 							<button
 								onClick={() => setPayMode('wallet')}
@@ -133,7 +135,7 @@ export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvata
 								}`}
 							>
 								<Wallet className="w-3 h-3 inline mr-1" />
-								Wallet (${balance.toFixed(2)})
+								Wallet ({formatINRFromMinor(balanceMinor)})
 							</button>
 						</div>
 
@@ -148,14 +150,14 @@ export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvata
 							fullWidth
 							isLoading={isLoading}
 							onClick={() => { void handleSendTip(); }}
-							disabled={tipAmount <= 0 || (payMode === 'wallet' && balance < tipAmount)}
+							disabled={tipAmount <= 0 || (payMode === 'wallet' && !canAffordWallet)}
 							className="bg-amber-500 hover:bg-amber-600 shadow-amber-500/20"
 						>
 							<Zap className="w-4 h-4 fill-white" />
-							Send ${tipAmount.toFixed(2)} Tip
+							Send {formatINR(tipAmount)} Tip
 						</Button>
-						{payMode === 'wallet' && balance < tipAmount && (
-							<p className="text-center text-xs text-rose-400 mt-2">Insufficient balance. Switch to Razorpay or add funds.</p>
+						{payMode === 'wallet' && !canAffordWallet && (
+							<p className="text-center text-xs text-rose-400 mt-2">Insufficient balance. Use checkout or add funds.</p>
 						)}
 					</>
 				)}

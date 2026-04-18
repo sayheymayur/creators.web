@@ -37,7 +37,8 @@ credentials.json
 *.postman_environment.json
 .postman/
 postman/
+src/.postman/
+src/postman/
 .env.api
 .env.mock
-src/postman/
 

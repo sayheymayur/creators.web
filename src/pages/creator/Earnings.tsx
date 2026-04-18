@@ -7,6 +7,8 @@ import { useCurrentCreator } from '../../context/AuthContext';
 import { mockCreators } from '../../data/users';
 import { useNotifications } from '../../context/NotificationContext';
 import { delayMs } from '../../utils/delay';
+import { formatINRFromMinor, parseMinor } from '../../utils/money';
+import { formatINR } from '../../services/razorpay';
 
 export function Earnings() {
 	const creator = useCurrentCreator();
@@ -28,7 +30,7 @@ export function Earnings() {
 		void delayMs(1200).then(() => {
 			setWithdrawSuccess(true);
 			setIsWithdrawing(false);
-			showToast(`Withdrawal of $${withdrawAmount} initiated!`);
+			showToast(`Withdrawal of ${formatINR(Number(withdrawAmount) || 0)} initiated!`);
 			setTimeout(() => {
 				setWithdrawSuccess(false);
 				setShowWithdraw(false);
@@ -48,9 +50,9 @@ export function Earnings() {
 
 				<div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
 					{[
-						{ label: 'Total Earnings', value: `$${creatorData.totalEarnings.toLocaleString()}`, icon: DollarSign, color: 'text-emerald-400', bg: 'bg-emerald-500/15' },
-						{ label: 'This Month', value: `$${creatorData.monthlyEarnings.toLocaleString()}`, icon: TrendingUp, color: 'text-rose-400', bg: 'bg-rose-500/15' },
-						{ label: 'Tips Received', value: `$${creatorData.tipsReceived.toLocaleString()}`, icon: Zap, color: 'text-amber-400', bg: 'bg-amber-500/15' },
+						{ label: 'Total Earnings', value: formatINR(creatorData.totalEarnings), icon: DollarSign, color: 'text-emerald-400', bg: 'bg-emerald-500/15' },
+						{ label: 'This Month', value: formatINR(creatorData.monthlyEarnings), icon: TrendingUp, color: 'text-rose-400', bg: 'bg-rose-500/15' },
+						{ label: 'Tips Received', value: formatINR(creatorData.tipsReceived), icon: Zap, color: 'text-amber-400', bg: 'bg-amber-500/15' },
 						{ label: 'Subscribers', value: creatorData.subscriberCount.toLocaleString(), icon: Users, color: 'text-blue-400', bg: 'bg-blue-500/15' },
 					].map(({ label, value, icon: Icon, color, bg }) => (
 						<div key={label} className="bg-surface border border-border/20 rounded-2xl p-4">
@@ -80,10 +82,10 @@ export function Earnings() {
 											className="h-full bg-gradient-to-r from-rose-600 to-rose-400 rounded-full flex items-center justify-end pr-2 transition-all duration-500"
 											style={{ width: `${pct}%` }}
 										>
-											{pct > 30 && <span className="text-[10px] font-bold text-white">${stat.earnings.toLocaleString()}</span>}
+											{pct > 30 && <span className="text-[10px] font-bold text-white">{formatINR(stat.earnings)}</span>}
 										</div>
 									</div>
-									<p className="text-xs font-semibold text-foreground/80 w-16 text-right shrink-0">${stat.earnings.toLocaleString()}</p>
+									<p className="text-xs font-semibold text-foreground/80 w-16 text-right shrink-0">{formatINR(stat.earnings)}</p>
 								</div>
 							);
 						})}
@@ -104,7 +106,7 @@ export function Earnings() {
 								<div className="flex-1 h-2 bg-foreground/10 rounded-full overflow-hidden">
 									<div className={`h-full ${color} rounded-full transition-all`} style={{ width: `${pct}%` }} />
 								</div>
-								<p className="text-sm font-semibold text-foreground/80 w-20 text-right">${value.toLocaleString()}</p>
+								<p className="text-sm font-semibold text-foreground/80 w-20 text-right">{formatINR(value)}</p>
 							</div>
 						))}
 					</div>
@@ -125,7 +127,7 @@ export function Earnings() {
 						<div className="space-y-4">
 							<div className="bg-foreground/5 rounded-xl p-3 flex justify-between">
 								<span className="text-sm text-muted">Available Balance</span>
-								<span className="text-sm font-bold text-emerald-400">${creatorData.walletBalance.toFixed(2)}</span>
+								<span className="text-sm font-bold text-emerald-400">{formatINRFromMinor(creatorData.walletBalanceMinor)}</span>
 							</div>
 							<div>
 								<label className="block text-sm text-muted mb-1.5">Amount to Withdraw</label>
@@ -134,7 +136,7 @@ export function Earnings() {
 									value={withdrawAmount}
 									onChange={e => setWithdrawAmount(e.target.value)}
 									placeholder="0.00"
-									max={creatorData.walletBalance}
+									max={Number(parseMinor(creatorData.walletBalanceMinor)) / 100}
 									className="w-full bg-input border border-border/20 rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
 								/>
 							</div>
@@ -158,7 +160,7 @@ export function Earnings() {
 								/>
 							</div>
 							<Button variant="primary" fullWidth isLoading={isWithdrawing} onClick={() => { void handleWithdraw(); }}>
-								Withdraw ${withdrawAmount || '0.00'}
+								Withdraw {formatINR(Number(withdrawAmount) || 0)}
 							</Button>
 						</div>
 					)}

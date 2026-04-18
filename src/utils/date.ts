@@ -20,5 +20,5 @@ export function formatDate(dateString: string): string {
 }
 
 export function formatCurrency(amount: number): string {
-	return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Math.abs(amount));
+	return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Math.abs(amount));
 }

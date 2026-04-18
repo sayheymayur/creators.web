@@ -7,6 +7,7 @@ import { useChat } from '../../context/ChatContext';
 import { useTheme } from '../../context/ThemeContext';
 import { Avatar } from '../ui/Avatar';
 import { NotificationPanel } from './NotificationPanel';
+import { formatINRFromMinor } from '../../utils/money';
 
 export function Navbar() {
 	const navigate = useNavigate();
@@ -154,7 +155,9 @@ export function Navbar() {
 							className="hidden sm:flex items-center gap-1.5 bg-foreground/5 hover:bg-foreground/10 px-3 py-1.5 rounded-xl transition-colors"
 						>
 							<Wallet className="w-3.5 h-3.5 text-emerald-400" />
-							<span className="text-xs font-semibold text-foreground">${(user.walletBalance ?? 0).toFixed(2)}</span>
+							<span className="text-xs font-semibold text-foreground">
+								{formatINRFromMinor(user.walletBalanceMinor)}
+							</span>
 						</button>
 					)}
 
@@ -204,7 +207,7 @@ export function Navbar() {
 									<p className="text-xs text-muted truncate">{user.email}</p>
 									{!isAdmin && (
 										<p className="text-xs text-muted/80 mt-0.5">
-											Balance: ${user.walletBalance.toFixed(2)}
+											Balance: {formatINRFromMinor(user.walletBalanceMinor)}
 										</p>
 									)}
 								</div>

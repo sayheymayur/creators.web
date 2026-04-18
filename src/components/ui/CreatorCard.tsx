@@ -1,6 +1,7 @@
 import { Users, Star, Zap } from '../icons';
 import { useNavigate } from 'react-router-dom';
 import type { Creator } from '../../types';
+import { formatINR } from '../../services/razorpay';
 
 interface CreatorCardProps {
 	creator: Creator;
@@ -70,7 +71,7 @@ export function CreatorCard({ creator }: CreatorCardProps) {
 					</div>
 					<div className="flex items-center gap-1 text-amber-400">
 						<Zap className="w-3.5 h-3.5 fill-amber-400" />
-						<span className="text-xs font-semibold">${creator.subscriptionPrice}/mo</span>
+						<span className="text-xs font-semibold">{formatINR(creator.subscriptionPrice)}/mo</span>
 					</div>
 				</div>
 			</div>

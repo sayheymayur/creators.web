@@ -1,4 +1,5 @@
 import { creatorsApi } from '../creatorsApi';
+import { clearRazorpaySdkCache } from '../razorpay';
 import type { PaymentProviderId } from './config';
 
 export type ResolvedPaymentGateway = {
@@ -24,6 +25,11 @@ function envFallback(): ResolvedPaymentGateway {
 export function clearPaymentGatewayCache(): void {
 	cache = null;
 	inflight = null;
+	try {
+		clearRazorpaySdkCache();
+	} catch {
+		// ignore
+	}
 }
 
 /**

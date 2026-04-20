@@ -9,6 +9,7 @@ import { exchangeFirebaseToken } from '../services/authApi';
 import { creatorsApi, ApiError } from '../services/creatorsApi';
 import { clearSessionToken, getSessionToken } from '../services/sessionToken';
 import { isPostsMockMode } from '../services/postsMode';
+import { clearPaymentGatewayCache } from '../services/payments';
 import { ZERO_MINOR } from '../utils/money';
 
 interface AuthState {
@@ -204,18 +205,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 		return () => ac.abort();
 	}, []);
-
-	const wasAuthenticatedRef = useRef(false);
-	useEffect(() => {
-		if (state.isAuthenticated) {
-			if (!wasAuthenticatedRef.current) {
-				clearPaymentGatewayCache();
-			}
-			wasAuthenticatedRef.current = true;
-		} else {
-			wasAuthenticatedRef.current = false;
-		}
-	}, [state.isAuthenticated]);
 
 	const login = useCallback((email: string, password: string): Promise<boolean> => {
 		dispatch({ type: 'CLEAR_ERROR' });

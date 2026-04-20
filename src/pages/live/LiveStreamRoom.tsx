@@ -24,7 +24,7 @@ export function LiveStreamRoom() {
 	const navigate = useNavigate();
 	const { getStream, sendChatMessage, sendGift } = useLiveStream();
 	const { state: authState } = useAuth();
-	const { deductFunds, payViaRazorpay } = useWallet();
+	const { deductFunds } = useWallet();
 	const { showToast } = useNotifications();
 	const [text, setText] = useState('');
 	const [showGifts, setShowGifts] = useState(false);

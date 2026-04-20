@@ -19,17 +19,17 @@ interface TipModalProps {
 	creatorAvatar: string;
 }
 
-type PayMode = 'razorpay' | 'wallet';
+type PayMode = 'external' | 'wallet';
 
 export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvatar }: TipModalProps) {
 	const { state: authState } = useAuth();
-	const { deductFunds, payViaRazorpay } = useWallet();
+	const { deductFunds, payExternally } = useWallet();
 	const { showToast } = useNotifications();
 	const [amount, setAmount] = useState<number>(10);
 	const [customAmount, setCustomAmount] = useState('');
 	const [isLoading, setIsLoading] = useState(false);
 	const [success, setSuccess] = useState(false);
-	const [payMode, setPayMode] = useState<PayMode>('razorpay');
+	const [payMode, setPayMode] = useState<PayMode>('external');
 	const [error, setError] = useState('');
 
 	const tipAmount = customAmount ? parseFloat(customAmount) || 0 : amount;
@@ -43,8 +43,8 @@ export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvata
 		void delayMs(800).then(() => {
 			setError('');
 
-			if (payMode === 'razorpay') {
-				void payViaRazorpay(tipAmount, 'tip', `Tip to ${creatorName}`, creatorId, creatorName).then(result => {
+			if (payMode === 'external') {
+				void payExternally(tipAmount, 'tip', `Tip to ${creatorName}`, creatorId, creatorName).then(result => {
 					if (!result.ok) {
 						if (!result.cancelled) setError(result.error || 'Payment failed.');
 						setIsLoading(false);
@@ -121,9 +121,9 @@ export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvata
 						<p className="text-xs font-semibold text-muted uppercase tracking-widest mb-2">Payment Method</p>
 						<div className="flex gap-2 mb-4">
 							<button
-								onClick={() => setPayMode('razorpay')}
+								onClick={() => setPayMode('external')}
 								className={`flex-1 py-2.5 rounded-xl text-xs font-semibold border transition-all ${
-									payMode === 'razorpay' ? 'border-amber-500/40 bg-amber-500/10 text-amber-500' : 'border-border/20 bg-foreground/5 text-muted hover:bg-foreground/10'
+									payMode === 'external' ? 'border-amber-500/40 bg-amber-500/10 text-amber-500' : 'border-border/20 bg-foreground/5 text-muted hover:bg-foreground/10'
 								}`}
 							>
 								Pay {tipAmount > 0 ? formatINR(tipAmount) : 'Checkout'}

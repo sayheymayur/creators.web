@@ -272,56 +272,64 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 			checkoutNotes[k] = typeof v === 'string' ? v : String(v);
 		}
 
-		const createBody: Parameters<typeof creatorsApi.payments.razorpayCreateOrder>[0] = {
-			amountMinor,
-			currency: 'INR',
-		};
-		if (Object.keys(apiOrderNotes).length > 0) {
-			createBody.notes = apiOrderNotes;
-		}
+		const createOrder = ws.isConnected ?
+			payment.createOrder(String(amountMinor), 'INR') :
+			creatorsApi.payments.razorpayCreateOrder({
+				amountMinor,
+				currency: 'INR',
+				notes: Object.keys(apiOrderNotes).length > 0 ? apiOrderNotes : undefined,
+			});
 
-		return creatorsApi.payments.razorpayCreateOrder(createBody)
-			.then(order => {
-				const isLocal = order.keyId == null || order.orderId.startsWith('local_');
-				if (isLocal) {
-					return creatorsApi.payments.razorpayConfirm({
+		return createOrder.then(order => {
+			const isLocal = order.keyId == null || order.orderId.startsWith('local_');
+			if (isLocal) {
+				const confirmLocal = ws.isConnected ?
+					payment.confirm(order.orderId, 'pay_local_dev', 'sig_local_dev') :
+					creatorsApi.payments.razorpayConfirm({
 						razorpayOrderId: order.orderId,
 						razorpayPaymentId: 'pay_local_dev',
 						razorpaySignature: 'sig_local_dev',
-					}).then(conf => {
-						updateWalletMinor(conf.balance_after_cents);
-						void refreshLedger();
-						void refreshOrders();
 					});
-				}
 
-				return openRazorpayCheckout({
-					amountINR: amountInr,
-					amountPaise: order.amountMinor,
-					keyId: order.keyId,
-					orderId: order.orderId,
-					description: checkoutDescription,
-					userName: user.name,
-					userEmail: user.email,
-					notes: checkoutNotes,
-				}).then(resp => {
-					const paymentId = resp.razorpay_payment_id?.trim();
-					const signature = resp.razorpay_signature?.trim();
-					if (!paymentId || !signature) {
-						throw new Error('Razorpay did not return payment id or signature. Try again.');
-					}
-					return creatorsApi.payments.razorpayConfirm({
-						razorpayOrderId: resp.razorpay_order_id ?? order.orderId,
+				return confirmLocal.then(conf => {
+					updateWalletMinor(conf.balance_after_cents);
+					void refreshLedger();
+					void refreshOrders();
+				});
+			}
+
+			return openRazorpayCheckout({
+				amountINR: amountInr,
+				amountPaise: order.amountMinor,
+				keyId: order.keyId,
+				orderId: order.orderId,
+				description: checkoutDescription,
+				userName: user.name,
+				userEmail: user.email,
+				notes: checkoutNotes,
+			}).then(resp => {
+				const paymentId = resp.razorpay_payment_id?.trim();
+				const signature = resp.razorpay_signature?.trim();
+				if (!paymentId || !signature) {
+					throw new Error('Razorpay did not return payment id or signature. Try again.');
+				}
+				const confirmOrderId = resp.razorpay_order_id ?? order.orderId;
+				const confirmPaid = ws.isConnected ?
+					payment.confirm(confirmOrderId, paymentId, signature) :
+					creatorsApi.payments.razorpayConfirm({
+						razorpayOrderId: confirmOrderId,
 						razorpayPaymentId: paymentId,
 						razorpaySignature: signature,
-					}).then(conf => {
-						updateWalletMinor(conf.balance_after_cents);
-						void refreshLedger();
-						void refreshOrders();
 					});
+
+				return confirmPaid.then(conf => {
+					updateWalletMinor(conf.balance_after_cents);
+					void refreshLedger();
+					void refreshOrders();
 				});
 			});
-	}, [updateWalletMinor, refreshLedger, refreshOrders]);
+		});
+	}, [ws.isConnected, payment, updateWalletMinor, refreshLedger, refreshOrders]);
 
 	const addFundsViaRazorpay = useCallback((amountInr: number): Promise<boolean> => {
 		const user = authState.user;

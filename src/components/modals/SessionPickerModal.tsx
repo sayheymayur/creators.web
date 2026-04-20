@@ -6,7 +6,7 @@ import type { SessionType } from '../../types';
 
 const DURATION_OPTIONS = [5, 10, 15, 20, 30, 60];
 
-export type SessionPayMode = 'razorpay' | 'wallet';
+export type SessionPayMode = 'external' | 'wallet';
 
 export type SessionPickerProtocol = 'local' | 'sessions';
 
@@ -40,7 +40,7 @@ export function SessionPickerModal({
 }: Props) {
 	const [selectedType, setSelectedType] = useState<SessionType | null>(null);
 	const [selectedDuration, setSelectedDuration] = useState<number | null>(null);
-	const [payMode, setPayMode] = useState<SessionPayMode>('razorpay');
+	const [payMode, setPayMode] = useState<SessionPayMode>('external');
 
 	if (!isOpen) return null;
 
@@ -154,9 +154,9 @@ export function SessionPickerModal({
 						<p className="text-xs font-semibold text-muted uppercase tracking-widest mb-2">Payment Method</p>
 						<div className="flex gap-2">
 							<button
-								onClick={() => setPayMode('razorpay')}
+								onClick={() => setPayMode('external')}
 								className={`flex-1 py-2.5 rounded-xl text-xs font-semibold border transition-all ${
-									payMode === 'razorpay' ? 'border-rose-500/40 bg-rose-500/10 text-rose-500' : 'border-border/20 bg-foreground/5 text-muted hover:bg-foreground/10'
+									payMode === 'external' ? 'border-rose-500/40 bg-rose-500/10 text-rose-500' : 'border-border/20 bg-foreground/5 text-muted hover:bg-foreground/10'
 								}`}
 							>
 								{totalCost > 0 ? `Pay ${formatINR(totalCost)}` : 'Checkout'}
@@ -182,7 +182,7 @@ export function SessionPickerModal({
 							</div>
 							<div className="text-right">
 								<p className="text-xs text-muted mb-0.5">
-									{payMode === 'razorpay' ? 'INR amount' : 'Wallet balance'}
+									{payMode === 'external' ? 'INR amount' : 'Wallet balance'}
 								</p>
 								<p className={`text-sm font-semibold ${canAfford ? 'text-emerald-400' : 'text-rose-400'}`}>
 									{payMode === 'razorpay' ? formatINR(totalCost) : formatINRFromMinor(walletBalanceMinor)}

@@ -7,7 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useWallet } from '../../context/WalletContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { buildLiveChannel, fetchAgoraRtcToken, getAgoraAppId, stringToAgoraUid } from '../../services/agoraRtc';
-import { usdToInr, formatINR } from '../../services/razorpay';
+import { usdToInr, formatINR } from '../../services/payments';
 import type { VirtualGift } from '../../types';
 
 function formatElapsed(startedAt: string): string {
@@ -23,7 +23,7 @@ export function LiveStreamRoom() {
 	const navigate = useNavigate();
 	const { getStream, sendChatMessage, sendGift } = useLiveStream();
 	const { state: authState } = useAuth();
-	const { deductFunds, payViaRazorpay } = useWallet();
+	const { deductFunds, payExternally } = useWallet();
 	const { showToast } = useNotifications();
 	const [text, setText] = useState('');
 	const [showGifts, setShowGifts] = useState(false);
@@ -144,7 +144,7 @@ export function LiveStreamRoom() {
 			return;
 		}
 
-		void payViaRazorpay(gift.value, 'gift', `Gift "${gift.name}" to ${stream!.creatorName}`, stream!.creatorId, stream!.creatorName).then(result => {
+		void payExternally(gift.value, 'gift', `Gift "${gift.name}" to ${stream!.creatorName}`, stream!.creatorId, stream!.creatorName).then(result => {
 			ok = result.ok;
 			if (!ok && !result.cancelled) {
 				showToast(result.error || 'Payment failed', 'error');

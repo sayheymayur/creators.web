@@ -170,27 +170,3 @@ export function openRazorpayCheckout(req: PaymentRequest): Promise<RazorpaySucce
 		}
 	}));
 }
-
-/**
- * Check if a payment error was user-initiated cancellation (not a real failure).
- */
-export function isPaymentCancelled(err: unknown): boolean {
-	return err instanceof Error && err.message === 'PAYMENT_CANCELLED';
-}
-
-// ─── Currency helpers ────────────────────────────────────────
-
-const USD_TO_INR_RATE = 83.5;
-
-export function usdToInr(usd: number): number {
-	return parseFloat((usd * USD_TO_INR_RATE).toFixed(2));
-}
-
-export function formatINR(paise_or_rupees: number): string {
-	return new Intl.NumberFormat('en-IN', {
-		style: 'currency',
-		currency: 'INR',
-		minimumFractionDigits: 0,
-		maximumFractionDigits: 2,
-	}).format(paise_or_rupees);
-}

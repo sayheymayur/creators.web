@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { X, MessageCircle, Phone, Video, Clock, Zap, AlertCircle, Wallet } from '../icons';
-import { usdToInr, formatINR } from '../../services/razorpay';
+import { formatINR, getExternalPayShortLabel, usdToInr } from '../../services/payments';
 import type { SessionType } from '../../types';
 
 const DURATION_OPTIONS = [5, 10, 15, 20, 30, 60];
 
-export type SessionPayMode = 'razorpay' | 'wallet';
+export type SessionPayMode = 'external' | 'wallet';
 
 interface Props {
 	isOpen: boolean;
@@ -26,13 +26,13 @@ const SESSION_TYPES: { type: SessionType, label: string, icon: React.ElementType
 export function SessionPickerModal({ isOpen, onClose, creatorName, creatorAvatar, ratePerMinute, walletBalance, onConfirm }: Props) {
 	const [selectedType, setSelectedType] = useState<SessionType | null>(null);
 	const [selectedDuration, setSelectedDuration] = useState<number | null>(null);
-	const [payMode, setPayMode] = useState<SessionPayMode>('razorpay');
+	const [payMode, setPayMode] = useState<SessionPayMode>('external');
 
 	if (!isOpen) return null;
 
 	const totalCost = selectedDuration ? parseFloat((selectedDuration * ratePerMinute).toFixed(2)) : 0;
 	const inrCost = usdToInr(totalCost);
-	const canAfford = payMode === 'razorpay' || walletBalance >= totalCost;
+	const canAfford = payMode === 'external' || walletBalance >= totalCost;
 	const canStart = selectedType && selectedDuration && canAfford;
 
 	function handleConfirm() {
@@ -90,7 +90,7 @@ export function SessionPickerModal({ isOpen, onClose, creatorName, creatorAvatar
 						<div className="grid grid-cols-3 gap-2">
 							{DURATION_OPTIONS.map(min => {
 								const cost = parseFloat((min * ratePerMinute).toFixed(2));
-								const affordable = payMode === 'razorpay' || walletBalance >= cost;
+								const affordable = payMode === 'external' || walletBalance >= cost;
 								return (
 									<button
 										key={min}
@@ -119,12 +119,12 @@ export function SessionPickerModal({ isOpen, onClose, creatorName, creatorAvatar
 						<p className="text-xs font-semibold text-muted uppercase tracking-widest mb-2">Payment Method</p>
 						<div className="flex gap-2">
 							<button
-								onClick={() => setPayMode('razorpay')}
+								onClick={() => setPayMode('external')}
 								className={`flex-1 py-2.5 rounded-xl text-xs font-semibold border transition-all ${
-									payMode === 'razorpay' ? 'border-rose-500/40 bg-rose-500/10 text-rose-500' : 'border-border/20 bg-foreground/5 text-muted hover:bg-foreground/10'
+									payMode === 'external' ? 'border-rose-500/40 bg-rose-500/10 text-rose-500' : 'border-border/20 bg-foreground/5 text-muted hover:bg-foreground/10'
 								}`}
 							>
-								{totalCost > 0 ? `Pay ${formatINR(inrCost)}` : 'Razorpay'}
+								{totalCost > 0 ? `Pay ${formatINR(inrCost)}` : getExternalPayShortLabel()}
 							</button>
 							<button
 								onClick={() => setPayMode('wallet')}
@@ -146,10 +146,10 @@ export function SessionPickerModal({ isOpen, onClose, creatorName, creatorAvatar
 							</div>
 							<div className="text-right">
 								<p className="text-xs text-muted mb-0.5">
-									{payMode === 'razorpay' ? 'INR amount' : 'Wallet balance'}
+									{payMode === 'external' ? 'INR amount' : 'Wallet balance'}
 								</p>
 								<p className={`text-sm font-semibold ${canAfford ? 'text-emerald-400' : 'text-rose-400'}`}>
-									{payMode === 'razorpay' ? formatINR(inrCost) : `$${walletBalance.toFixed(2)}`}
+									{payMode === 'external' ? formatINR(inrCost) : `$${walletBalance.toFixed(2)}`}
 								</p>
 							</div>
 						</div>
@@ -158,7 +158,9 @@ export function SessionPickerModal({ isOpen, onClose, creatorName, creatorAvatar
 					{!canAfford && selectedDuration && (
 						<div className="flex items-center gap-2 bg-rose-500/10 border border-rose-500/20 rounded-xl px-3 py-2.5">
 							<AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-							<p className="text-xs text-rose-300">Insufficient balance. Switch to Razorpay or add funds.</p>
+							<p className="text-xs text-rose-300">
+								{`Insufficient balance. Switch to ${getExternalPayShortLabel()} or add funds.`}
+							</p>
 						</div>
 					)}
 

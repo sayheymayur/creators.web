@@ -7,6 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useWallet } from '../../context/WalletContext';
 import { formatDate, formatCurrency } from '../../utils/date';
 import { delayMs } from '../../utils/delay';
+import { getExternalPaySecureHint } from '../../services/payments';
 import type { Transaction } from '../../types';
 
 const ADD_FUND_PRESETS = [10, 25, 50, 100, 200, 500];
@@ -57,7 +58,7 @@ function TransactionItem({ tx }: { tx: Transaction }) {
 
 export function Wallet() {
 	const { state: authState } = useAuth();
-	const { addFundsViaRazorpay, getUserTransactions, getUserSubscriptions, cancelSubscription, toggleAutoRenew } = useWallet();
+	const { addFundsExternally, getUserTransactions, getUserSubscriptions, cancelSubscription, toggleAutoRenew } = useWallet();
 	const [showAddFunds, setShowAddFunds] = useState(false);
 	const [addAmount, setAddAmount] = useState(50);
 	const [customAmount, setCustomAmount] = useState('');
@@ -81,7 +82,7 @@ export function Wallet() {
 		setIsLoading(true);
 		void delayMs(1000).then(() => {
 			setPayError('');
-			void addFundsViaRazorpay(amount).then(ok => {
+			void addFundsExternally(amount).then(ok => {
 				if (ok) {
 					setAddSuccess(true);
 					setTimeout(() => {
@@ -215,7 +216,7 @@ export function Wallet() {
 						<>
 							<div className="flex items-center gap-2 bg-foreground/5 rounded-xl p-3 mb-4">
 								<CreditCard className="w-4 h-4 text-muted" />
-								<span className="text-sm text-muted">Secure payment via Razorpay</span>
+								<span className="text-sm text-muted">{getExternalPaySecureHint()}</span>
 							</div>
 							{payError && (
 								<div className="bg-rose-500/10 border border-rose-500/20 rounded-xl p-3 mb-3">

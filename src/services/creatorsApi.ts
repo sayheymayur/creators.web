@@ -72,6 +72,39 @@ export interface RazorpayConfirmRequest {
 	razorpaySignature: string;
 }
 
+/** Backend decides active gateway; frontend does not let users choose Razorpay vs Stripe. */
+export interface PaymentGatewayResponse {
+	provider: 'razorpay' | 'stripe';
+	/** When true, client simulates checkout (optional; backend can force for staging). */
+	useMock?: boolean;
+}
+
+/** Backend: create PaymentIntent — returns client secret for Stripe.js confirm. */
+export interface StripeCreatePaymentIntentRequest {
+	amountMinor: number;
+	currency?: string;
+	metadata?: Record<string, string>;
+}
+
+export interface StripeCreatePaymentIntentResponse {
+	clientSecret: string;
+	paymentIntentId?: string;
+}
+
+/** Backend: Stripe Checkout redirect flow. */
+export interface StripeCreateCheckoutSessionRequest {
+	amountMinor: number;
+	currency?: string;
+	successUrl: string;
+	cancelUrl: string;
+	metadata?: Record<string, string>;
+}
+
+export interface StripeCreateCheckoutSessionResponse {
+	url: string;
+	sessionId?: string;
+}
+
 export interface MediaCreateUploadRequest {
 	fileName: string;
 	mimeType: string;
@@ -188,11 +221,39 @@ export const creatorsApi = {
 		},
 	},
 	payments: {
+		/** GET /payments/gateway — source of truth for which provider the app uses. */
+		getGateway(signal?: AbortSignal): Promise<PaymentGatewayResponse> {
+			// Local-dev mock: simulate backend deciding active provider without hitting network.
+			// Useful when backend endpoint is not yet available.
+			if (import.meta.env.VITE_PAYMENTS_GATEWAY_MOCK === 'true') {
+				const raw = (import.meta.env.VITE_PAYMENTS_GATEWAY_PROVIDER || '').trim().toLowerCase();
+				const provider: PaymentGatewayResponse['provider'] = raw === 'stripe' ? 'stripe' : 'razorpay';
+				const useMock = import.meta.env.VITE_PAYMENTS_GATEWAY_USE_MOCK === 'true';
+				return Promise.resolve({ provider, useMock });
+			}
+			return requestJson<PaymentGatewayResponse>('/payments/gateway', { method: 'GET', auth: true, signal });
+		},
 		razorpayCreateOrder(body: RazorpayCreateOrderRequest): Promise<RazorpayCreateOrderResponse> {
 			return requestJson<RazorpayCreateOrderResponse>('/payments/razorpay/orders', { method: 'POST', body, auth: true });
 		},
 		razorpayConfirm(body: RazorpayConfirmRequest): Promise<{ ok: true }> {
 			return requestJson<{ ok: true }>('/payments/razorpay/confirm', { method: 'POST', body, auth: true });
+		},
+		/** When backend is ready: implement POST /payments/stripe/create-payment-intent */
+		stripeCreatePaymentIntent(body: StripeCreatePaymentIntentRequest): Promise<StripeCreatePaymentIntentResponse> {
+			return requestJson<StripeCreatePaymentIntentResponse>('/payments/stripe/create-payment-intent', {
+				method: 'POST',
+				body,
+				auth: true,
+			});
+		},
+		/** When backend is ready: implement POST /payments/stripe/create-checkout-session */
+		stripeCreateCheckoutSession(body: StripeCreateCheckoutSessionRequest): Promise<StripeCreateCheckoutSessionResponse> {
+			return requestJson<StripeCreateCheckoutSessionResponse>('/payments/stripe/create-checkout-session', {
+				method: 'POST',
+				body,
+				auth: true,
+			});
 		},
 	},
 	media: {

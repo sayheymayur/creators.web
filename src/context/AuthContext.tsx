@@ -49,9 +49,14 @@ function normalizeUserFromApi(payload: User): User {
 	const raw = payload as unknown as Record<string, unknown>;
 	const id = String(raw.id ?? '');
 	let minor = raw.walletBalanceMinor != null ? String(raw.walletBalanceMinor) : '';
-	if (!minor && raw.walletBalance != null && typeof raw.walletBalance === 'number') {
-		// Legacy demo payloads used USD-like numbers; treat as INR rupees → paise for migration.
-		minor = String(Math.max(0, Math.round(raw.walletBalance * 100)));
+	if (!minor && raw.walletBalance != null) {
+		// Backend spec: `walletBalance` on GET /me user payload.
+		// Treat numeric as INR rupees and convert to paise; accept stringified minor as-is.
+		if (typeof raw.walletBalance === 'number') {
+			minor = String(Math.max(0, Math.round(raw.walletBalance * 100)));
+		} else if (typeof raw.walletBalance === 'string' && /^\d+$/.test(raw.walletBalance.trim())) {
+			minor = raw.walletBalance.trim();
+		}
 	}
 	if (!minor) minor = ZERO_MINOR;
 	return {
@@ -180,6 +185,8 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
 	const [state, dispatch] = useReducer(authReducer, initialState);
 	const didBootstrapRef = useRef(false);
+	const userRef = useRef<User | null>(null);
+	userRef.current = state.user;
 	const [authStatus, setAuthStatus] = useState<AuthStatus>(() => (getSessionToken() ? 'unknown' : 'guest'));
 	const [sessionRestoreError, setSessionRestoreError] = useState<string | null>(null);
 
@@ -404,6 +411,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 	}, []);
 
 	const updateUser = useCallback((data: Partial<User>) => {
+		// Keep the session snapshot aligned so refresh doesn't show stale values (e.g. wallet balance).
+		const u = userRef.current;
+		if (u) setStoredUser({ ...u, ...data });
 		dispatch({ type: 'UPDATE_USER', payload: data });
 	}, []);
 
@@ -412,6 +422,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 	}, []);
 
 	const updateWalletMinor = useCallback((balanceMinor: string) => {
+		const u = userRef.current;
+		if (u) setStoredUser({ ...u, walletBalanceMinor: balanceMinor });
 		dispatch({ type: 'UPDATE_WALLET_MINOR', payload: balanceMinor });
 	}, []);
 

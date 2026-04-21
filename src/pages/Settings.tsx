@@ -1,11 +1,12 @@
-import { useState } from 'react';
-import { User, Bell, Shield, LogOut, Eye, EyeOff, Save } from '../components/icons';
+import { useMemo, useRef, useState } from 'react';
+import { User, Bell, Shield, LogOut, Eye, EyeOff, Save, Camera } from '../components/icons';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
 import { Button } from '../components/ui/Button';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import { ApiError, creatorsApi } from '../services/creatorsApi';
+import { uploadMediaAsset } from '../services/mediaUpload';
 import { delayMs } from '../utils/delay';
 
 export function Settings() {
@@ -20,6 +21,9 @@ export function Settings() {
 	const [showCurrent, setShowCurrent] = useState(false);
 	const [showNew, setShowNew] = useState(false);
 	const [isSaving, setIsSaving] = useState(false);
+	const [avatarFile, setAvatarFile] = useState<File | null>(null);
+	const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+	const avatarInputRef = useRef<HTMLInputElement | null>(null);
 	const [notifPrefs, setNotifPrefs] = useState({
 		messages: true,
 		subscriptions: true,
@@ -43,6 +47,31 @@ export function Settings() {
 				showToast('Save failed.', 'error');
 			})
 			.finally(() => setIsSaving(false));
+	}
+
+	const avatarPreviewUrl = useMemo(() => {
+		if (!avatarFile) return null;
+		return URL.createObjectURL(avatarFile);
+	}, [avatarFile]);
+
+	function handleSaveAvatar() {
+		if (!avatarFile) return;
+		setIsUploadingAvatar(true);
+		void uploadMediaAsset('avatar', avatarFile)
+			.then(r => creatorsApi.me.updateProfile({ avatarAssetId: r.assetId }))
+			.then(({ user: updated }) => {
+				updateUser(updated);
+				showToast('Avatar updated!');
+				setAvatarFile(null);
+			})
+			.catch(err => {
+				const msg =
+					err instanceof ApiError ? `Avatar update failed (HTTP ${err.status}).` :
+					err instanceof Error ? err.message :
+					'Avatar update failed.';
+				showToast(msg, 'error');
+			})
+			.finally(() => setIsUploadingAvatar(false));
 	}
 
 	function handleChangePassword() {
@@ -75,13 +104,53 @@ export function Settings() {
 						<h2 className="font-semibold text-foreground">Profile</h2>
 					</div>
 					<div className="flex items-center gap-4 mb-4">
-						<img src={user.avatar} alt={user.name} className="w-14 h-14 rounded-2xl object-cover" />
+						<div className="relative">
+							<img src={avatarPreviewUrl ?? user.avatar} alt={user.name} className="w-14 h-14 rounded-2xl object-cover" />
+							{user.role === 'fan' && (
+								<button
+									type="button"
+									onClick={() => avatarInputRef.current?.click()}
+									className="absolute -bottom-2 -right-2 w-7 h-7 rounded-xl bg-foreground/10 hover:bg-foreground/20 border border-border/30 flex items-center justify-center transition-colors"
+									aria-label="Change avatar"
+								>
+									<Camera className="w-4 h-4 text-foreground" />
+								</button>
+							)}
+						</div>
 						<div>
 							<p className="font-semibold text-foreground">{user.name}</p>
 							<p className="text-sm text-muted">{user.email}</p>
 							<p className="text-xs text-rose-400/70 capitalize mt-0.5">{user.role} account</p>
 						</div>
 					</div>
+					{user.role === 'fan' && (
+						<div className="mb-4">
+							<input
+								ref={avatarInputRef}
+								type="file"
+								accept="image/*"
+								className="hidden"
+								onChange={e => {
+									const f = e.target.files?.[0] ?? null;
+									setAvatarFile(f);
+								}}
+							/>
+							<div className="flex items-center justify-between gap-3">
+								<p className="text-xs text-muted">
+									Upload a profile picture (avatar) for your fan account.
+								</p>
+								<Button
+									variant="outline"
+									size="sm"
+									onClick={() => { handleSaveAvatar(); }}
+									isLoading={isUploadingAvatar}
+									disabled={!avatarFile || isUploadingAvatar}
+								>
+									Save avatar
+								</Button>
+							</div>
+						</div>
+					)}
 					<div className="mb-3">
 						<label className="block text-sm text-muted mb-1.5">Display Name</label>
 						<input

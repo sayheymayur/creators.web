@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Bell, Wallet, ChevronDown, LogOut, Settings, User, Shield, LayoutDashboard, Sun, Moon } from '../icons';
 import { useAuth } from '../../context/AuthContext';
-import { useWallet } from '../../context/WalletContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { useChat } from '../../context/ChatContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -14,7 +13,6 @@ export function Navbar() {
 	const navigate = useNavigate();
 	const location = useLocation();
 	const { state: authState, logout } = useAuth();
-	const { hasSyncedBalance } = useWallet();
 	const { getUnreadCount } = useNotifications();
 	const { totalUnread } = useChat();
 	const { mode, toggle } = useTheme();
@@ -160,7 +158,7 @@ export function Navbar() {
 						>
 							<Wallet className="w-3.5 h-3.5 text-emerald-400" />
 							<span className="text-xs font-semibold text-foreground">
-								{hasSyncedBalance ? formatINRFromMinor(user.walletBalanceMinor) : '—'}
+								{formatINRFromMinor(user.walletBalanceMinor)}
 							</span>
 						</button>
 					)}
@@ -211,7 +209,7 @@ export function Navbar() {
 									<p className="text-xs text-muted truncate">{user.email}</p>
 									{!isAdmin && (
 										<p className="text-xs text-muted/80 mt-0.5">
-											Balance: {hasSyncedBalance ? formatINRFromMinor(user.walletBalanceMinor) : '—'}
+											Balance: {formatINRFromMinor(user.walletBalanceMinor)}
 										</p>
 									)}
 								</div>

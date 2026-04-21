@@ -28,6 +28,8 @@ interface ImportMetaEnv {
 	readonly VITE_CREATORS_WS_TOKEN_PARAM?: string;
 	readonly VITE_AGORA_APP_ID?: string;
 	readonly VITE_AGORA_TOKEN_ENDPOINT?: string;
+	/** true = log creator WS commands/responses in dev */
+	readonly VITE_DEBUG_CREATOR_WS?: string;
 }
 
 interface ImportMeta {

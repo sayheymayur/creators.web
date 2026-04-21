@@ -20,6 +20,7 @@ import {
 	creatorWsGet,
 	creatorWsList,
 	creatorWsUpsertProfile,
+	buildCreatorListCommand,
 } from '../services/creatorWsService';
 import type { CreatorGetResponse, CreatorListResponse } from '../services/creatorWsTypes';
 import type {
@@ -355,6 +356,23 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 	const connectSeqRef = useRef(0);
 	const creatorPkByUserIdRef = useRef<Record<string, string>>({});
 	const creatorUserInflightRef = useRef<Partial<Record<string, Promise<void>>>>({});
+	const creatorBootstrapRef = useRef<{ userId: string, username: string } | null>(null);
+
+	const creatorWsDebugEnabled = useCallback((): boolean => {
+		if (!import.meta.env.DEV) return false;
+		if (import.meta.env.VITE_DEBUG_CREATOR_WS === 'true') return true;
+		try {
+			return globalThis.localStorage?.getItem('cw.debug.creatorWs') === '1';
+		} catch {
+			return false;
+		}
+	}, []);
+
+	const creatorWsDebug = useCallback((msg: string, data?: unknown) => {
+		if (!creatorWsDebugEnabled()) return;
+		if (data === undefined) console.debug(msg);
+		else console.debug(msg, data);
+	}, [creatorWsDebugEnabled]);
 
 	const resolveCreatorDisplay = useCallback(
 		(userId: string, profiles: Record<string, CreatorDisplay>): CreatorDisplay | undefined => {
@@ -631,8 +649,15 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 
 	const creatorWsSearch = useCallback(
 		(opts: { q?: string, category?: string, limit?: number, beforeCursor?: string }) =>
-			runRemoteTyped(c => creatorWsList(c, opts)) as Promise<CreatorListResponse>,
-		[runRemoteTyped]
+			runRemoteTyped(c => {
+				const cmd = buildCreatorListCommand(opts);
+				creatorWsDebug('[creator-ws] -> /list', { cmd, opts });
+				return creatorWsList(c, opts).then(r => {
+					creatorWsDebug('[creator-ws] <- /list', { count: r.creators?.length ?? 0, nextCursor: r.nextCursor });
+					return r;
+				});
+			}) as Promise<CreatorListResponse>,
+		[runRemoteTyped, creatorWsDebug]
 	);
 
 	const creatorWsGetByPk = useCallback(
@@ -672,6 +697,43 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 			runRemoteTyped(c => creatorWsUpsertProfile(c, username, name, bio)).then(() => {}),
 		[runRemoteTyped]
 	);
+
+	useEffect(() => {
+		// Spec: creators must `creator /upsertprofile` to appear in creator directory.
+		// Ensure this happens automatically on creator login/signup (idempotent).
+		if (mockMode) return;
+		if (state.postsWsStatus !== 'ready') return;
+		const u = authUserRef.current;
+		if (!u || u.role !== 'creator') return;
+		const username = (u.username ?? '').trim();
+		const name = (u.name ?? '').trim();
+		if (!username || !name) return;
+
+		const prev = creatorBootstrapRef.current;
+		if (prev && prev.userId === u.id && prev.username === username) return;
+		creatorBootstrapRef.current = { userId: u.id, username };
+
+		const bio = (u as unknown as { bio?: string }).bio;
+		void creatorWsUpsert(username, name, typeof bio === 'string' && bio.trim() ? bio.trim() : undefined)
+			.then(() => creatorWsSearch({}))
+			.then(r => {
+				const patch: Record<string, CreatorDisplay> = {};
+				for (const c of r.creators) {
+					creatorPkByUserIdRef.current[String(c.user_id)] = c.id;
+					patch[String(c.user_id)] = {
+						name: c.name,
+						username: c.username,
+						avatar: c.avatar_url ?? '',
+					};
+				}
+				if (Object.keys(patch).length) {
+					dispatch({ type: 'SET_CREATOR_PROFILES', payload: patch });
+				}
+			})
+			.catch(e => {
+				if (import.meta.env.DEV) console.error('[creator] bootstrap upsert failed', e);
+			});
+	}, [mockMode, state.postsWsStatus, creatorWsUpsert, creatorWsSearch]);
 
 	useEffect(() => {
 		// Hydrate creator directory cache to populate avatars/usernames for post authors

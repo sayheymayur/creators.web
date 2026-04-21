@@ -65,6 +65,12 @@ export function CreatorProfile() {
 			return () => ac.abort();
 		}
 
+		// creator WS commands are multiplexed over the posts socket; wait until it is ready.
+		if (contentState.postsWsStatus !== 'ready') {
+			setIsLoadingCreator(false);
+			return () => ac.abort();
+		}
+
 		setIsLoadingCreator(true);
 
 		void creatorWsGetByUserId(id)
@@ -99,7 +105,7 @@ export function CreatorProfile() {
 			});
 
 		return () => ac.abort();
-	}, [id, maybeCreator, creatorWsGetByUserId]);
+	}, [id, maybeCreator, creatorWsGetByUserId, contentState.postsWsStatus]);
 
 	useEffect(() => {
 		if (!id || isPostsMockMode()) return;

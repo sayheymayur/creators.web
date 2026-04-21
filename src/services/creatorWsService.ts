@@ -20,17 +20,21 @@ export function buildCreatorListCommand(opts: {
 	const lim = Math.min(50, Math.max(1, opts.limit ?? 30));
 	const q = opts.q?.trim() ?? '';
 	const cat = opts.category?.trim() ?? '';
-	// The backend treats a single arg after `/list` as `q` (search), not `limit`.
-	// So for the default directory case we must send bare `/list` (server default limit = 30).
-	if (!q && !cat && !opts.beforeCursor && lim === 30) return '/list';
+	// Backend args are positional. Also, many servers split on whitespace and cannot represent empty args,
+	// so `/list 50` is often interpreted as `q="50"` rather than `limit=50`.
+	// For the default directory case, always send bare `/list` (server default limit = 30).
+	if (!q && !cat && !opts.beforeCursor) return '/list';
 	const parts: string[] = ['/list'];
 	if (q && cat) {
 		parts.push(clamp(q, MAX_Q), clamp(cat, MAX_CATEGORY), String(lim));
 	} else if (q) {
 		parts.push(clamp(q, MAX_Q), String(lim));
 	} else if (cat) {
-		parts.push('', clamp(cat, MAX_CATEGORY), String(lim));
+		// Best-effort positional: some servers may treat first arg as `q` unless it is empty/quoted.
+		parts.push('""', clamp(cat, MAX_CATEGORY), String(lim));
 	} else {
+		// With a beforeCursor, prefer `/list <limit> <beforeCursor>` (2-arg form) to avoid empty-arg issues.
+		// This relies on server disambiguating when a cursor is present.
 		parts.push(String(lim));
 	}
 	if (opts.beforeCursor) parts.push(opts.beforeCursor);

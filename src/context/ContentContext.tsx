@@ -390,6 +390,11 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 				dispatch({ type: 'SET_CREATOR_PROFILES', payload: batch });
 			}
 
+			// If socket isn't ready yet, don't attempt background hydration; it will fail and never retry.
+			if (stateRef.current.postsWsStatus !== 'ready') {
+				return Promise.resolve(merged);
+			}
+
 			// Hydrate missing profiles in background without blocking UI.
 			for (const id of missing) {
 				if (creatorUserInflightRef.current[id]) continue;
@@ -418,6 +423,20 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 		},
 		[resolveCreatorDisplay]
 	);
+
+	useEffect(() => {
+		// When the socket becomes ready, retry hydration for any creator placeholders already in cache.
+		if (mockMode) return;
+		if (state.postsWsStatus !== 'ready') return;
+		const prev = stateRef.current.creatorProfiles;
+		const ids = Object.keys(prev).filter(id => {
+			const p = prev[id];
+			if (!p) return false;
+			return p.username === 'creator' || p.name === 'Creator';
+		});
+		if (ids.length === 0) return;
+		void fetchProfilesForIds(ids).then(() => {});
+	}, [mockMode, state.postsWsStatus, fetchProfilesForIds]);
 
 	const mapList = useCallback(
 		(json: unknown): Promise<Post[]> => {
@@ -629,7 +648,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 			if (cachedPk) return creatorWsGetByPk(cachedPk);
 
 			const maxPages = 10; // prevents infinite loops; can be increased if needed
-			const limit = 50;
+			const limit = 30;
 
 			const walk = (beforeCursor: string | undefined, page: number): Promise<CreatorGetResponse> =>
 				creatorWsSearch({ limit, beforeCursor })
@@ -659,7 +678,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 		// without relying on undocumented HTTP endpoints.
 		if (mockMode) return;
 		if (state.postsWsStatus !== 'ready') return;
-		void creatorWsSearch({ limit: 50 })
+		void creatorWsSearch({})
 			.then(r => {
 				const patch: Record<string, CreatorDisplay> = {};
 				for (const c of r.creators) {
@@ -674,7 +693,9 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 					dispatch({ type: 'SET_CREATOR_PROFILES', payload: patch });
 				}
 			})
-			.catch(() => {});
+			.catch(e => {
+				if (import.meta.env.DEV) console.error('[creator] directory hydrate failed', e);
+			});
 	}, [mockMode, state.postsWsStatus, creatorWsSearch]);
 
 	const refreshFeed = useCallback(() => {

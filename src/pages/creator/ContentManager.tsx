@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Plus, Lock, Unlock, Trash2, Pin, Eye, Heart, Image, Type } from '../../components/icons';
+import { useEffect, useMemo, useState } from 'react';
+import { Plus, Lock, Unlock, Trash2, Pin, Image, Type, MessageCircle, Sparkles } from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';
 import { Modal } from '../../components/ui/Toast';
 import { Button } from '../../components/ui/Button';
@@ -11,6 +11,7 @@ import { isPostsMockMode } from '../../services/postsMode';
 import { uploadPostMediaFile } from '../../services/uploadPostMedia';
 import type { Post } from '../../types';
 import { formatINR } from '../../services/razorpay';
+import { PostCard } from '../../components/ui/PostCard';
 
 export function ContentManager() {
 	const creator = useCurrentCreator();
@@ -42,6 +43,8 @@ export function ContentManager() {
 	const myPosts = contentState.posts.filter(p =>
 		String(p.creatorId) === String(authedCreatorId || creatorData.id)
 	);
+	const totalLikes = useMemo(() => myPosts.reduce((s, p) => s + (p.likes ?? 0), 0), [myPosts]);
+	const totalComments = useMemo(() => myPosts.reduce((s, p) => s + Math.max(p.commentCount ?? 0, p.comments?.length ?? 0), 0), [myPosts]);
 	const useMockPosts = isPostsMockMode();
 
 	useEffect(() => {
@@ -199,72 +202,84 @@ export function ContentManager() {
 					</Button>
 				</div>
 
+				<div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+					<div className="bg-surface border border-border/20 rounded-2xl p-4">
+						<p className="text-xs text-muted mb-1">Total likes</p>
+						<p className="text-lg font-bold text-foreground">{totalLikes.toLocaleString()}</p>
+					</div>
+					<div className="bg-surface border border-border/20 rounded-2xl p-4">
+						<p className="text-xs text-muted mb-1">Total comments</p>
+						<p className="text-lg font-bold text-foreground">{totalComments.toLocaleString()}</p>
+					</div>
+					<div className="bg-surface border border-border/20 rounded-2xl p-4">
+						<p className="text-xs text-muted mb-1">Tips & earnings</p>
+						<p className="text-sm text-muted">See breakdown in Earnings.</p>
+					</div>
+				</div>
+
 				{myPosts.length === 0 ? (
 					<div className="text-center py-16 bg-surface border border-border/20 rounded-2xl">
-						<Image className="w-10 h-10 text-muted/50 mx-auto mb-3" />
-						<p className="text-muted mb-4">No posts yet. Create your first post!</p>
+						<Sparkles className="w-10 h-10 text-muted/50 mx-auto mb-3" />
+						<p className="text-muted mb-1">No posts yet</p>
+						<p className="text-xs text-muted/80 mb-4">Create your first post and start engaging with fans.</p>
 						<Button variant="primary" onClick={() => setShowNewPost(true)} leftIcon={<Plus className="w-4 h-4" />}>
 							Create Post
 						</Button>
 					</div>
 				) : (
-					<div className="space-y-3">
+					<div className="space-y-4">
 						{myPosts.map(post => (
-							<div key={post.id} className="bg-surface border border-border/20 rounded-2xl p-4">
-								<div className="flex gap-3">
-									{post.mediaUrl ? (
-										<img src={post.mediaUrl} alt="" className="w-16 h-16 rounded-xl object-cover shrink-0" />
-									) : (
-										<div className="w-16 h-16 rounded-xl bg-foreground/5 flex items-center justify-center shrink-0">
-											<Type className="w-5 h-5 text-muted/60" />
+							<div key={post.id} className="space-y-2">
+								<div className="flex items-center justify-between">
+									<div className="flex items-center gap-2 flex-wrap">
+										{post.isLocked && !post.isPPV && (
+											<span className="text-[10px] bg-rose-500/15 text-rose-400 px-2 py-0.5 rounded-full flex items-center gap-1">
+												<Lock className="w-3 h-3" /> Subscribers
+											</span>
+										)}
+										{post.isPPV && (
+											<span className="text-[10px] bg-amber-500/15 text-amber-400 px-2 py-0.5 rounded-full">
+												PPV {formatINR(post.ppvPrice ?? 0)}
+											</span>
+										)}
+										<span className="text-[10px] bg-foreground/10 text-muted px-2 py-0.5 rounded-full flex items-center gap-1">
+											<MessageCircle className="w-3 h-3" />
+											{Math.max(post.commentCount ?? 0, post.comments?.length ?? 0)} comments
+										</span>
+										{useMockPosts && post.isPinned && (
+											<span className="text-[10px] bg-foreground/10 text-muted px-2 py-0.5 rounded-full flex items-center gap-1">
+												<Pin className="w-3 h-3" /> Pinned
+											</span>
+										)}
+									</div>
+									{useMockPosts && (
+										<div className="flex gap-1">
+											<button
+												onClick={() => handleTogglePin(post)}
+												className={`p-1.5 rounded-lg transition-colors ${post.isPinned ? 'text-amber-400 bg-amber-400/10' : 'text-muted hover:text-foreground hover:bg-foreground/10'}`}
+												title={post.isPinned ? 'Unpin' : 'Pin'}
+											>
+												<Pin className="w-3.5 h-3.5" />
+											</button>
+											<button
+												onClick={() => handleToggleLock(post)}
+												className={`p-1.5 rounded-lg transition-colors ${post.isLocked ? 'text-rose-400 bg-rose-400/10' : 'text-muted hover:text-foreground hover:bg-foreground/10'}`}
+												title={post.isLocked ? 'Unlock' : 'Lock'}
+											>
+												{post.isLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+											</button>
+											<button
+												onClick={() => setDeleteConfirm(post.id)}
+												className="p-1.5 rounded-lg text-muted hover:text-rose-500 hover:bg-rose-400/10 transition-colors"
+												title="Delete"
+											>
+												<Trash2 className="w-3.5 h-3.5" />
+											</button>
 										</div>
 									)}
-									<div className="flex-1 min-w-0">
-										<div className="flex items-start justify-between gap-2 mb-1">
-											<p className="text-sm text-foreground/80 line-clamp-2">{post.text}</p>
-											<div className="flex gap-1 shrink-0">
-												<button
-													onClick={() => handleTogglePin(post)}
-													className={`p-1.5 rounded-lg transition-colors ${post.isPinned ? 'text-amber-400 bg-amber-400/10' : 'text-muted hover:text-foreground hover:bg-foreground/10'}`}
-													title={post.isPinned ? 'Unpin' : 'Pin'}
-												>
-													<Pin className="w-3.5 h-3.5" />
-												</button>
-												<button
-													onClick={() => handleToggleLock(post)}
-													className={`p-1.5 rounded-lg transition-colors ${post.isLocked ? 'text-rose-400 bg-rose-400/10' : 'text-muted hover:text-foreground hover:bg-foreground/10'}`}
-													title={post.isLocked ? 'Unlock' : 'Lock'}
-												>
-													{post.isLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
-												</button>
-												<button
-													onClick={() => setDeleteConfirm(post.id)}
-													className="p-1.5 rounded-lg text-muted hover:text-rose-500 hover:bg-rose-400/10 transition-colors"
-													title="Delete"
-												>
-													<Trash2 className="w-3.5 h-3.5" />
-												</button>
-											</div>
-										</div>
-										<div className="flex items-center gap-3 flex-wrap">
-											<span className="flex items-center gap-1 text-xs text-muted/80">
-												<Heart className="w-3 h-3" /> {post.likes}
-											</span>
-											<span className="flex items-center gap-1 text-xs text-muted/80">
-												<Eye className="w-3 h-3" /> {post.comments.length} comments
-											</span>
-											{post.isLocked && !post.isPPV && (
-												<span className="text-[10px] bg-rose-500/15 text-rose-400 px-2 py-0.5 rounded-full">Subscribers only</span>
-											)}
-											{post.isPPV && (
-												<span className="text-[10px] bg-amber-500/15 text-amber-400 px-2 py-0.5 rounded-full">PPV {formatINR(post.ppvPrice ?? 0)}</span>
-											)}
-											{post.isPinned && (
-												<span className="text-[10px] bg-foreground/10 text-muted px-2 py-0.5 rounded-full">Pinned</span>
-											)}
-										</div>
-									</div>
 								</div>
+
+								<PostCard post={post} showCreatorLink={false} />
 							</div>
 						))}
 					</div>

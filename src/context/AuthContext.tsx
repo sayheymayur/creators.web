@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, useCallback, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useReducer, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { signInWithPopup, signOut, signOut as firebaseSignOut } from 'firebase/auth';
 import type { User, Creator } from '../types';
 import { mockCreators, mockFanUser, mockAdminUser, DEMO_ACCOUNTS } from '../data/users';
@@ -8,6 +8,7 @@ import { getFirebaseAuth, getGoogleProvider } from '../lib/firebaseClient';
 import { exchangeFirebaseToken } from '../services/authApi';
 import { creatorsApi, ApiError } from '../services/creatorsApi';
 import { clearSessionToken, getSessionToken } from '../services/sessionToken';
+import { clearStoredUser, getStoredUser, setStoredUser } from '../services/sessionUser';
 import { isPostsMockMode } from '../services/postsMode';
 import { clearPaymentGatewayCache } from '../services/payments';
 import { ZERO_MINOR } from '../utils/money';
@@ -20,6 +21,8 @@ interface AuthState {
 	loginError: string;
 	creatorProfiles: Record<string, Creator>;
 }
+
+export type AuthStatus = 'unknown' | 'guest' | 'authenticated';
 
 type AuthAction =
 	| { type: 'LOGIN', payload: User } |
@@ -157,6 +160,9 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
 
 interface AuthContextValue {
 	state: AuthState;
+	authStatus: AuthStatus;
+	sessionRestoreError: string | null;
+	retrySessionRestore: () => void;
 	login: (email: string, password: string) => Promise<boolean>;
 	register: (email: string, password: string, displayName: string, role: 'fan' | 'creator') => Promise<boolean>;
 	loginWithGoogle: (role: 'fan' | 'creator') => Promise<User | null>;
@@ -174,35 +180,70 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
 	const [state, dispatch] = useReducer(authReducer, initialState);
 	const didBootstrapRef = useRef(false);
+	const [authStatus, setAuthStatus] = useState<AuthStatus>(() => (getSessionToken() ? 'unknown' : 'guest'));
+	const [sessionRestoreError, setSessionRestoreError] = useState<string | null>(null);
+
+	const restoreSession = useCallback((signal?: AbortSignal) => {
+		const token = getSessionToken();
+		if (!token) {
+			clearStoredUser();
+			setAuthStatus('guest');
+			setSessionRestoreError(null);
+			return Promise.resolve();
+		}
+
+		// If we have a stored user snapshot, treat the session as authenticated immediately
+		// and refresh it in background. This prevents refresh → redirect/login flicker.
+		const stored = getStoredUser();
+		if (stored && !state.isAuthenticated) {
+			dispatch({ type: 'LOGIN', payload: stored });
+		}
+		if (!stored) setAuthStatus('unknown');
+		setSessionRestoreError(null);
+
+		return creatorsApi.auth.me(signal)
+			.then(({ user }) => {
+				if (signal?.aborted) return;
+				if (!user) {
+					clearSessionToken();
+					clearStoredUser();
+					setAuthStatus('guest');
+					return;
+				}
+				dispatch({ type: 'LOGIN', payload: user });
+				setStoredUser(user);
+				setAuthStatus('authenticated');
+			})
+			.catch(err => {
+				if (signal?.aborted) return;
+				// Only drop the token when the backend explicitly rejects it.
+				// For transient network/CORS/5xx errors, keep the token so the user isn't "signed out" on refresh.
+				if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+					clearSessionToken();
+					clearStoredUser();
+					setAuthStatus('guest');
+					setSessionRestoreError(null);
+					return;
+				}
+				const msg = err instanceof ApiError ?
+					`Session restore failed (HTTP ${err.status}).` :
+					'Session restore failed.';
+				setSessionRestoreError(msg);
+				// Keep token + stored user so user stays "logged in" offline.
+				if (stored) setAuthStatus('authenticated');
+			});
+	}, [state.isAuthenticated]);
+
+	const retrySessionRestore = useCallback(() => {
+		void restoreSession();
+	}, [restoreSession]);
 
 	useEffect(() => {
 		// StrictMode runs effects twice in dev; avoid double-bootstrapping.
 		if (didBootstrapRef.current) return;
 		didBootstrapRef.current = true;
-
-		const token = getSessionToken();
-		if (!token) return;
-
 		const ac = new AbortController();
-		void creatorsApi.auth.me(ac.signal)
-			.then(({ user }) => {
-				if (ac.signal.aborted) return;
-				if (!user) {
-					clearSessionToken();
-					return;
-				}
-				dispatch({ type: 'LOGIN', payload: user });
-			})
-			.catch(err => {
-				// Only drop the token when the backend explicitly rejects it.
-				// For transient network/CORS/5xx errors, keep the token so the user isn't "signed out" on refresh.
-				if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
-					clearSessionToken();
-				} else {
-					console.warn('[auth] session restore failed; keeping token', err);
-				}
-			});
-
+		void restoreSession(ac.signal);
 		return () => ac.abort();
 	}, []);
 
@@ -216,17 +257,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 			if (isPostsMockMode()) {
 				if (emailLower === DEMO_ACCOUNTS.fan.email && password === DEMO_ACCOUNTS.fan.password) {
 					dispatch({ type: 'LOGIN', payload: mockFanUser });
+					setStoredUser(mockFanUser);
+					setAuthStatus('authenticated');
 					return true;
 				}
 
 				if (emailLower === DEMO_ACCOUNTS.creator.email && password === DEMO_ACCOUNTS.creator.password) {
 					const creatorUser = mockCreators[0];
 					dispatch({ type: 'LOGIN', payload: creatorUser });
+					setStoredUser(creatorUser);
+					setAuthStatus('authenticated');
 					return true;
 				}
 
 				if (emailLower === DEMO_ACCOUNTS.admin.email && password === DEMO_ACCOUNTS.admin.password) {
 					dispatch({ type: 'LOGIN', payload: mockAdminUser });
+					setStoredUser(mockAdminUser);
+					setAuthStatus('authenticated');
 					return true;
 				}
 			}
@@ -236,17 +283,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 				.then(({ user }) => {
 					if (!user) {
 						dispatch({ type: 'SET_ERROR', payload: 'Login succeeded but user profile was missing.' });
+						setAuthStatus('guest');
 						return false;
 					}
 					dispatch({ type: 'LOGIN', payload: user });
+					setStoredUser(user);
+					setAuthStatus('authenticated');
 					return true;
 				})
 				.catch(err => {
 					if (err instanceof ApiError && err.status === 401) {
 						dispatch({ type: 'SET_ERROR', payload: 'Invalid email or password.' });
+						setAuthStatus('guest');
 						return false;
 					}
 					dispatch({ type: 'SET_ERROR', payload: 'Login failed. Please try again.' });
+					setAuthStatus('guest');
 					return false;
 				});
 		});
@@ -259,9 +311,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 			.then(({ user }) => {
 				if (!user) {
 					dispatch({ type: 'SET_ERROR', payload: 'Registration succeeded but user profile was missing.' });
+					setAuthStatus('guest');
 					return false;
 				}
 				dispatch({ type: 'LOGIN', payload: user });
+				setStoredUser(user);
+				setAuthStatus('authenticated');
 				return true;
 			})
 			.catch(err => {
@@ -269,6 +324,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 					'Registration failed. Please check your details.' :
 					'Registration failed. Please try again.';
 				dispatch({ type: 'SET_ERROR', payload: msg });
+				setAuthStatus('guest');
 				return false;
 			});
 	}, []);
@@ -306,11 +362,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 				const user = apiUser ?? fallbackUser;
 				dispatch({ type: 'LOGIN', payload: user });
+				setStoredUser(user);
+				setAuthStatus('authenticated');
 				return user;
 			})
 			.catch(error => {
 				const errorMessage = error instanceof Error ? error.message : 'Google sign-in failed';
 				dispatch({ type: 'SET_ERROR', payload: errorMessage });
+				setAuthStatus('guest');
 				return null;
 			});
 	}, []);
@@ -318,6 +377,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 	const logout = useCallback(() => {
 		clearPaymentGatewayCache();
 		clearSessionToken();
+		clearStoredUser();
+		setAuthStatus('guest');
+		setSessionRestoreError(null);
 		void creatorsApi.auth.logout().catch(() => {});
 		if (isFirebaseConfigured) {
 			void signOut(getFirebaseAuth()).finally(() => {
@@ -357,9 +419,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 		dispatch({ type: 'CLEAR_ERROR' });
 	}, []);
 
-	return (
-		<AuthContext.Provider value={{
+	const contextValue = useMemo(
+		() => ({
 			state,
+			authStatus: state.isAuthenticated ? 'authenticated' : authStatus,
+			sessionRestoreError,
+			retrySessionRestore,
 			login,
 			register,
 			loginWithGoogle,
@@ -370,8 +435,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 			updateCreatorProfile,
 			updateWalletMinor,
 			clearError,
-		}}
-		>
+		}),
+		[
+			state,
+			authStatus,
+			sessionRestoreError,
+			retrySessionRestore,
+			login,
+			register,
+			loginWithGoogle,
+			logout,
+			verifyAge,
+			setPendingEmail,
+			updateUser,
+			updateCreatorProfile,
+			updateWalletMinor,
+			clearError,
+		]
+	);
+
+	return (
+		<AuthContext.Provider value={contextValue}>
 			{children}
 		</AuthContext.Provider>
 	);

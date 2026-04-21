@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { WsClient } from '../services/wsClient';
 import { useAuth } from './AuthContext';
 import { getSessionToken } from '../services/sessionToken';
@@ -6,12 +6,14 @@ import { parseFrame } from '../services/wsProtocol';
 
 type WsContextValue = {
 	client: WsClient,
+	isConnected: boolean,
 };
 
 const WsContext = createContext<WsContextValue | null>(null);
 
 export function WsProvider({ children }: { children: React.ReactNode }) {
 	const { state: authState } = useAuth();
+	const [isConnected, setIsConnected] = useState(false);
 
 	const client = useMemo(() => new WsClient({
 		getToken() {
@@ -21,12 +23,23 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
 
 	useEffect(() => {
 		client.connect();
+		setIsConnected(client.isConnected);
 		return () => {
 			// React.StrictMode mounts/unmounts effects twice in dev.
 			// Disconnecting during the dev-only test-unmount can close the socket
 			// before the handshake completes, producing noisy browser errors.
 			if (!import.meta.env.DEV) client.disconnect();
 		};
+	}, [client]);
+
+	useEffect(() => {
+		const t = window.setInterval(() => {
+			setIsConnected(prev => {
+				const next = client.isConnected;
+				return prev === next ? prev : next;
+			});
+		}, 400);
+		return () => window.clearInterval(t);
 	}, [client]);
 
 	useEffect(() => {
@@ -55,7 +68,7 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
 	}, [client]);
 
 	return (
-		<WsContext.Provider value={{ client }}>
+		<WsContext.Provider value={{ client, isConnected }}>
 			{children}
 		</WsContext.Provider>
 	);
@@ -65,4 +78,10 @@ export function useWs(): WsClient {
 	const ctx = useContext(WsContext);
 	if (!ctx) throw new Error('useWs must be used within WsProvider');
 	return ctx.client;
+}
+
+export function useWsConnected(): boolean {
+	const ctx = useContext(WsContext);
+	if (!ctx) throw new Error('useWsConnected must be used within WsProvider');
+	return ctx.isConnected;
 }

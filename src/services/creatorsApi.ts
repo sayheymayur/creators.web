@@ -10,6 +10,34 @@ export type CreatorProfileResponse = User & {
 	category?: string,
 };
 
+function normalizeCreatorProfileResponse(json: unknown): CreatorProfileResponse {
+	const root = json as Record<string, unknown> | null;
+	const maybeWrapped = root && typeof root === 'object' && 'creator' in root ? root.creator : root;
+	const obj = (maybeWrapped ?? {}) as Record<string, unknown>;
+
+	const avatar =
+		(typeof obj.avatar === 'string' && obj.avatar) ||
+		(typeof obj.avatar_url === 'string' && obj.avatar_url) ||
+		'';
+	const banner =
+		(typeof obj.banner === 'string' && obj.banner) ||
+		(typeof obj.banner_url === 'string' && obj.banner_url) ||
+		undefined;
+
+	return {
+		...(obj as unknown as User),
+		id: String(obj.id ?? obj.user_id ?? ''),
+		email: String(obj.email ?? ''),
+		name: String(obj.name ?? ''),
+		username: String(obj.username ?? ''),
+		avatar,
+		role: 'creator',
+		bio: typeof obj.bio === 'string' ? obj.bio : undefined,
+		banner,
+		category: typeof obj.category === 'string' ? obj.category : undefined,
+	};
+}
+
 export interface RegisterRequest {
 	email: string;
 	password: string;
@@ -51,6 +79,44 @@ export interface UpdateMyProfileRequest {
 
 export interface UpdateMyProfileResponse {
 	user: User;
+}
+
+export interface CreateReportRequest {
+	targetType: 'post' | 'user' | 'message';
+	targetId: string;
+	reason: string;
+	description?: string;
+}
+
+export interface CreateReportResponse {
+	ok: true;
+}
+
+export interface PaymentGatewayResponse {
+	provider: 'razorpay' | 'stripe';
+	useMock?: boolean;
+}
+
+export interface StripeCreatePaymentIntentRequest {
+	amountMinor: number;
+	currency?: string;
+	metadata?: Record<string, unknown>;
+}
+
+export interface StripeCreatePaymentIntentResponse {
+	clientSecret: string;
+}
+
+export interface StripeCreateCheckoutSessionRequest {
+	amountMinor: number;
+	currency?: string;
+	successUrl: string;
+	cancelUrl: string;
+	metadata?: Record<string, unknown>;
+}
+
+export interface StripeCreateCheckoutSessionResponse {
+	url: string;
 }
 
 export interface RazorpayCreateOrderRequest {
@@ -242,7 +308,13 @@ export const creatorsApi = {
 	creators: {
 		// Public creator profile for display (not in the core HTTP doc; must exist on your API).
 		getById(id: string, signal?: AbortSignal): Promise<CreatorProfileResponse> {
-			return requestJson<CreatorProfileResponse>(`/creators/${encodeURIComponent(id)}`, { method: 'GET', signal });
+			return requestJson<unknown>(`/creators/${encodeURIComponent(id)}`, { method: 'GET', signal })
+				.then(normalizeCreatorProfileResponse);
+		},
+	},
+	reports: {
+		create(body: CreateReportRequest): Promise<CreateReportResponse> {
+			return requestJson<CreateReportResponse>('/reports', { method: 'POST', body, auth: true });
 		},
 	},
 };

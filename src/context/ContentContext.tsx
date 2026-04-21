@@ -8,8 +8,9 @@ import React, {
 } from 'react';
 import type { Post, Comment } from '../types';
 import { mockPosts } from '../data/posts';
-import { creatorsApi } from '../services/creatorsApi';
 import { isPostsMockMode } from '../services/postsMode';
+import { isPostLiked, setPostLiked } from '../services/likedPosts';
+import { setPostCommented } from '../services/commentedPosts';
 import {
 	CreatorsMultiplexWs,
 	setCreatorsMultiplexSingleton,
@@ -324,6 +325,8 @@ interface ContentContextValue {
 		beforeCursor?: string,
 	}) => Promise<CreatorListResponse>;
 	creatorWsGetByPk: (creatorRowId: string) => Promise<CreatorGetResponse>;
+	/** Resolve creator profile by author user id (user_id from posts). */
+	creatorWsGetByUserId: (creatorUserId: string) => Promise<CreatorGetResponse>;
 	creatorWsUpsert: (username: string, name: string, bio?: string) => Promise<void>;
 }
 
@@ -338,6 +341,8 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 	const stateRef = useRef(state);
 	stateRef.current = state;
 	const connectSeqRef = useRef(0);
+	const creatorPkByUserIdRef = useRef<Record<string, string>>({});
+	const creatorUserInflightRef = useRef<Partial<Record<string, Promise<void>>>>({});
 
 	const resolveCreatorDisplay = useCallback(
 		(userId: string, profiles: Record<string, CreatorDisplay>): CreatorDisplay | undefined => {
@@ -375,17 +380,26 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 
 			// Hydrate missing profiles in background without blocking UI.
 			for (const id of missing) {
-				void creatorsApi.creators.getById(id).then(
-					data => {
+				if (creatorUserInflightRef.current[id]) continue;
+				const p = creatorWsGetByUserId(id)
+					.then(r => {
+						if (!r.creator) return;
 						dispatch({
 							type: 'SET_CREATOR_PROFILES',
 							payload: {
-								[id]: { name: data.name, avatar: data.avatar, username: data.username },
+								[id]: {
+									name: r.creator.name,
+									username: r.creator.username,
+									avatar: r.creator.avatar_url ?? '',
+								},
 							},
 						});
-					},
-					() => {}
-				);
+					})
+					.catch(() => {})
+					.finally(() => {
+						delete creatorUserInflightRef.current[id];
+					});
+				creatorUserInflightRef.current[id] = p;
 			}
 
 			return Promise.resolve(merged);
@@ -405,7 +419,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 					postDtoToPost(
 						d,
 						resolveCreatorDisplay(String(d.user_id), profiles),
-						false,
+						currentUserId ? isPostLiked(currentUserId, d.id) : false,
 						currentUserId
 					)
 				)
@@ -596,11 +610,60 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 		[runRemoteTyped]
 	);
 
+	const creatorWsGetByUserId = useCallback(
+		(creatorUserId: string) => {
+			const uid = String(creatorUserId);
+			const cachedPk = creatorPkByUserIdRef.current[uid];
+			if (cachedPk) return creatorWsGetByPk(cachedPk);
+
+			const maxPages = 10; // prevents infinite loops; can be increased if needed
+			const limit = 50;
+
+			const walk = (beforeCursor: string | undefined, page: number): Promise<CreatorGetResponse> =>
+				creatorWsSearch({ limit, beforeCursor })
+					.then(r => {
+						const match = r.creators.find(c => String(c.user_id) === uid);
+						if (match) {
+							creatorPkByUserIdRef.current[uid] = match.id;
+							return creatorWsGetByPk(match.id);
+						}
+						if (!r.nextCursor || page >= maxPages) return { creator: null } as CreatorGetResponse;
+						return walk(r.nextCursor, page + 1);
+					});
+
+			return walk(undefined, 1);
+		},
+		[creatorWsSearch, creatorWsGetByPk]
+	);
+
 	const creatorWsUpsert = useCallback(
 		(username: string, name: string, bio?: string) =>
 			runRemoteTyped(c => creatorWsUpsertProfile(c, username, name, bio)).then(() => {}),
 		[runRemoteTyped]
 	);
+
+	useEffect(() => {
+		// Hydrate creator directory cache to populate avatars/usernames for post authors
+		// without relying on undocumented HTTP endpoints.
+		if (mockMode) return;
+		if (state.postsWsStatus !== 'ready') return;
+		void creatorWsSearch({ limit: 50 })
+			.then(r => {
+				const patch: Record<string, CreatorDisplay> = {};
+				for (const c of r.creators) {
+					creatorPkByUserIdRef.current[String(c.user_id)] = c.id;
+					patch[String(c.user_id)] = {
+						name: c.name,
+						username: c.username,
+						avatar: c.avatar_url ?? '',
+					};
+				}
+				if (Object.keys(patch).length) {
+					dispatch({ type: 'SET_CREATOR_PROFILES', payload: patch });
+				}
+			})
+			.catch(() => {});
+	}, [mockMode, state.postsWsStatus, creatorWsSearch]);
 
 	const refreshFeed = useCallback(() => {
 		if (mockMode) return Promise.resolve();
@@ -820,6 +883,9 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 	const toggleLike = useCallback((postId: string, userId: string) => {
 		if (mockMode) {
 			dispatch({ type: 'TOGGLE_LIKE', payload: { postId, userId } });
+			const post = stateRef.current.posts.find(p => p.id === postId);
+			const liked = !(post?.likedBy.includes(userId) ?? false);
+			setPostLiked(userId, postId, liked);
 			return Promise.resolve();
 		}
 		const post = stateRef.current.posts.find(p => p.id === postId);
@@ -830,6 +896,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 			.send('posts', liked ? `/unlike ${postId}` : `/like ${postId}`)
 			.then(json => {
 				const body = json as { postId: string, like_count: number, likedByMe: boolean };
+				setPostLiked(userId, body.postId, body.likedByMe);
 				dispatch({
 					type: 'SET_LIKE_SERVER',
 					payload: {
@@ -863,6 +930,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 						},
 					},
 				});
+				setPostCommented(u.id, postId, true);
 				return Promise.resolve();
 			}
 			const c = clientRef.current;
@@ -872,6 +940,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 			if (!trimmed) return Promise.resolve();
 			return c.send('posts', `/comment ${postId} ${trimmed}`).then(json => {
 				const dto = (json as { comment: CommentDTO }).comment;
+				setPostCommented(u.id, postId, true);
 				return fetchProfilesForIds([dto.user_id]).then(profiles => {
 					const prof = resolveCreatorDisplay(dto.user_id, profiles);
 					const comment = commentDtoToComment(dto, prof);
@@ -1004,6 +1073,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 				loadMorePostComments,
 				creatorWsSearch,
 				creatorWsGetByPk,
+				creatorWsGetByUserId,
 				creatorWsUpsert,
 			}}
 		>

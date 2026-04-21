@@ -17,9 +17,9 @@ export function IncomingCallOverlay() {
 
 	return (
 		<div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center">
-			<div className="absolute inset-0 bg-black/60 backdrop-blur-md" />
+			<div className="absolute inset-0 bg-background/60 dark:bg-black/60 backdrop-blur-md" />
 
-			<div className="relative w-full sm:max-w-sm bg-[#141414] rounded-t-3xl sm:rounded-3xl overflow-hidden shadow-2xl animate-slide-up">
+			<div className="relative w-full sm:max-w-sm bg-surface dark:bg-[#141414] rounded-t-3xl sm:rounded-3xl overflow-hidden shadow-2xl animate-slide-up border border-border/20">
 				<div className="absolute inset-0 overflow-hidden">
 					<img
 						src={call.participantAvatar}
@@ -35,15 +35,15 @@ export function IncomingCallOverlay() {
 						<img
 							src={call.participantAvatar}
 							alt={call.participantName}
-							className="relative w-24 h-24 rounded-full object-cover border-4 border-white/10"
+							className="relative w-24 h-24 rounded-full object-cover border-4 border-border/20 dark:border-white/10"
 						/>
 					</div>
 
-					<p className="text-white/50 text-sm mb-1 font-medium tracking-wide uppercase">
+					<p className="text-muted dark:text-white/50 text-sm mb-1 font-medium tracking-wide uppercase">
 						Incoming {isVideo ? 'Video' : 'Audio'} Call
 					</p>
-					<h2 className="text-2xl font-bold text-white mb-1">{call.participantName}</h2>
-					<p className="text-white/40 text-sm">is calling you…</p>
+					<h2 className="text-2xl font-bold text-foreground dark:text-white mb-1">{call.participantName}</h2>
+					<p className="text-muted/80 dark:text-white/40 text-sm">is calling you…</p>
 
 					<div className="flex items-center justify-center gap-10 mt-10">
 						<div className="flex flex-col items-center gap-2">
@@ -53,7 +53,7 @@ export function IncomingCallOverlay() {
 							>
 								<PhoneOff className="w-7 h-7 text-white" />
 							</button>
-							<span className="text-xs text-white/40">Decline</span>
+							<span className="text-xs text-muted dark:text-white/40">Decline</span>
 						</div>
 
 						<div className="flex flex-col items-center gap-2">
@@ -67,7 +67,7 @@ export function IncomingCallOverlay() {
 									<Phone className="w-7 h-7 text-white" />
 								)}
 							</button>
-							<span className="text-xs text-white/40">Accept</span>
+							<span className="text-xs text-muted dark:text-white/40">Accept</span>
 						</div>
 					</div>
 				</div>

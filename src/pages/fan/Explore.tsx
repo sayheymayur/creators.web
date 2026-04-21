@@ -127,7 +127,7 @@ export function Explore() {
 							<button
 								key={cat}
 								onClick={() => setCategory(cat)}
-								className={`shrink-0 text-sm px-3 py-1.5 rounded-xl font-medium transition-all ${category === cat ? 'bg-rose-500 text-white' : 'bg-white/5 text-white/50 hover:text-white hover:bg-white/10'
+								className={`shrink-0 text-sm px-3 py-1.5 rounded-xl font-medium transition-all ${category === cat ? 'bg-rose-500 text-white' : 'bg-foreground/5 text-muted hover:text-foreground hover:bg-foreground/10'
 								}`}
 							>
 								{cat}
@@ -184,12 +184,12 @@ export function Explore() {
 											<div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
 											<span className="text-white text-[10px] font-bold">LIVE</span>
 										</div>
-										<div className="absolute top-2 right-2 flex items-center gap-1 bg-overlay/50 rounded-lg px-2 py-0.5">
-											<Eye className="w-3 h-3 text-white/70" />
-											<span className="text-white text-[10px] font-semibold">{stream.viewerCount.toLocaleString()}</span>
+										<div className="absolute top-2 right-2 flex items-center gap-1 bg-background/70 text-foreground dark:bg-overlay/50 dark:text-white rounded-lg px-2 py-0.5 backdrop-blur-sm">
+											<Eye className="w-3 h-3 text-muted dark:text-white/70" />
+											<span className="text-foreground dark:text-white text-[10px] font-semibold">{stream.viewerCount.toLocaleString()}</span>
 										</div>
 										<div className="px-3 py-2.5">
-											<p className="text-white/70 text-xs truncate">{stream.title}</p>
+											<p className="text-muted dark:text-white/70 text-xs truncate">{stream.title}</p>
 										</div>
 									</div>
 								</button>

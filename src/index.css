@@ -18,14 +18,14 @@
 
   .dark {
     color-scheme: dark;
-    --background: 13 13 13;
-    --foreground: 255 255 255;
-    --surface: 22 22 22;
-    --surface-2: 30 30 30;
-    --border: 255 255 255;
-    --muted: 163 163 163;
+    --background: 10 10 11;
+    --foreground: 244 244 245;
+    --surface: 18 18 20;
+    --surface-2: 24 24 27;
+    --border: 63 63 70;
+    --muted: 161 161 170;
     --overlay: 0 0 0;
-    --input: 22 22 22;
+    --input: 18 18 20;
     --ring: 244 63 94;
   }
 
@@ -46,9 +46,14 @@
   body {
     background-color: rgb(var(--background));
     color: rgb(var(--foreground));
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+      Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif,
+      "Apple Color Emoji", "Segoe UI Emoji";
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-synthesis-weight: none;
+    font-synthesis-style: none;
     overscroll-behavior-y: contain;
   }
 

@@ -53,13 +53,13 @@ export function IncomingSessionRequestOverlay() {
 
 	return (
 		<div className="fixed inset-0 z-[210] flex items-end sm:items-center justify-center">
-			<div className="absolute inset-0 bg-black/60 backdrop-blur-md" />
+			<div className="absolute inset-0 bg-background/60 dark:bg-black/60 backdrop-blur-md" />
 
-			<div className="relative w-full sm:max-w-sm bg-[#141414] rounded-t-3xl sm:rounded-3xl overflow-hidden shadow-2xl animate-slide-up">
+			<div className="relative w-full sm:max-w-sm bg-surface dark:bg-[#141414] rounded-t-3xl sm:rounded-3xl overflow-hidden shadow-2xl animate-slide-up border border-border/20">
 				<div className="relative px-8 pt-10 pb-10 text-center">
 					<div className="relative inline-block mb-5">
 						<div className="absolute inset-0 rounded-full bg-rose-500/15 animate-ping scale-125" />
-						<div className="w-20 h-20 rounded-full bg-white/10 flex items-center justify-center border-4 border-white/10">
+						<div className="w-20 h-20 rounded-full bg-background/70 dark:bg-white/10 flex items-center justify-center border-4 border-border/20 dark:border-white/10">
 							{isChat ? (
 								<MessageCircle className="w-9 h-9 text-emerald-300" />
 							) : (
@@ -68,11 +68,11 @@ export function IncomingSessionRequestOverlay() {
 						</div>
 					</div>
 
-					<p className="text-white/50 text-sm mb-1 font-medium tracking-wide uppercase">
+					<p className="text-muted dark:text-white/50 text-sm mb-1 font-medium tracking-wide uppercase">
 						Incoming {isChat ? 'Chat' : 'Call'} Session
 					</p>
-					<h2 className="text-2xl font-bold text-white mb-1">{incoming.fan_display}</h2>
-					<p className="text-white/40 text-sm">
+					<h2 className="text-2xl font-bold text-foreground dark:text-white mb-1">{incoming.fan_display}</h2>
+					<p className="text-muted/80 dark:text-white/40 text-sm">
 						Price: {formatINRFromMinor(priceMinor)}
 					</p>
 
@@ -85,7 +85,7 @@ export function IncomingSessionRequestOverlay() {
 							>
 								<PhoneOff className="w-7 h-7 text-white" />
 							</button>
-							<span className="text-xs text-white/40">Reject</span>
+							<span className="text-xs text-muted dark:text-white/40">Reject</span>
 						</div>
 
 						<div className="flex flex-col items-center gap-2">
@@ -100,7 +100,7 @@ export function IncomingSessionRequestOverlay() {
 									<Phone className="w-7 h-7 text-white" />
 								)}
 							</button>
-							<span className="text-xs text-white/40">Accept</span>
+							<span className="text-xs text-muted dark:text-white/40">Accept</span>
 						</div>
 					</div>
 				</div>

@@ -224,7 +224,7 @@ export function GoLivePage() {
 					alt={activeCreator.name}
 					className={`w-full h-full object-cover scale-110 blur-sm brightness-40 ${hasLocalVideo ? 'opacity-0' : 'opacity-100'}`}
 				/>
-				<div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-black/80" />
+				<div className="absolute inset-0 bg-gradient-to-b from-background/50 via-transparent to-background/80 dark:from-black/50 dark:to-black/80" />
 
 				{agoraError && (
 					<div className="absolute top-24 left-1/2 -translate-x-1/2 z-30 bg-rose-500/20 border border-rose-500/30 rounded-xl px-3 py-1.5">
@@ -237,12 +237,12 @@ export function GoLivePage() {
 						<div className="w-2 h-2 bg-white rounded-full animate-pulse" />
 						<span className="text-white text-xs font-bold">LIVE</span>
 					</div>
-					<div className="flex items-center gap-1.5 bg-black/40 backdrop-blur-sm rounded-xl px-3 py-1.5">
-						<Eye className="w-3.5 h-3.5 text-white/60" />
-						<span className="text-white text-xs font-semibold">{viewerSimCount}</span>
+					<div className="flex items-center gap-1.5 bg-background/70 text-foreground dark:bg-black/40 dark:text-white backdrop-blur-sm rounded-xl px-3 py-1.5">
+						<Eye className="w-3.5 h-3.5 text-muted dark:text-white/60" />
+						<span className="text-foreground dark:text-white text-xs font-semibold">{viewerSimCount}</span>
 					</div>
-					<div className="bg-black/40 backdrop-blur-sm rounded-xl px-3 py-1.5">
-						<span className="text-white/50 text-xs font-mono">{elapsed}</span>
+					<div className="bg-background/70 text-foreground dark:bg-black/40 dark:text-white backdrop-blur-sm rounded-xl px-3 py-1.5">
+						<span className="text-muted dark:text-white/50 text-xs font-mono">{elapsed}</span>
 					</div>
 					<div className="ml-auto flex items-center gap-1.5 bg-amber-500/20 backdrop-blur-sm border border-amber-500/30 rounded-xl px-3 py-1.5">
 						<DollarSign className="w-3.5 h-3.5 text-amber-400" />
@@ -260,14 +260,14 @@ export function GoLivePage() {
 										<span className="text-base">{VIRTUAL_GIFTS.find(g => g.name === msg.giftName)?.emoji ?? '🎁'}</span>
 										<div>
 											<span className="text-amber-300 text-xs font-bold">{msg.userName}</span>
-											<span className="text-white/60 text-xs"> sent </span>
+											<span className="text-muted dark:text-white/60 text-xs"> sent </span>
 											<span className="text-amber-300 text-xs font-bold">{msg.giftName}</span>
 										</div>
 									</div>
 								) : (
 									<div>
 										<span className="text-rose-400 text-xs font-semibold">{msg.userName} </span>
-										<span className="text-white/80 text-xs">{msg.text}</span>
+										<span className="text-foreground/80 dark:text-white/80 text-xs">{msg.text}</span>
 									</div>
 								)}
 							</div>
@@ -281,7 +281,7 @@ export function GoLivePage() {
 								value={text}
 								onChange={e => setText(e.target.value)}
 								placeholder="Say something to viewers..."
-								className="flex-1 bg-white/10 backdrop-blur-sm border border-white/15 rounded-2xl px-4 py-2.5 text-sm text-white placeholder-white/30 focus:outline-none"
+								className="flex-1 bg-background/70 text-foreground dark:bg-white/10 dark:text-white backdrop-blur-sm border border-border/30 dark:border-white/15 rounded-2xl px-4 py-2.5 text-sm placeholder:text-muted focus:outline-none"
 							/>
 							<button
 								type="submit"
@@ -293,7 +293,7 @@ export function GoLivePage() {
 						</form>
 						<button
 							onClick={handleEndLive}
-							className="w-10 h-10 bg-white/10 backdrop-blur-sm border border-white/15 rounded-xl flex items-center justify-center text-rose-400 hover:bg-rose-500/20 transition-all"
+							className="w-10 h-10 bg-background/70 text-foreground dark:bg-white/10 dark:text-white backdrop-blur-sm border border-border/30 dark:border-white/15 rounded-xl flex items-center justify-center text-rose-400 hover:bg-rose-500/20 transition-all"
 						>
 							<X className="w-5 h-5" />
 						</button>

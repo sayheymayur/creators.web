@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Star, Grid3x3, MessageCircle, Zap, Share2, MoreHorizontal, Lock, Image, Type, Phone, Video, ArrowLeft } from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';
@@ -14,7 +14,7 @@ import { useCall } from '../../context/CallContext';
 import { useSession } from '../../context/SessionContext';
 import { SessionPickerModal, type SessionPayMode } from '../../components/modals/SessionPickerModal';
 import type { Creator, SessionType } from '../../types';
-import { creatorsApi } from '../../services/creatorsApi';
+import { ApiError } from '../../services/creatorsApi';
 import { creatorProfileDtoToCreator } from '../../services/creatorWsMap';
 import { isPostsMockMode } from '../../services/postsMode';
 import { randomUuid } from '../../utils/isUuid';
@@ -25,7 +25,7 @@ export function CreatorProfile() {
 	const { id } = useParams<{ id: string }>();
 	const navigate = useNavigate();
 	const { state: authState } = useAuth();
-	const { state: contentState, isSubscribed, loadCreatorPosts, creatorWsGetByPk } = useContent();
+	const { state: contentState, isSubscribed, loadCreatorPosts, creatorWsGetByUserId } = useContent();
 	const { showToast } = useNotifications();
 	const { addConversation, getConversationForUser } = useChat();
 	const { startCall } = useCall();
@@ -37,8 +37,22 @@ export function CreatorProfile() {
 	const [postFilter, setPostFilter] = useState<'all' | 'free' | 'locked'>('all');
 	const [remoteCreator, setRemoteCreator] = useState<Creator | null>(null);
 	const [isLoadingCreator, setIsLoadingCreator] = useState(false);
+	const hasLoadedCreatorRef = useRef(false);
 
 	const maybeCreator = useMemo(() => mockCreators.find(c => c.id === id), [id]);
+	const cachedDisplay = useMemo(() => (id ? contentState.creatorProfiles[id] : undefined), [id, contentState.creatorProfiles]);
+	const fallbackCreator = useMemo<Creator | null>(() => {
+		if (!id) return null;
+		if (!cachedDisplay) return null;
+		const base = mockCreators[0];
+		return {
+			...base,
+			id,
+			name: cachedDisplay.name || base.name,
+			username: cachedDisplay.username || base.username,
+			avatar: cachedDisplay.avatar || base.avatar,
+		};
+	}, [id, cachedDisplay]);
 
 	useEffect(() => {
 		if (!id) return;
@@ -51,48 +65,47 @@ export function CreatorProfile() {
 			return () => ac.abort();
 		}
 
+		// creator WS commands are multiplexed over the posts socket; wait until it is ready.
+		if (contentState.postsWsStatus !== 'ready') {
+			setIsLoadingCreator(false);
+			return () => ac.abort();
+		}
+
 		setIsLoadingCreator(true);
 
-		const mapHttp = () =>
-			creatorsApi.creators.getById(id, ac.signal)
-				.then(data => {
-					if (ac.signal.aborted) return;
-					const mapped: Creator = {
-						...base,
-						id: data.id,
-						email: data.email,
-						name: data.name,
-						username: data.username,
-						avatar: data.avatar,
-						bio: data.bio ?? base.bio,
-						banner: data.banner ?? base.banner,
-						category: data.category ?? base.category,
-					};
-					setRemoteCreator(mapped);
-				})
-				.catch(() => {
-					if (!ac.signal.aborted) setRemoteCreator(null);
-				});
-
-		void creatorWsGetByPk(id)
+		void creatorWsGetByUserId(id)
 			.then(r => {
 				if (ac.signal.aborted) return;
 				if (r.creator) {
+					hasLoadedCreatorRef.current = true;
 					setRemoteCreator(creatorProfileDtoToCreator(r.creator, base));
 					return;
 				}
-				return mapHttp();
+				if (!hasLoadedCreatorRef.current && !fallbackCreator) {
+					showToast('Creator profile not found for this user.', 'error');
+				}
+				// Fall back to cached display from posts directory so the user can still view creator posts.
+				if (!hasLoadedCreatorRef.current && fallbackCreator) {
+					setRemoteCreator(fallbackCreator);
+				}
 			})
-			.catch(() => {
+			.catch((err: unknown) => {
 				if (ac.signal.aborted) return;
-				return mapHttp();
+				if (err instanceof ApiError) {
+					console.error('[creator-profile] ws getByUserId failed', { id, status: err.status, body: err.body });
+				} else {
+					console.error('[creator-profile] ws getByUserId failed', { id, err });
+				}
+				if (!hasLoadedCreatorRef.current) {
+					showToast('Could not load creator profile. Please try again.', 'error');
+				}
 			})
 			.finally(() => {
 				if (!ac.signal.aborted) setIsLoadingCreator(false);
 			});
 
 		return () => ac.abort();
-	}, [id, maybeCreator, creatorWsGetByPk]);
+	}, [id, maybeCreator, creatorWsGetByUserId, contentState.postsWsStatus]);
 
 	useEffect(() => {
 		if (!id || isPostsMockMode()) return;
@@ -109,7 +122,7 @@ export function CreatorProfile() {
 		);
 	}
 
-	const creator = remoteCreator ?? maybeCreator ?? null;
+	const creator = remoteCreator ?? fallbackCreator ?? maybeCreator ?? null;
 
 	if (!creator && !isLoadingCreator) {
 		return (
@@ -151,7 +164,7 @@ export function CreatorProfile() {
 			return true;
 		});
 
-	function handleStartSession(type: SessionType, durationMinutes: number, totalCost: number, payMode: SessionPayMode) {
+	function handleStartSession(type: SessionType, _durationMinutes: number, _totalCost: number, _payMode: SessionPayMode) {
 		if (!authState.user) return;
 
 		// Sessions WS protocol: pricing & wallet rules are enforced server-side (SESSION_PRICE_CENTS).
@@ -165,7 +178,7 @@ export function CreatorProfile() {
 			kind,
 			uiCallType,
 			creatorDisplay: { name: creatorForDisplay.name, avatar: creatorForDisplay.avatar },
-		}).then(res => {
+		}).then(() => {
 			showToast('Session request sent. Waiting for creator…');
 		}).catch(err => {
 			showToast(err instanceof Error ? err.message : 'Failed to request session', 'error');
@@ -219,7 +232,11 @@ export function CreatorProfile() {
 						<button
 							type="button"
 							onClick={() => { void navigate(-1); }}
-							className="w-8 h-8 sm:w-9 sm:h-9 bg-black/50 backdrop-blur-sm rounded-full flex items-center justify-center text-white/80 hover:text-white hover:bg-black/70 transition-colors"
+							className={
+								'w-8 h-8 sm:w-9 sm:h-9 bg-background/70 text-foreground hover:bg-background/90 ' +
+								'dark:bg-black/50 dark:text-white/80 dark:hover:text-white dark:hover:bg-black/70 ' +
+								'backdrop-blur-sm rounded-full flex items-center justify-center transition-colors'
+							}
 							aria-label="Go back"
 						>
 							<ArrowLeft className="w-4 h-4" />
@@ -227,10 +244,10 @@ export function CreatorProfile() {
 					</div>
 
 					<div className="absolute top-3 right-3 z-10 flex gap-2">
-						<button className="w-8 h-8 bg-black/40 backdrop-blur-sm rounded-full flex items-center justify-center text-white hover:bg-black/60 transition-colors">
+						<button className="w-8 h-8 bg-background/70 text-foreground hover:bg-background/90 dark:bg-black/40 dark:text-white dark:hover:bg-black/60 backdrop-blur-sm rounded-full flex items-center justify-center transition-colors">
 							<Share2 className="w-4 h-4" />
 						</button>
-						<button className="w-8 h-8 bg-black/40 backdrop-blur-sm rounded-full flex items-center justify-center text-white hover:bg-black/60 transition-colors">
+						<button className="w-8 h-8 bg-background/70 text-foreground hover:bg-background/90 dark:bg-black/40 dark:text-white dark:hover:bg-black/60 backdrop-blur-sm rounded-full flex items-center justify-center transition-colors">
 							<MoreHorizontal className="w-4 h-4" />
 						</button>
 					</div>
@@ -308,11 +325,11 @@ export function CreatorProfile() {
 					</div>
 
 					<div className="flex items-center gap-2 mb-1">
-						<h1 className="text-xl font-bold text-white">{creatorForDisplay.name}</h1>
+						<h1 className="text-xl font-bold text-foreground dark:text-white">{creatorForDisplay.name}</h1>
 						{creatorForDisplay.isKYCVerified && <Star className="w-5 h-5 text-amber-400 fill-amber-400" />}
 					</div>
-					<p className="text-white/40 text-sm mb-2">@{creatorForDisplay.username}</p>
-					{creatorForDisplay.bio && <p className="text-white/60 text-sm leading-relaxed mb-4">{creatorForDisplay.bio}</p>}
+					<p className="text-muted text-sm mb-2 dark:text-white/40">@{creatorForDisplay.username}</p>
+					{creatorForDisplay.bio && <p className="text-foreground/70 dark:text-white/60 text-sm leading-relaxed mb-4">{creatorForDisplay.bio}</p>}
 
 					<div className="flex gap-4 mb-4">
 						<div className="text-center">
@@ -320,12 +337,12 @@ export function CreatorProfile() {
 							<p className="text-xs text-muted">Posts</p>
 						</div>
 						<div className="text-center">
-							<p className="font-bold text-white">{creatorForDisplay.subscriberCount.toLocaleString()}</p>
-							<p className="text-xs text-white/40">Subscribers</p>
+							<p className="font-bold text-foreground dark:text-white">{creatorForDisplay.subscriberCount.toLocaleString()}</p>
+							<p className="text-xs text-muted dark:text-white/40">Subscribers</p>
 						</div>
 						<div className="text-center">
-							<p className="font-bold text-white">{creatorForDisplay.likeCount.toLocaleString()}</p>
-							<p className="text-xs text-white/40">Likes</p>
+							<p className="font-bold text-foreground dark:text-white">{creatorForDisplay.likeCount.toLocaleString()}</p>
+							<p className="text-xs text-muted dark:text-white/40">Likes</p>
 						</div>
 					</div>
 
@@ -336,8 +353,8 @@ export function CreatorProfile() {
 									<Lock className="w-5 h-5 text-rose-400" />
 								</div>
 								<div className="flex-1">
-									<p className="text-sm font-semibold text-white mb-0.5">Subscribe to unlock all content</p>
-									<p className="text-xs text-white/40">{creatorForDisplay.postCount} posts · Starting at {formatINR(creatorForDisplay.subscriptionPrice)}/mo</p>
+									<p className="text-sm font-semibold text-foreground dark:text-white mb-0.5">Subscribe to unlock all content</p>
+									<p className="text-xs text-muted dark:text-white/40">{creatorForDisplay.postCount} posts · Starting at {formatINR(creatorForDisplay.subscriptionPrice)}/mo</p>
 								</div>
 								<button
 									onClick={() => setShowSubscribeModal(true)}

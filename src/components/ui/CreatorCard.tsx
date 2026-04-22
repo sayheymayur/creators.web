@@ -24,7 +24,11 @@ export function CreatorCard({ creator }: CreatorCardProps) {
 	return (
 		<div
 			onClick={() => { void navigate(`/creator/${creator.id}`); }}
-			className="bg-surface border border-border/20 rounded-2xl overflow-hidden cursor-pointer hover:border-rose-500/30 hover:shadow-lg hover:shadow-rose-500/5 transition-all duration-300 group"
+			className={
+				'bg-surface border border-border/20 rounded-2xl overflow-hidden cursor-pointer ' +
+				'shadow-sm shadow-black/5 dark:shadow-none hover:border-rose-500/30 hover:shadow-md ' +
+				'hover:shadow-black/10 dark:hover:shadow-none transition-all duration-300 group'
+			}
 		>
 			<div className="relative h-24">
 				<img src={creator.banner} alt="" className="w-full h-full object-cover" />

@@ -241,7 +241,7 @@ export function ActiveCallScreen() {
 						alt={participantName}
 						className="w-full h-full object-cover scale-105"
 					/>
-					<div className="absolute inset-0 bg-black/30" />
+					<div className="absolute inset-0 bg-background/30 dark:bg-black/30" />
 				</div>
 			) : (
 				<div className="absolute inset-0 flex items-center justify-center">
@@ -261,16 +261,16 @@ export function ActiveCallScreen() {
 
 			<div className="relative z-10 flex flex-col h-full">
 				<div className={`pt-14 pb-4 px-6 text-center transition-opacity duration-300 ${hideControls ? 'opacity-0' : 'opacity-100'}`}>
-					<h1 className="text-2xl font-bold text-white drop-shadow-lg">{participantName}</h1>
+					<h1 className="text-2xl font-bold text-foreground dark:text-white drop-shadow-lg">{participantName}</h1>
 					{isConnecting ? (
-						<p className="text-white/60 text-sm mt-1 animate-pulse">
+						<p className="text-muted dark:text-white/60 text-sm mt-1 animate-pulse">
 							{callStatus === 'ringing' ? 'Ringing…' : 'Connecting…'}
 						</p>
 					) : (
 						<div className="flex items-center justify-center gap-2 mt-1">
 							{isTimedSession && (
 								<div className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-mono font-bold ${
-									isWarning ? 'bg-rose-500/30 text-rose-300 animate-pulse' : 'bg-white/10 text-white/70'
+									isWarning ? 'bg-rose-500/30 text-rose-300 animate-pulse' : 'bg-background/70 text-foreground/80 dark:bg-white/10 dark:text-white/70'
 								}`}
 								>
 									{isWarning && <AlertTriangle className="w-3 h-3" />}
@@ -279,13 +279,13 @@ export function ActiveCallScreen() {
 								</div>
 							)}
 							{!isTimedSession && (
-								<p className="text-white/60 text-sm tabular-nums">{timerDisplay}</p>
+								<p className="text-muted dark:text-white/60 text-sm tabular-nums">{timerDisplay}</p>
 							)}
 						</div>
 					)}
 
 					{isTimedSession && (
-						<p className="text-xs text-white/30 mt-1">
+						<p className="text-xs text-muted/70 dark:text-white/30 mt-1">
 							{formatINR(session.ratePerMinute)}/min · {formatINR(session.totalCost)} total
 						</p>
 					)}
@@ -300,7 +300,7 @@ export function ActiveCallScreen() {
 
 				{isVideo && !isCameraOff && (
 					<div className="absolute top-16 right-4 z-20">
-						<div className="w-24 h-32 sm:w-28 sm:h-36 rounded-2xl overflow-hidden border-2 border-white/20 shadow-xl bg-surface2">
+						<div className="w-24 h-32 sm:w-28 sm:h-36 rounded-2xl overflow-hidden border-2 border-border/20 shadow-xl bg-surface2">
 							<div ref={localVideoRef} className="w-full h-full bg-gradient-to-br from-rose-900/40 to-surface2" />
 						</div>
 					</div>
@@ -336,7 +336,7 @@ export function ActiveCallScreen() {
 					<div className="flex justify-center mt-6">
 						<button
 							onClick={() => { void navigate(-1); }}
-							className="flex items-center gap-1.5 text-white/40 hover:text-white/70 text-xs transition-colors"
+							className="flex items-center gap-1.5 text-muted dark:text-white/40 hover:text-foreground dark:hover:text-white/70 text-xs transition-colors"
 						>
 							<Minimize2 className="w-3.5 h-3.5" />
 							Minimize
@@ -364,12 +364,14 @@ function ControlBtn({
 			<button
 				onClick={onPress}
 				className={`w-14 h-14 rounded-full flex items-center justify-center transition-all active:scale-90 ${
-					active ? 'bg-white/15 hover:bg-white/20' : 'bg-white/8 hover:bg-white/12 opacity-60'
+					active ?
+						'bg-background/70 hover:bg-background/90 text-foreground dark:bg-white/15 dark:hover:bg-white/20 dark:text-white' :
+						'bg-background/50 hover:bg-background/70 text-foreground/70 dark:bg-white/8 dark:hover:bg-white/12 dark:text-white opacity-60'
 				}`}
 			>
-				<Icon className="w-6 h-6 text-white" />
+				<Icon className="w-6 h-6 text-foreground dark:text-white" />
 			</button>
-			<span className="text-[10px] text-white/40">{label}</span>
+			<span className="text-[10px] text-muted dark:text-white/40">{label}</span>
 		</div>
 	);
 }

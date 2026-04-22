@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Heart, MessageCircle, Lock, Zap, MoreHorizontal, Bookmark, Send } from '../icons';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Heart, MessageCircle, Lock, Zap, MoreHorizontal, Bookmark, Send, Trash2, Type, AlertTriangle } from '../icons';
 import { useNavigate } from 'react-router-dom';
 import type { Post } from '../../types';
 import { useAuth } from '../../context/AuthContext';
@@ -10,6 +10,9 @@ import { formatDistanceToNow } from '../../utils/date';
 import { formatINR } from '../../services/razorpay';
 import { TipModal } from '../modals/TipModal';
 import { PPVUnlockModal } from '../modals/PPVUnlockModal';
+import { Modal } from './Toast';
+import { creatorsApi, ApiError } from '../../services/creatorsApi';
+import { isPostCommented } from '../../services/commentedPosts';
 
 interface PostCardProps {
 	post: Post;
@@ -18,13 +21,22 @@ interface PostCardProps {
 
 export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 	const { state: authState } = useAuth();
-	const { toggleLike, addComment, isSubscribed, loadPostComments, loadMorePostComments, state: contentState } = useContent();
+	const { toggleLike, addComment, isSubscribed, loadPostComments, loadMorePostComments, updatePost, deletePost, state: contentState } = useContent();
 	const { showToast } = useNotifications();
 	const navigate = useNavigate();
 	const [commentText, setCommentText] = useState('');
 	const [showComments, setShowComments] = useState(false);
 	const [showTipModal, setShowTipModal] = useState(false);
 	const [showPPVModal, setShowPPVModal] = useState(false);
+	const [showMenu, setShowMenu] = useState(false);
+	const [showEditModal, setShowEditModal] = useState(false);
+	const [showDeleteModal, setShowDeleteModal] = useState(false);
+	const [showReportModal, setShowReportModal] = useState(false);
+	const [editText, setEditText] = useState(post.text ?? '');
+	const [reportReason, setReportReason] = useState('Spam');
+	const [reportDesc, setReportDesc] = useState('');
+	const [reportSending, setReportSending] = useState(false);
+	const menuRef = useRef<HTMLDivElement | null>(null);
 
 	const userId = authState.user?.id ?? '';
 	const isLiked = post.likedBy.includes(userId);
@@ -35,14 +47,66 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 	const commentNext = contentState.commentPagination[post.id];
 	const commentCountShown = Math.max(post.commentCount, post.comments.length);
 
+	const savedKey = useMemo(() => (userId ? `cw.savedPosts.${userId}` : ''), [userId]);
+	const [isSaved, setIsSaved] = useState(false);
+	const [isCommented, setIsCommented] = useState(false);
+
 	useEffect(() => {
 		if (!showComments) return;
 		void loadPostComments(post.id);
 	}, [showComments, post.id, loadPostComments]);
 
+	useEffect(() => {
+		if (!savedKey) { setIsSaved(false); return; }
+		try {
+			const raw = globalThis.localStorage?.getItem(savedKey) ?? '[]';
+			const ids = JSON.parse(raw) as unknown;
+			setIsSaved(Array.isArray(ids) && ids.includes(post.id));
+		} catch {
+			setIsSaved(false);
+		}
+	}, [savedKey, post.id]);
+
+	useEffect(() => {
+		if (!userId) { setIsCommented(false); return; }
+		setIsCommented(isPostCommented(userId, post.id));
+	}, [userId, post.id]);
+
+	useEffect(() => {
+		setEditText(post.text ?? '');
+	}, [post.id, post.text]);
+
+	useEffect(() => {
+		function onDocMouseDown(e: MouseEvent) {
+			if (!showMenu) return;
+			const t = e.target as Node | null;
+			if (!t) return;
+			if (menuRef.current && !menuRef.current.contains(t)) setShowMenu(false);
+		}
+		document.addEventListener('mousedown', onDocMouseDown);
+		return () => document.removeEventListener('mousedown', onDocMouseDown);
+	}, [showMenu]);
+
 	function handleLike() {
 		if (!authState.user) { void navigate('/login'); return; }
 		void toggleLike(post.id, userId);
+	}
+
+	function toggleSaved() {
+		if (!authState.user) { void navigate('/login'); return; }
+		if (!savedKey) return;
+		try {
+			const raw = globalThis.localStorage?.getItem(savedKey) ?? '[]';
+			const ids0 = JSON.parse(raw) as unknown;
+			const ids: string[] = Array.isArray(ids0) ? ids0.filter(x => typeof x === 'string') : [];
+			const nextSaved = !ids.includes(post.id);
+			const next = nextSaved ? [...ids, post.id] : ids.filter(x => x !== post.id);
+			globalThis.localStorage?.setItem(savedKey, JSON.stringify(next));
+			setIsSaved(nextSaved);
+			showToast(nextSaved ? 'Saved' : 'Removed from saved');
+		} catch {
+			showToast('Could not update saved posts', 'error');
+		}
 	}
 
 	function handleComment(e: React.FormEvent) {
@@ -51,6 +115,7 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 		void addComment(post.id, commentText.trim())
 			.then(() => {
 				setCommentText('');
+				setIsCommented(true);
 				showToast('Comment posted!');
 			})
 			.catch(() => {
@@ -62,8 +127,85 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 		if (showCreatorLink) navigate(`/creator/${post.creatorId}`);
 	}
 
+	function openEdit() {
+		setShowMenu(false);
+		if (!authState.user) { void navigate('/login'); return; }
+		if (!isOwner && authState.user?.role !== 'admin') return;
+		setEditText(post.text ?? '');
+		setShowEditModal(true);
+	}
+
+	function submitEdit() {
+		if (!authState.user) { void navigate('/login'); return; }
+		const text = editText.trim();
+		if (text.length === 0) {
+			showToast('Post text cannot be empty', 'error');
+			return;
+		}
+		void updatePost({ id: post.id, text })
+			.then(() => {
+				showToast('Post updated');
+				setShowEditModal(false);
+			})
+			.catch(() => {
+				showToast('Could not update post', 'error');
+			});
+	}
+
+	function openDelete() {
+		setShowMenu(false);
+		if (!authState.user) { void navigate('/login'); return; }
+		if (!isOwner && authState.user?.role !== 'admin') return;
+		setShowDeleteModal(true);
+	}
+
+	function confirmDelete() {
+		if (!authState.user) { void navigate('/login'); return; }
+		void deletePost(post.id)
+			.then(() => {
+				showToast('Post deleted');
+				setShowDeleteModal(false);
+			})
+			.catch(() => {
+				showToast('Could not delete post', 'error');
+			});
+	}
+
+	function openReport() {
+		setShowMenu(false);
+		if (!authState.user) { void navigate('/login'); return; }
+		setReportReason('Spam');
+		setReportDesc('');
+		setShowReportModal(true);
+	}
+
+	function submitReport() {
+		if (!authState.user) { void navigate('/login'); return; }
+		if (reportSending) return;
+		setReportSending(true);
+		void creatorsApi.reports.create({
+			targetType: 'post',
+			targetId: post.id,
+			reason: reportReason.trim() || 'Other',
+			description: reportDesc.trim() || undefined,
+		})
+			.then(() => {
+				showToast('Report submitted. Thank you.');
+				setShowReportModal(false);
+			})
+			.catch(err => {
+				if (err instanceof ApiError) {
+					console.error('[report] create failed', { status: err.status, body: err.body });
+				} else {
+					console.error('[report] create failed', err);
+				}
+				showToast('Could not submit report. Please try again.', 'error');
+			})
+			.finally(() => setReportSending(false));
+	}
+
 	return (
-		<div className="bg-surface border border-border/20 rounded-2xl overflow-hidden hover:border-border/30 transition-all duration-300">
+		<div className="bg-surface border border-border/20 rounded-2xl overflow-hidden shadow-sm shadow-black/5 dark:shadow-none hover:border-border/30 hover:shadow-md hover:shadow-black/10 dark:hover:shadow-none transition-all duration-300">
 			<div className="flex items-center justify-between px-4 pt-4 pb-3">
 				<button type="button" onClick={handleCreatorClick} className="flex items-center gap-3 group">
 					<Avatar src={post.creatorAvatar} alt={post.creatorName} size="md" />
@@ -72,9 +214,59 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 						<p className="text-xs text-muted">@{post.creatorUsername} · {formatDistanceToNow(post.createdAt)}</p>
 					</div>
 				</button>
-				<button className="p-1.5 rounded-lg hover:bg-foreground/10 transition-colors">
-					<MoreHorizontal className="w-4 h-4 text-muted" />
-				</button>
+				<div ref={menuRef} className="relative">
+					<button
+						type="button"
+						onClick={() => setShowMenu(v => !v)}
+						className="p-1.5 rounded-lg hover:bg-foreground/10 transition-colors"
+						aria-label="Post actions"
+					>
+						<MoreHorizontal className="w-4 h-4 text-muted" />
+					</button>
+					{showMenu && (
+						<div className="absolute right-0 top-full mt-2 w-48 bg-surface2 border border-border/20 rounded-2xl shadow-2xl py-1.5 z-40">
+							{(isOwner || authState.user?.role === 'admin') ? (
+								<>
+									<button
+										type="button"
+										onClick={openEdit}
+										className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-foreground/5 transition-colors"
+									>
+										<Type className="w-4 h-4 text-muted" />
+										Edit
+									</button>
+									<button
+										type="button"
+										onClick={openDelete}
+										className="w-full flex items-center gap-2 px-3 py-2 text-sm text-rose-400 hover:bg-foreground/5 transition-colors"
+									>
+										<Trash2 className="w-4 h-4" />
+										Delete
+									</button>
+								</>
+							) : (
+								<>
+									<button
+										type="button"
+										onClick={toggleSaved}
+										className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-foreground/5 transition-colors"
+									>
+										<Bookmark className={`w-4 h-4 ${isSaved ? 'text-rose-500 fill-rose-500' : 'text-muted'}`} />
+										{isSaved ? 'Unsave' : 'Save'}
+									</button>
+									<button
+										type="button"
+										onClick={openReport}
+										className="w-full flex items-center gap-2 px-3 py-2 text-sm text-amber-400 hover:bg-foreground/5 transition-colors"
+									>
+										<AlertTriangle className="w-4 h-4" />
+										Report
+									</button>
+								</>
+							)}
+						</div>
+					)}
+				</div>
 			</div>
 
 			{post.text && (
@@ -134,9 +326,9 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 					</button>
 					<button
 						onClick={() => setShowComments(v => !v)}
-						className="flex items-center gap-1.5 text-muted hover:text-foreground transition-colors"
+						className={`flex items-center gap-1.5 transition-colors ${isCommented ? 'text-rose-500' : 'text-muted hover:text-foreground'}`}
 					>
-						<MessageCircle className="w-5 h-5" />
+						<MessageCircle className={`w-5 h-5 ${isCommented ? 'fill-rose-500' : ''}`} />
 						<span className="text-xs font-medium">{commentCountShown}</span>
 					</button>
 					<button className="flex items-center gap-1.5 text-muted hover:text-foreground transition-colors">
@@ -154,8 +346,13 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 							<span className="text-xs font-medium">Tip</span>
 						</button>
 					)}
-					<button className="text-muted hover:text-foreground transition-colors">
-						<Bookmark className="w-5 h-5" />
+					<button
+						type="button"
+						onClick={toggleSaved}
+						className="text-muted hover:text-foreground transition-colors"
+						aria-label={isSaved ? 'Unsave post' : 'Save post'}
+					>
+						<Bookmark className={`w-5 h-5 ${isSaved ? 'text-rose-500 fill-rose-500' : 'text-muted'}`} />
 					</button>
 				</div>
 			</div>
@@ -212,6 +409,114 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 					post={post}
 				/>
 			)}
+
+			<Modal
+				isOpen={showEditModal}
+				onClose={() => setShowEditModal(false)}
+				title="Edit post"
+				maxWidth="max-w-lg"
+			>
+				<div className="p-5 space-y-4">
+					<textarea
+						value={editText}
+						onChange={e => setEditText(e.target.value)}
+						className="w-full min-h-[120px] bg-input border border-border/20 rounded-xl px-3 py-2 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
+						placeholder="Update your post..."
+					/>
+					<div className="flex justify-end gap-2">
+						<button
+							type="button"
+							onClick={() => setShowEditModal(false)}
+							className="px-4 py-2 rounded-full border border-border/30 bg-transparent text-foreground hover:bg-foreground/5 transition-colors"
+						>
+							Cancel
+						</button>
+						<button
+							type="button"
+							onClick={submitEdit}
+							className="px-4 py-2 rounded-full bg-rose-500 text-white hover:bg-rose-600 transition-colors"
+						>
+							Save
+						</button>
+					</div>
+				</div>
+			</Modal>
+
+			<Modal
+				isOpen={showDeleteModal}
+				onClose={() => setShowDeleteModal(false)}
+				title="Delete post?"
+			>
+				<div className="p-5 space-y-4">
+					<p className="text-sm text-muted">This action cannot be undone.</p>
+					<div className="flex justify-end gap-2">
+						<button
+							type="button"
+							onClick={() => setShowDeleteModal(false)}
+							className="px-4 py-2 rounded-full border border-border/30 bg-transparent text-foreground hover:bg-foreground/5 transition-colors"
+						>
+							Cancel
+						</button>
+						<button
+							type="button"
+							onClick={confirmDelete}
+							className="px-4 py-2 rounded-full bg-rose-500 text-white hover:bg-rose-600 transition-colors"
+						>
+							Delete
+						</button>
+					</div>
+				</div>
+			</Modal>
+
+			<Modal
+				isOpen={showReportModal}
+				onClose={() => { if (!reportSending) setShowReportModal(false); }}
+				title="Report post"
+			>
+				<div className="p-5 space-y-4">
+					<div className="space-y-1.5">
+						<p className="text-xs text-muted">Reason</p>
+						<select
+							value={reportReason}
+							onChange={e => setReportReason(e.target.value)}
+							className="w-full bg-input border border-border/20 rounded-xl px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
+						>
+							<option>Spam</option>
+							<option>Harassment</option>
+							<option>Nudity</option>
+							<option>Violence</option>
+							<option>Other</option>
+						</select>
+					</div>
+					<div className="space-y-1.5">
+						<p className="text-xs text-muted">Details (optional)</p>
+						<textarea
+							value={reportDesc}
+							onChange={e => setReportDesc(e.target.value)}
+							className="w-full min-h-[90px] bg-input border border-border/20 rounded-xl px-3 py-2 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
+							placeholder="Tell us what’s wrong…"
+						/>
+					</div>
+					<div className="flex justify-end gap-2">
+						<button
+							type="button"
+							onClick={() => setShowReportModal(false)}
+							disabled={reportSending}
+							className="px-4 py-2 rounded-full border border-border/30 bg-transparent text-foreground hover:bg-foreground/5 transition-colors disabled:opacity-60"
+						>
+							Cancel
+						</button>
+						<button
+							type="button"
+							onClick={submitReport}
+							disabled={reportSending}
+							className="px-4 py-2 rounded-full bg-rose-500 text-white hover:bg-rose-600 transition-colors disabled:opacity-60"
+						>
+							{reportSending ? 'Submitting…' : 'Submit'}
+						</button>
+					</div>
+				</div>
+			</Modal>
 		</div>
 	);
 }

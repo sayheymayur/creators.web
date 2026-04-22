@@ -110,8 +110,8 @@ export function ProfileEditor() {
 	return (
 		<Layout>
 			<div className="max-w-2xl mx-auto px-4 py-6">
-				<h1 className="text-xl font-bold text-white mb-1">Set Up Creator Profile</h1>
-				<p className="text-sm text-white/40 mb-6">
+				<h1 className="text-xl font-bold text-foreground dark:text-white mb-1">Set Up Creator Profile</h1>
+				<p className="text-sm text-muted dark:text-white/40 mb-6">
 					This is how your fan-facing profile appears after Google signup.
 				</p>
 
@@ -121,9 +121,9 @@ export function ProfileEditor() {
 						<button
 							type="button"
 							onClick={() => bannerInputRef.current?.click()}
-							className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 hover:opacity-100 transition-opacity"
+							className="absolute inset-0 flex items-center justify-center bg-background/40 dark:bg-black/40 opacity-0 hover:opacity-100 transition-opacity"
 						>
-							<div className="bg-black/60 rounded-xl px-3 py-2 flex items-center gap-2 text-white text-sm">
+							<div className="bg-background/70 text-foreground dark:bg-black/60 dark:text-white rounded-xl px-3 py-2 flex items-center gap-2 text-sm backdrop-blur-sm border border-border/20">
 								<Camera className="w-4 h-4" />
 								Change Banner
 							</div>
@@ -145,14 +145,14 @@ export function ProfileEditor() {
 							<img
 								src={avatarPreviewUrl ?? avatarUrl}
 								alt=""
-								className="w-16 h-16 rounded-2xl border-4 border-[#0d0d0d] object-cover"
+								className="w-16 h-16 rounded-2xl border-4 border-background object-cover"
 							/>
 							<button
 								type="button"
 								onClick={() => avatarInputRef.current?.click()}
-								className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-2xl opacity-0 hover:opacity-100 transition-opacity"
+								className="absolute inset-0 flex items-center justify-center bg-background/50 dark:bg-black/50 rounded-2xl opacity-0 hover:opacity-100 transition-opacity"
 							>
-								<Camera className="w-4 h-4 text-white" />
+								<Camera className="w-4 h-4 text-foreground dark:text-white" />
 							</button>
 							<input
 								ref={avatarInputRef}
@@ -170,16 +170,16 @@ export function ProfileEditor() {
 
 				<div className="mt-10 space-y-4">
 					<div>
-						<label className="block text-sm font-medium text-white/60 mb-1.5">Email</label>
+						<label className="block text-sm font-medium text-muted dark:text-white/60 mb-1.5">Email</label>
 						<input
 							value={authState.user?.email ?? creatorData.email}
 							readOnly
-							className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white/60 cursor-not-allowed"
+							className="w-full bg-foreground/5 border border-border/20 rounded-xl px-4 py-3 text-sm text-muted cursor-not-allowed"
 						/>
 					</div>
 
 					<div>
-						<label className="block text-sm font-medium text-white/60 mb-1.5">Display Name</label>
+						<label className="block text-sm font-medium text-muted dark:text-white/60 mb-1.5">Display Name</label>
 						<input
 							value={name}
 							onChange={e => setName(e.target.value)}
@@ -197,27 +197,27 @@ export function ProfileEditor() {
 					</div>
 
 					<div>
-						<label className="block text-sm font-medium text-white/60 mb-1.5">Avatar URL</label>
+						<label className="block text-sm font-medium text-muted dark:text-white/60 mb-1.5">Avatar URL</label>
 						<input
 							value={avatarUrl}
 							onChange={e => setAvatarUrl(e.target.value)}
 							placeholder="https://..."
-							className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-rose-500/50"
+							className="w-full bg-input border border-border/20 rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
 						/>
 					</div>
 
 					<div>
-						<label className="block text-sm font-medium text-white/60 mb-1.5">Banner URL</label>
+						<label className="block text-sm font-medium text-muted dark:text-white/60 mb-1.5">Banner URL</label>
 						<input
 							value={bannerUrl}
 							onChange={e => setBannerUrl(e.target.value)}
 							placeholder="https://..."
-							className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-rose-500/50"
+							className="w-full bg-input border border-border/20 rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
 						/>
 					</div>
 
 					<div>
-						<label className="block text-sm font-medium text-white/60 mb-1.5">Bio</label>
+						<label className="block text-sm font-medium text-muted dark:text-white/60 mb-1.5">Bio</label>
 						<textarea
 							value={bio}
 							onChange={e => setBio(e.target.value)}

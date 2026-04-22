@@ -1,12 +1,13 @@
-import React, { createContext, useContext, useReducer, useCallback, useEffect, useMemo } from 'react';
+import React, { createContext, useContext, useReducer, useCallback, useEffect, useMemo, useState } from 'react';
 import type { Transaction, Subscription, User } from '../types';
 import { mockSubscriptions } from '../data/transactions';
 import { useAuth } from './AuthContext';
-import { useWs } from './WsContext';
+import { useWs, useWsConnected } from './WsContext';
 import { openRazorpayCheckout, isPaymentCancelled } from '../services/razorpay';
 import { createPaymentWs, type LedgerTransactionRow, type RazorpayOrderRow } from '../services/paymentWs';
 import { creatorsApi } from '../services/creatorsApi';
 import { compareMinor, subtractMinor, addMinor, inrRupeesToMinor, parseMinor } from '../utils/money';
+import { getSessionToken } from '../services/sessionToken';
 
 interface WalletState {
 	/** Local-only rows (e.g. wallet pay / demo top-up before server ledger reflects). */
@@ -105,6 +106,8 @@ interface WalletContextValue {
 	ledgerRows: LedgerTransactionRow[];
 	razorpayOrders: RazorpayOrderRow[];
 	historyNextCursor: string | null;
+	/** True after we have fetched balance from the payment source at least once. */
+	hasSyncedBalance: boolean;
 	refreshBalance: () => Promise<void>;
 	refreshLedger: () => Promise<void>;
 	loadMoreLedger: () => Promise<void>;
@@ -114,6 +117,8 @@ interface WalletContextValue {
 	addFundsViaRazorpay: (amountInr: number) => Promise<boolean>;
 	deductFunds: (amount: number, type: Transaction['type'], description: string, recipientId?: string, recipientName?: string) => boolean;
 	payViaRazorpay: (amountRupees: number, type: Transaction['type'], description: string, recipientId?: string, recipientName?: string) => Promise<{ ok: boolean, cancelled?: boolean, error?: string }>;
+	/** Backwards-compatible name used by older modals. */
+	payExternally: (amountRupees: number, type: Transaction['type'], description: string, recipientId?: string, recipientName?: string) => Promise<{ ok: boolean, cancelled?: boolean, error?: string }>;
 	cancelSubscription: (subscriptionId: string) => void;
 	toggleAutoRenew: (subscriptionId: string) => void;
 	addSubscription: (subscription: Subscription) => void;
@@ -127,18 +132,32 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 	const [state, dispatch] = useReducer(walletReducer, initialState);
 	const { state: authState, updateWalletMinor } = useAuth();
 	const ws = useWs();
+	const wsConnected = useWsConnected();
 	const payment = useMemo(() => createPaymentWs(ws), [ws]);
+	const [hasSyncedBalance, setHasSyncedBalance] = useState(false);
 
 	const refreshBalance = useCallback(() => {
 		const user = authState.user;
-		if (!user || !ws.isConnected) return Promise.resolve();
-		return payment.balance()
-			.then(b => { updateWalletMinor(b.balance_cents); })
-			.catch(() => undefined);
-	}, [authState.user, ws.isConnected, payment, updateWalletMinor]);
+		if (!user || !wsConnected) return Promise.resolve();
+		const token = getSessionToken();
+		const authStep = token ? ws.authenticate(token).catch(e => {
+			if (import.meta.env.DEV) console.error('[wallet] ws authenticate failed before balance', e);
+		}) : Promise.resolve();
+
+		return authStep
+			.then(() => payment.balance())
+			.then(b => {
+				updateWalletMinor(b.balance_cents);
+				setHasSyncedBalance(true);
+			})
+			.catch(e => {
+				if (import.meta.env.DEV) console.error('[wallet] refreshBalance failed', e);
+				dispatch({ type: 'SET_WALLET_ERROR', payload: e instanceof Error ? e.message : 'Failed to load balance' });
+			});
+	}, [authState.user, wsConnected, ws, payment, updateWalletMinor]);
 
 	const refreshLedger = useCallback(() => {
-		if (!authState.user || !ws.isConnected) return Promise.resolve();
+		if (!authState.user || !wsConnected) return Promise.resolve();
 		return payment.history(50)
 			.then(data => {
 				dispatch({ type: 'SET_LEDGER', payload: { rows: data.transactions, nextCursor: data.nextCursor } });
@@ -146,10 +165,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 			.catch(e => {
 				dispatch({ type: 'SET_WALLET_ERROR', payload: e instanceof Error ? e.message : 'Failed to load history' });
 			});
-	}, [authState.user, ws.isConnected, payment]);
+	}, [authState.user, wsConnected, payment]);
 
 	const loadMoreLedger = useCallback(() => {
-		if (!authState.user || !ws.isConnected || !state.historyNextCursor) return Promise.resolve();
+		if (!authState.user || !wsConnected || !state.historyNextCursor) return Promise.resolve();
 		return payment.history(50, state.historyNextCursor)
 			.then(data => {
 				dispatch({ type: 'APPEND_LEDGER', payload: { rows: data.transactions, nextCursor: data.nextCursor } });
@@ -157,16 +176,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 			.catch(e => {
 				dispatch({ type: 'SET_WALLET_ERROR', payload: e instanceof Error ? e.message : 'Failed to load more' });
 			});
-	}, [authState.user, ws.isConnected, payment, state.historyNextCursor]);
+	}, [authState.user, wsConnected, payment, state.historyNextCursor]);
 
 	const refreshOrders = useCallback(() => {
-		if (!authState.user || !ws.isConnected) return Promise.resolve();
+		if (!authState.user || !wsConnected) return Promise.resolve();
 		return payment.orders(50)
 			.then(data => {
 				dispatch({ type: 'SET_ORDERS', payload: data.orders });
 			})
 			.catch(() => undefined);
-	}, [authState.user, ws.isConnected, payment]);
+	}, [authState.user, wsConnected, payment]);
 
 	const refreshWalletData = useCallback(() => {
 		dispatch({ type: 'SET_WALLET_ERROR', payload: null });
@@ -176,14 +195,26 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 	}, [refreshBalance, refreshLedger, refreshOrders]);
 
 	useEffect(() => {
-		if (!authState.user || !ws.isConnected) return;
+		setHasSyncedBalance(false);
+		if (!authState.user || !wsConnected) return;
 		let cancelled = false;
 		dispatch({ type: 'SET_WALLET_ERROR', payload: null });
-		void payment.balance()
+		const token = getSessionToken();
+		const authStep = token ? ws.authenticate(token).catch(e => {
+			if (import.meta.env.DEV) console.error('[wallet] ws authenticate failed during bootstrap', e);
+		}) : Promise.resolve();
+
+		void authStep
+			.then(() => payment.balance())
 			.then(b => {
-				if (!cancelled) updateWalletMinor(b.balance_cents);
+				if (!cancelled) {
+					updateWalletMinor(b.balance_cents);
+					setHasSyncedBalance(true);
+				}
 			})
-			.catch(() => undefined)
+			.catch(e => {
+				if (import.meta.env.DEV) console.error('[wallet] initial balance failed', e);
+			})
 			.then(() => Promise.all([payment.history(50), payment.orders(50)]))
 			.then(([h, o]) => {
 				if (!cancelled) {
@@ -191,9 +222,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 					dispatch({ type: 'SET_ORDERS', payload: o.orders });
 				}
 			})
-			.catch(() => undefined);
+			.catch(e => {
+				if (import.meta.env.DEV) console.error('[wallet] initial wallet data failed', e);
+			});
 		return () => { cancelled = true; };
-	}, [authState.user?.id, ws.isConnected, payment, updateWalletMinor]);
+	}, [authState.user?.id, wsConnected, ws, payment, updateWalletMinor]);
 
 	/** Local demo: add INR to balance without gateway (UI-only until server sync). */
 	const addFunds = useCallback((amountInr: number) => {
@@ -272,7 +305,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 			checkoutNotes[k] = typeof v === 'string' ? v : String(v);
 		}
 
-		const createOrder = ws.isConnected ?
+		const createOrder = wsConnected ?
 			payment.createOrder(String(amountMinor), 'INR') :
 			creatorsApi.payments.razorpayCreateOrder({
 				amountMinor,
@@ -283,7 +316,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 		return createOrder.then(order => {
 			const isLocal = order.keyId == null || order.orderId.startsWith('local_');
 			if (isLocal) {
-				const confirmLocal = ws.isConnected ?
+				const confirmLocal = wsConnected ?
 					payment.confirm(order.orderId, 'pay_local_dev', 'sig_local_dev') :
 					creatorsApi.payments.razorpayConfirm({
 						razorpayOrderId: order.orderId,
@@ -314,7 +347,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 					throw new Error('Razorpay did not return payment id or signature. Try again.');
 				}
 				const confirmOrderId = resp.razorpay_order_id ?? order.orderId;
-				const confirmPaid = ws.isConnected ?
+				const confirmPaid = wsConnected ?
 					payment.confirm(confirmOrderId, paymentId, signature) :
 					creatorsApi.payments.razorpayConfirm({
 						razorpayOrderId: confirmOrderId,
@@ -329,7 +362,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 				});
 			});
 		});
-	}, [ws.isConnected, payment, updateWalletMinor, refreshLedger, refreshOrders]);
+	}, [wsConnected, payment, updateWalletMinor, refreshLedger, refreshOrders]);
 
 	const addFundsViaRazorpay = useCallback((amountInr: number): Promise<boolean> => {
 		const user = authState.user;
@@ -382,6 +415,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
 	const getUserTransactions = useCallback((userId: string) => {
 		const fromLedger = state.ledgerRows.map(r => ledgerRowToTransaction(r, userId));
+		// Production behavior: once we have backend ledger rows, render them as the source of truth
+		// (avoid mixing in local-only demo transactions that will diverge from backend).
+		if (fromLedger.length > 0) {
+			const sorted = [...fromLedger];
+			sorted.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+			return sorted;
+		}
 		const local = state.transactions.filter(t => t.userId === userId);
 		const ledgerIds: Record<string, true> = {};
 		for (const t of fromLedger) ledgerIds[t.id] = true;
@@ -400,6 +440,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 			ledgerRows: state.ledgerRows,
 			razorpayOrders: state.razorpayOrders,
 			historyNextCursor: state.historyNextCursor,
+			hasSyncedBalance,
 			refreshBalance,
 			refreshLedger,
 			loadMoreLedger,
@@ -409,6 +450,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 			addFundsViaRazorpay,
 			deductFunds,
 			payViaRazorpay,
+			payExternally: payViaRazorpay,
 			cancelSubscription,
 			toggleAutoRenew,
 			addSubscription,

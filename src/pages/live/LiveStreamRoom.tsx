@@ -24,7 +24,7 @@ export function LiveStreamRoom() {
 	const navigate = useNavigate();
 	const { getStream, sendChatMessage, sendGift } = useLiveStream();
 	const { state: authState } = useAuth();
-	const { deductFunds } = useWallet();
+	const { deductFunds, payViaRazorpay } = useWallet();
 	const { showToast } = useNotifications();
 	const [text, setText] = useState('');
 	const [showGifts, setShowGifts] = useState(false);
@@ -172,7 +172,7 @@ export function LiveStreamRoom() {
 					alt={stream.creatorName}
 					className={`w-full h-full object-cover scale-110 blur-sm brightness-50 ${hasRemoteVideo ? 'opacity-0' : 'opacity-100'}`}
 				/>
-				<div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/80" />
+				<div className="absolute inset-0 bg-gradient-to-b from-background/40 via-transparent to-background/80 dark:from-black/40 dark:to-black/80" />
 
 				{agoraError && (
 					<div className="absolute top-24 left-1/2 -translate-x-1/2 z-30 bg-rose-500/20 border border-rose-500/30 rounded-xl px-3 py-1.5">
@@ -183,16 +183,16 @@ export function LiveStreamRoom() {
 				<div className="absolute top-0 left-0 right-0 flex items-center gap-3 p-4 pt-12">
 					<button
 						onClick={() => { void navigate(-1); }}
-						className="w-8 h-8 rounded-xl bg-black/40 backdrop-blur-sm flex items-center justify-center text-white"
+						className="w-8 h-8 rounded-xl bg-background/70 text-foreground dark:bg-black/40 dark:text-white backdrop-blur-sm flex items-center justify-center"
 					>
 						<ArrowLeft className="w-4 h-4" />
 					</button>
 
-					<div className="flex items-center gap-2 bg-black/40 backdrop-blur-sm rounded-2xl px-3 py-2 flex-1">
+					<div className="flex items-center gap-2 bg-background/70 text-foreground dark:bg-black/40 dark:text-white backdrop-blur-sm rounded-2xl px-3 py-2 flex-1">
 						<img src={stream.creatorAvatar} alt={stream.creatorName} className="w-7 h-7 rounded-full object-cover" />
 						<div className="flex-1 min-w-0">
-							<p className="text-white text-xs font-bold truncate">{stream.creatorName}</p>
-							<p className="text-white/50 text-[10px] truncate">{stream.title}</p>
+							<p className="text-foreground dark:text-white text-xs font-bold truncate">{stream.creatorName}</p>
+							<p className="text-muted dark:text-white/50 text-[10px] truncate">{stream.title}</p>
 						</div>
 						<div className="flex items-center gap-1 bg-rose-500 rounded-lg px-2 py-0.5">
 							<div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
@@ -200,18 +200,18 @@ export function LiveStreamRoom() {
 						</div>
 					</div>
 
-					<button className="w-8 h-8 rounded-xl bg-black/40 backdrop-blur-sm flex items-center justify-center text-white">
+					<button className="w-8 h-8 rounded-xl bg-background/70 text-foreground dark:bg-black/40 dark:text-white backdrop-blur-sm flex items-center justify-center">
 						<Share2 className="w-4 h-4" />
 					</button>
 				</div>
 
 				<div className="absolute top-24 right-4 flex flex-col items-end gap-2">
-					<div className="flex items-center gap-1 bg-black/40 backdrop-blur-sm rounded-xl px-2.5 py-1.5">
-						<Eye className="w-3.5 h-3.5 text-white/70" />
-						<span className="text-white text-xs font-semibold">{stream.viewerCount.toLocaleString()}</span>
+					<div className="flex items-center gap-1 bg-background/70 text-foreground dark:bg-black/40 dark:text-white backdrop-blur-sm rounded-xl px-2.5 py-1.5">
+						<Eye className="w-3.5 h-3.5 text-muted dark:text-white/70" />
+						<span className="text-foreground dark:text-white text-xs font-semibold">{stream.viewerCount.toLocaleString()}</span>
 					</div>
-					<div className="bg-black/40 backdrop-blur-sm rounded-xl px-2.5 py-1.5">
-						<span className="text-white/50 text-xs font-mono">{elapsed}</span>
+					<div className="bg-background/70 text-foreground dark:bg-black/40 dark:text-white backdrop-blur-sm rounded-xl px-2.5 py-1.5">
+						<span className="text-muted dark:text-white/50 text-xs font-mono">{elapsed}</span>
 					</div>
 				</div>
 
@@ -225,14 +225,14 @@ export function LiveStreamRoom() {
 										<span className="text-base">{VIRTUAL_GIFTS.find(g => g.name === msg.giftName)?.emoji ?? '🎁'}</span>
 										<div>
 											<span className="text-amber-300 text-xs font-bold">{msg.userName}</span>
-											<span className="text-white/60 text-xs"> sent </span>
+											<span className="text-muted dark:text-white/60 text-xs"> sent </span>
 											<span className="text-amber-300 text-xs font-bold">{msg.giftName}</span>
 										</div>
 									</div>
 								) : (
 									<div>
 										<span className="text-rose-400 text-xs font-semibold">{msg.userName} </span>
-										<span className="text-white/80 text-xs">{msg.text}</span>
+										<span className="text-foreground/80 dark:text-white/80 text-xs">{msg.text}</span>
 									</div>
 								)}
 							</div>
@@ -246,7 +246,11 @@ export function LiveStreamRoom() {
 								value={text}
 								onChange={e => setText(e.target.value)}
 								placeholder="Say something..."
-								className="flex-1 bg-white/10 backdrop-blur-sm border border-white/15 rounded-2xl px-4 py-2.5 text-sm text-white placeholder-white/30 focus:outline-none focus:border-rose-500/40"
+								className={
+									'flex-1 bg-background/70 text-foreground dark:bg-white/10 dark:text-white backdrop-blur-sm ' +
+									'border border-border/30 dark:border-white/15 rounded-2xl px-4 py-2.5 text-sm placeholder:text-muted ' +
+									'focus:outline-none focus:border-rose-500/40'
+								}
 							/>
 						</form>
 						<button

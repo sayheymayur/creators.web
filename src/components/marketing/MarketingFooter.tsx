@@ -57,6 +57,15 @@ export function MarketingFooter() {
 								Privacy Policy
 							</button>
 						</li>
+						<li>
+							<button
+								type="button"
+								onClick={() => { void navigate('/delete-account-request'); }}
+								className="text-muted hover:text-foreground transition-colors"
+							>
+								Delete account request
+							</button>
+						</li>
 					</ul>
 				</div>
 

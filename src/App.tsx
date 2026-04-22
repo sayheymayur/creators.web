@@ -48,6 +48,7 @@ import { LiveStreamRoom } from './pages/live/LiveStreamRoom';
 import { GoLivePage } from './pages/live/GoLivePage';
 import { Contact } from './pages/Contact';
 import { PrivacyPolicy } from './pages/PrivacyPolicy';
+import { DeleteAccountRequest } from './pages/DeleteAccountRequest';
 
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
 	constructor(props: { children: React.ReactNode }) {
@@ -140,6 +141,10 @@ function AppRoutes() {
 			<Route path="/admin/reports" element={<ProtectedRoute roles={['admin']}><AdminDashboard /></ProtectedRoute>} />
 
 			<Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+			<Route
+				path="/delete-account-request"
+				element={<ProtectedRoute roles={['fan', 'creator']}><DeleteAccountRequest /></ProtectedRoute>}
+			/>
 			<Route path="/call" element={<ProtectedRoute><ActiveCallScreen /></ProtectedRoute>} />
 			<Route path="/call-history" element={<ProtectedRoute><CallHistory /></ProtectedRoute>} />
 			<Route path="/session/chat/:creatorId" element={<ProtectedRoute><TimedChatRoom /></ProtectedRoute>} />

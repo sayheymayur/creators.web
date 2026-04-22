@@ -221,13 +221,26 @@ export function Settings() {
 						{(Object.keys(notifPrefs) as (keyof typeof notifPrefs)[]).map(key => (
 							<div key={key} className="flex items-center justify-between">
 								<span className="text-sm text-muted capitalize">{key}</span>
-								<button
-									onClick={() => setNotifPrefs(p => ({ ...p, [key]: !p[key] }))}
-									className={`w-10 rounded-full transition-all relative ${notifPrefs[key] ? 'bg-rose-500' : 'bg-foreground/20'}`}
-									style={{ height: '22px' }}
-								>
-									<div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${notifPrefs[key] ? 'left-5' : 'left-0.5'}`} />
-								</button>
+								<label className="relative inline-flex items-center cursor-pointer select-none">
+									<input
+										type="checkbox"
+										className="sr-only peer"
+										checked={notifPrefs[key]}
+										onChange={() => setNotifPrefs(p => ({ ...p, [key]: !p[key] }))}
+										role="switch"
+										aria-label={`${String(key)} notifications`}
+									/>
+									<span
+										className={[
+											'relative inline-flex h-6 w-11 rounded-full border transition-colors',
+											'bg-foreground/10 border-border/30',
+											'peer-checked:bg-rose-500 peer-checked:border-rose-500/40',
+											'peer-focus-visible:ring-2 peer-focus-visible:ring-ring/30 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background',
+											'after:content-[\"\"] after:absolute after:top-0.5 after:left-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow-sm after:transition-transform after:duration-200',
+											'peer-checked:after:translate-x-5',
+										].join(' ')}
+									/>
+								</label>
 							</div>
 						))}
 					</div>
@@ -235,14 +248,24 @@ export function Settings() {
 
 				<section className="bg-surface border border-border/20 rounded-2xl p-5">
 					<h2 className="font-semibold text-foreground mb-3">Danger Zone</h2>
-					<Button
-						variant="danger"
-						fullWidth
-						onClick={handleLogout}
-						leftIcon={<LogOut className="w-4 h-4" />}
-					>
-						Sign Out
-					</Button>
+					<div className="space-y-2">
+						<Button
+							variant="outline"
+							fullWidth
+							onClick={() => { void navigate('/delete-account-request'); }}
+							className="border-red-500/25 text-red-300 hover:border-red-500/40 hover:bg-red-500/10"
+						>
+							Request account deletion
+						</Button>
+						<Button
+							variant="danger"
+							fullWidth
+							onClick={handleLogout}
+							leftIcon={<LogOut className="w-4 h-4" />}
+						>
+							Sign Out
+						</Button>
+					</div>
 				</section>
 			</div>
 		</Layout>

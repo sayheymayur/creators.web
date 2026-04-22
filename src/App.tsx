@@ -107,6 +107,7 @@ function AppRoutes() {
 			<Route path="/contact" element={<Contact />} />
 			<Route path="/privacy-policy" element={<PrivacyPolicy />} />
 			<Route path="/partner/apply" element={<PartnerApply />} />
+			<Route path="/creator/apply" element={<PartnerApply />} />
 			<Route
 				path="/login" element={state.isAuthenticated ? (
 					<Navigate to={state.user?.role === 'admin' ? '/admin' : state.user?.role === 'creator' ? '/creator-dashboard' : '/feed'} replace />

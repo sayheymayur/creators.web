@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
 import { useAuth } from '../context/AuthContext';
 
-type RequestStatus = 'idle' | 'submitted';
-
 export function DeleteAccountRequest() {
+	const navigate = useNavigate();
 	const { state: authState } = useAuth();
 	const user = authState.user;
 
@@ -14,8 +14,6 @@ export function DeleteAccountRequest() {
 	const [phone, setPhone] = useState('');
 	const [reason, setReason] = useState('');
 	const [confirm, setConfirm] = useState(false);
-	const [status, setStatus] = useState<RequestStatus>('idle');
-
 	const roleLabel = useMemo(() => {
 		if (!user) return 'account';
 		if (user.role === 'creator') return 'creator account';
@@ -23,7 +21,11 @@ export function DeleteAccountRequest() {
 		return 'account';
 	}, [user]);
 
-	const disabled = status === 'submitted';
+	const canSubmit =
+		Boolean(fullName.trim()) &&
+		Boolean(email.trim()) &&
+		Boolean(reason.trim()) &&
+		confirm;
 
 	return (
 		<Layout>
@@ -39,7 +41,17 @@ export function DeleteAccountRequest() {
 					<form
 						onSubmit={e => {
 							e.preventDefault();
-							setStatus('submitted');
+							void navigate(
+								'/delete-account-request/success',
+								{
+									replace: true,
+									state: {
+										fullName: fullName.trim(),
+										email: email.trim(),
+										profileHint: profileHint.trim(),
+									},
+								}
+							);
 						}}
 						className="space-y-4"
 					>
@@ -52,7 +64,6 @@ export function DeleteAccountRequest() {
 									value={fullName}
 									onChange={e => setFullName(e.target.value)}
 									placeholder="Your name"
-									disabled={disabled}
 									className="w-full rounded-xl bg-input border border-border/20 px-4 py-3 text-sm text-foreground placeholder:text-muted/70 focus:outline-none focus:ring-2 focus:ring-ring/30 disabled:opacity-60"
 								/>
 							</div>
@@ -64,7 +75,6 @@ export function DeleteAccountRequest() {
 									value={email}
 									onChange={e => setEmail(e.target.value)}
 									placeholder="name@example.com"
-									disabled={disabled}
 									className="w-full rounded-xl bg-input border border-border/20 px-4 py-3 text-sm text-foreground placeholder:text-muted/70 focus:outline-none focus:ring-2 focus:ring-ring/30 disabled:opacity-60"
 								/>
 							</div>
@@ -77,7 +87,6 @@ export function DeleteAccountRequest() {
 								value={profileHint}
 								onChange={e => setProfileHint(e.target.value)}
 								placeholder="@username or https://…"
-								disabled={disabled}
 								className="w-full rounded-xl bg-input border border-border/20 px-4 py-3 text-sm text-foreground placeholder:text-muted/70 focus:outline-none focus:ring-2 focus:ring-ring/30 disabled:opacity-60"
 							/>
 						</div>
@@ -89,7 +98,6 @@ export function DeleteAccountRequest() {
 								value={phone}
 								onChange={e => setPhone(e.target.value)}
 								placeholder="+91 90000 00000"
-								disabled={disabled}
 								className="w-full rounded-xl bg-input border border-border/20 px-4 py-3 text-sm text-foreground placeholder:text-muted/70 focus:outline-none focus:ring-2 focus:ring-ring/30 disabled:opacity-60"
 							/>
 						</div>
@@ -102,7 +110,6 @@ export function DeleteAccountRequest() {
 								onChange={e => setReason(e.target.value)}
 								placeholder="Tell us why you want to delete the account…"
 								rows={5}
-								disabled={disabled}
 								className="w-full rounded-xl bg-input border border-border/20 px-4 py-3 text-sm text-foreground placeholder:text-muted/70 focus:outline-none focus:ring-2 focus:ring-ring/30 resize-y disabled:opacity-60"
 							/>
 						</div>
@@ -113,11 +120,10 @@ export function DeleteAccountRequest() {
 								required
 								checked={confirm}
 								onChange={e => setConfirm(e.target.checked)}
-								disabled={disabled}
 								className="mt-0.5"
 							/>
 							<span>
-								I understand this is a request and may take 24–48 hours (business days). We may ask for verification to confirm it’s my account.
+								I understand this is a request and may take 24–48 hours (business days). We may ask for verification to confirm it is my account.
 							</span>
 						</label>
 
@@ -131,23 +137,17 @@ export function DeleteAccountRequest() {
 							</p>
 							<button
 								type="submit"
-								disabled={disabled}
-								className="bg-rose-500 hover:bg-rose-600 disabled:hover:bg-rose-500 disabled:opacity-60 text-white font-bold px-6 py-3 rounded-2xl transition-all active:scale-95 shadow-sm w-full sm:w-auto shrink-0 whitespace-nowrap"
+								disabled={!canSubmit}
+								className={[
+									'bg-rose-500 hover:bg-rose-600 disabled:hover:bg-rose-500',
+									'disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100',
+									'text-white font-bold px-6 py-3 rounded-2xl transition-all active:scale-95 shadow-sm',
+									'w-full sm:w-auto shrink-0 whitespace-nowrap',
+								].join(' ')}
 							>
 								Submit request
 							</button>
 						</div>
-
-						{status === 'submitted' ? (
-							<div className="mt-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3">
-								<p className="text-sm text-emerald-300/90">
-									Thanks — we received your request. Our team will follow up within 24–48 hours (business days).
-								</p>
-								<p className="text-xs text-muted mt-2">
-									Reference details: {fullName.trim() || '—'} · {email.trim() || '—'}{profileHint.trim() ? ` · ${profileHint.trim()}` : ''}
-								</p>
-							</div>
-						) : null}
 					</form>
 				</div>
 			</div>

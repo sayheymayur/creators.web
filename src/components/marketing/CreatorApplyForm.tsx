@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { CheckCircle, Trash2, Upload, XCircle } from '../icons';
+import { CheckCircle, Clock, Trash2, Upload, XCircle } from '../icons';
 
 const MAX_FILES = 5;
 const MAX_BYTES_PER_FILE = 50 * 1024 * 1024; // 50MB
@@ -57,6 +57,7 @@ export function CreatorApplyForm({ compact }: { compact?: boolean }) {
 	const [error, setError] = useState<string | null>(null);
 	const [submitted, setSubmitted] = useState(false);
 	const [receipt, setReceipt] = useState<CreatorApplyPayload | null>(null);
+	const [confirmCancel, setConfirmCancel] = useState(false);
 
 	const canAddMore = files.length < MAX_FILES;
 
@@ -104,6 +105,11 @@ export function CreatorApplyForm({ compact }: { compact?: boolean }) {
 		e.preventDefault();
 		setError(null);
 
+		if (files.length === 0) {
+			setError('Please upload at least 1 media file.');
+			return;
+		}
+
 		if (!consent) {
 			setError('Please confirm the consent checkbox to submit.');
 			return;
@@ -125,6 +131,7 @@ export function CreatorApplyForm({ compact }: { compact?: boolean }) {
 
 		// Frontend-only for now (no API / uploads yet).
 		setReceipt(payload);
+		setConfirmCancel(false);
 		setSubmitted(true);
 	}
 
@@ -135,6 +142,7 @@ export function CreatorApplyForm({ compact }: { compact?: boolean }) {
 		!category.trim() ||
 		!location.trim() ||
 		!bio.trim() ||
+		files.length === 0 ||
 		!consent;
 
 	if (submitted && receipt) {
@@ -147,7 +155,7 @@ export function CreatorApplyForm({ compact }: { compact?: boolean }) {
 					<div className="min-w-0">
 						<p className="text-sm font-semibold text-foreground">Application received</p>
 						<p className="text-xs text-muted mt-1 leading-relaxed">
-							This is a demo submission (frontend-only). Your media isn’t uploaded anywhere yet, but the form is ready to connect to an API later.
+							Thanks - we’ve received your application. Our team will review it and reach out if we need anything else.
 						</p>
 					</div>
 				</div>
@@ -193,29 +201,77 @@ export function CreatorApplyForm({ compact }: { compact?: boolean }) {
 					</div>
 				</div>
 
-				<div className="mt-5 flex flex-col sm:flex-row gap-3">
-					<button
-						type="button"
-						onClick={() => {
-							setSubmitted(false);
-							setReceipt(null);
-							setError(null);
-							setFullName('');
-							setEmail('');
-							setPhone('');
-							setCategory('');
-							setLocation('');
-							setBio('');
-							setInstagram('');
-							setYoutube('');
-							setPortfolio('');
-							setFiles([]);
-							setConsent(false);
-						}}
-						className="bg-foreground/10 hover:bg-foreground/15 text-foreground font-semibold px-6 py-3 rounded-2xl transition-all w-full sm:w-auto"
-					>
-						Submit another
-					</button>
+				<div className="mt-5 rounded-2xl border border-border/20 bg-surface2 p-5">
+					<div className="flex items-start gap-3">
+						<div className="w-10 h-10 rounded-2xl bg-foreground/5 border border-border/20 flex items-center justify-center">
+							<Clock className="w-5 h-5 text-muted" />
+						</div>
+						<div className="min-w-0">
+							<p className="text-sm font-semibold text-foreground">Waiting for approval</p>
+							<p className="text-xs text-muted mt-1">
+								Our team will review your application.
+							</p>
+						</div>
+					</div>
+
+					{confirmCancel ? (
+						<div className="mt-4 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3">
+							<p className="text-xs text-rose-200/90">Cancel this application?</p>
+							<div className="mt-3 flex flex-col sm:flex-row gap-2">
+								<button
+									type="button"
+									onClick={() => { setConfirmCancel(false); }}
+									className="bg-foreground/10 hover:bg-foreground/15 text-foreground font-semibold px-4 py-2.5 rounded-2xl transition-all w-full sm:w-auto"
+								>
+									No, keep it
+								</button>
+								<button
+									type="button"
+									onClick={() => {
+										setConfirmCancel(false);
+										setSubmitted(false);
+										setReceipt(null);
+										setError(null);
+										setFullName('');
+										setEmail('');
+										setPhone('');
+										setCategory('');
+										setLocation('');
+										setBio('');
+										setInstagram('');
+										setYoutube('');
+										setPortfolio('');
+										setFiles([]);
+										setConsent(false);
+									}}
+									className="bg-rose-500 hover:bg-rose-600 text-white font-bold px-4 py-2.5 rounded-2xl transition-all active:scale-95 w-full sm:w-auto"
+								>
+									Yes, cancel
+								</button>
+							</div>
+						</div>
+					) : null}
+
+					<div className="mt-4 flex flex-col sm:flex-row gap-3">
+						<button
+							type="button"
+							onClick={() => {
+								setConfirmCancel(false);
+								setSubmitted(false);
+								setReceipt(null);
+							}}
+							className="bg-foreground/10 hover:bg-foreground/15 text-foreground font-semibold px-6 py-3 rounded-2xl transition-all w-full sm:w-auto"
+						>
+							Edit
+						</button>
+						<button
+							type="button"
+							onClick={() => { setConfirmCancel(true); }}
+							className="bg-rose-500/10 hover:bg-rose-500/15 text-rose-200 font-bold px-6 py-3 rounded-2xl transition-all w-full sm:w-auto border border-rose-500/20"
+						>
+							Cancel
+						</button>
+					</div>
 				</div>
 			</div>
 		);
@@ -226,7 +282,7 @@ export function CreatorApplyForm({ compact }: { compact?: boolean }) {
 			<div className="mb-5">
 				<p className="text-sm font-semibold text-foreground">Creator application</p>
 				<p className="text-xs text-muted mt-1">
-					Share your details and upload a few sample files (or skip media and just submit your info).
+					Share your details and upload sample media.
 				</p>
 			</div>
 
@@ -341,7 +397,7 @@ export function CreatorApplyForm({ compact }: { compact?: boolean }) {
 				<div className="space-y-2">
 					<div className="flex items-center justify-between gap-3">
 						<div>
-							<p className="text-xs font-semibold text-foreground">Media samples (optional)</p>
+							<p className="text-xs font-semibold text-foreground">Media samples</p>
 							<p className="text-[11px] text-muted mt-0.5">{uploadHint}</p>
 						</div>
 						<button

@@ -16,9 +16,6 @@ export function PartnerApply() {
 
 				<div className="mb-6">
 					<h1 className="text-3xl sm:text-4xl font-black text-foreground mb-2">Become a Creator</h1>
-					<p className="text-sm text-muted leading-relaxed max-w-xl">
-						Apply to become a verified creator on creators.web. Share your details and upload sample media (optional).
-					</p>
 				</div>
 
 				<CreatorApplyForm />

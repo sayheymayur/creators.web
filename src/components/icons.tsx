@@ -36,6 +36,7 @@ export const CheckCircle = Fi.FiCheckCircle;
 export const XCircle = Fi.FiXCircle;
 export const Info = Fi.FiInfo;
 export const X = Fi.FiX;
+export const Menu = (Fi as any)['FiMenu'] ?? Fi.FiMoreHorizontal;
 
 export const MessageCircle = Fi.FiMessageCircle;
 export const Zap = Fi.FiZap;

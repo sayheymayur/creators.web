@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { formatINR } from '../services/razorpay';
-import { Star, Shield, Zap, Users, TrendingUp, Lock, Play, ArrowRight, CheckCircle, Sun, Moon } from '../components/icons';
+import { Star, Shield, Zap, Users, TrendingUp, Lock, Play, ArrowRight, CheckCircle, Sun, Moon, Menu, X } from '../components/icons';
 import { mockCreators } from '../data/users';
 import { useDragScroll } from '../hooks/useDragScroll';
 import { useTheme } from '../context/ThemeContext';
@@ -11,6 +12,7 @@ export function Landing() {
 	const navigate = useNavigate();
 	const featuredRef = useDragScroll();
 	const { mode, toggle } = useTheme();
+	const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 	const partnerCtaClass =
 		mode === 'dark' ?
 			'bg-rose-500 hover:bg-rose-600 text-white' :
@@ -19,14 +21,15 @@ export function Landing() {
 	return (
 		<div className="min-h-screen bg-background text-foreground overflow-x-hidden">
 			<nav className="fixed top-0 left-0 right-0 z-40 bg-background/80 backdrop-blur-xl border-b border-border/10">
-				<div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
-					<div className="flex items-center gap-2">
+				<div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
+					<div className="flex items-center gap-2 min-w-0">
 						<div className="w-7 h-7 bg-rose-500 rounded-lg flex items-center justify-center">
 							<span className="text-white font-black text-sm">cw</span>
 						</div>
-						<span className="font-bold text-foreground">creators.web</span>
+						<span className="font-bold text-foreground truncate">creators.web</span>
 					</div>
-					<div className="flex items-center gap-2">
+
+					<div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
 						<button
 							type="button"
 							onClick={e => { toggle(e); }}
@@ -35,25 +38,53 @@ export function Landing() {
 						>
 							{mode === 'dark' ? <Sun className="w-5 h-5 text-muted" /> : <Moon className="w-5 h-5 text-muted" />}
 						</button>
-						<button
-							onClick={() => { void navigate('/login'); }}
-							className="text-sm text-muted hover:text-foreground px-3 py-1.5 rounded-lg transition-colors"
-						>
-							Sign In
-						</button>
-						{/* <button
-							onClick={() => { void navigate('/register'); }}
-							className="bg-rose-500 hover:bg-rose-600 text-white text-sm font-semibold px-4 py-1.5 rounded-xl transition-all active:scale-95"
-						>
-							Get Started
-						</button> */}
-						<button
-							type="button"
-							onClick={() => { void navigate('/partner/apply'); }}
-							className={`${partnerCtaClass} text-sm font-semibold px-4 py-1.5 rounded-xl transition-all active:scale-95`}
-						>
-							Become a Partner
-						</button>
+
+						<div className="hidden sm:flex items-center gap-2">
+							<button
+								onClick={() => { void navigate('/login'); }}
+								className="text-sm text-muted hover:text-foreground px-3 py-1.5 rounded-lg transition-colors"
+							>
+								Sign In
+							</button>
+							<button
+								type="button"
+								onClick={() => { void navigate('/partner/apply'); }}
+								className={`${partnerCtaClass} text-sm font-semibold px-4 py-1.5 rounded-xl transition-all active:scale-95`}
+							>
+								Become a Partner
+							</button>
+						</div>
+
+						<div className="relative sm:hidden">
+							<button
+								type="button"
+								onClick={() => { setMobileMenuOpen(v => !v); }}
+								aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+								aria-expanded={mobileMenuOpen}
+								className="p-2 rounded-xl hover:bg-foreground/10 transition-colors"
+							>
+								{mobileMenuOpen ? <X className="w-5 h-5 text-muted" /> : <Menu className="w-5 h-5 text-muted" />}
+							</button>
+
+							{mobileMenuOpen && (
+								<div className="absolute right-0 top-full mt-2 w-56 bg-surface2 border border-border/20 rounded-2xl shadow-2xl p-2 z-50">
+									<button
+										type="button"
+										onClick={() => { setMobileMenuOpen(false); void navigate('/login'); }}
+										className="w-full text-left text-sm text-muted hover:text-foreground hover:bg-foreground/10 px-3 py-2 rounded-xl transition-colors"
+									>
+										Sign In
+									</button>
+									<button
+										type="button"
+										onClick={() => { setMobileMenuOpen(false); void navigate('/partner/apply'); }}
+										className={`${partnerCtaClass} w-full text-sm font-semibold px-3 py-2 rounded-xl transition-all active:scale-95 mt-1`}
+									>
+										Become a Partner
+									</button>
+								</div>
+							)}
+						</div>
 					</div>
 				</div>
 			</nav>

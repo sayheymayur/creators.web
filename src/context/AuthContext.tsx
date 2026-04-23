@@ -10,6 +10,8 @@ import { creatorsApi, ApiError } from '../services/creatorsApi';
 import { clearSessionToken, getSessionToken } from '../services/sessionToken';
 import { clearStoredUser, getStoredUser, setStoredUser } from '../services/sessionUser';
 import { clearPaymentGatewayCache } from '../services/payments';
+import { getCreatorsMultiplexSingleton } from '../services/creatorsMultiplexWs';
+import { userWsLogout } from '../services/userWsService';
 import { ZERO_MINOR } from '../utils/money';
 
 interface AuthState {
@@ -353,6 +355,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 	}, []);
 
 	const logout = useCallback(() => {
+		const ws = getCreatorsMultiplexSingleton();
+		if (ws?.isOpen()) {
+			void userWsLogout(ws).catch(() => {});
+		}
 		clearPaymentGatewayCache();
 		clearSessionToken();
 		clearStoredUser();

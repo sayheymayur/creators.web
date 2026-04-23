@@ -13,3 +13,7 @@ export function userWsAuthenticate(client: CreatorsMultiplexWs, jwt: string): Pr
 export function userWsMe(client: CreatorsMultiplexWs): Promise<UserMeWsResponse> {
 	return client.send('user', '/me').then(json => json as UserMeWsResponse);
 }
+
+export function userWsLogout(client: CreatorsMultiplexWs): Promise<void> {
+	return client.send('user', '/logout').then(() => {});
+}

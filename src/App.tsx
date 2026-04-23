@@ -8,12 +8,16 @@ import { NotificationProvider } from './context/NotificationContext';
 import { CallProvider } from './context/CallContext';
 import { SessionProvider } from './context/SessionContext';
 import { LiveStreamProvider } from './context/LiveStreamContext';
+import { ThemeProvider } from './context/ThemeContext';
+import { WsProvider } from './context/WsContext';
+import { SessionsProvider } from './context/SessionsContext';
 
 import { Landing } from './pages/Landing';
 import { Login } from './pages/auth/Login';
 import { Register } from './pages/auth/Register';
 import { AgeVerification } from './pages/auth/AgeVerification';
 import { OTPVerification } from './pages/auth/OTPVerification';
+import { PartnerApply } from './pages/partner/PartnerApply';
 
 import { Feed } from './pages/fan/Feed';
 import { Explore } from './pages/fan/Explore';
@@ -42,6 +46,8 @@ import { CallHistory } from './pages/call/CallHistory';
 import { TimedChatRoom } from './pages/session/TimedChatRoom';
 import { LiveStreamRoom } from './pages/live/LiveStreamRoom';
 import { GoLivePage } from './pages/live/GoLivePage';
+import { Contact } from './pages/Contact';
+import { PrivacyPolicy } from './pages/PrivacyPolicy';
 
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
 	constructor(props: { children: React.ReactNode }) {
@@ -60,16 +66,16 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
 	render() {
 		if (this.state.hasError) {
 			return (
-				<div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#050505', color: 'white', padding: 24 }}>
-					<div style={{ maxWidth: 480, textAlign: 'center' }}>
-						<h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>Something blocked the app</h1>
-						<p style={{ fontSize: 14, opacity: 0.7, marginBottom: 16 }}>
+				<div className="min-h-screen flex items-center justify-center bg-background text-foreground p-6">
+					<div className="max-w-[480px] text-center">
+						<h1 className="text-2xl font-bold mb-2">Something blocked the app</h1>
+						<p className="text-sm text-muted mb-4">
 							A browser extension or network filter likely blocked a script the app needs.
 							Try opening this site in an incognito window or disabling ad/privacy blockers for this domain.
 						</p>
 						<button
 							onClick={() => this.setState({ hasError: false })}
-							style={{ padding: '8px 16px', borderRadius: 999, border: '1px solid rgba(255,255,255,0.2)', background: 'transparent', color: 'white', cursor: 'pointer' }}
+							className="px-4 py-2 rounded-full border border-border/30 bg-transparent text-foreground hover:bg-foreground/5 transition-colors"
 						>
 							Retry
 						</button>
@@ -98,6 +104,10 @@ function AppRoutes() {
 	return (
 		<Routes>
 			<Route path="/" element={<Landing />} />
+			<Route path="/contact" element={<Contact />} />
+			<Route path="/privacy-policy" element={<PrivacyPolicy />} />
+			<Route path="/partner/apply" element={<PartnerApply />} />
+			<Route path="/creator/apply" element={<PartnerApply />} />
 			<Route
 				path="/login" element={state.isAuthenticated ? (
 					<Navigate to={state.user?.role === 'admin' ? '/admin' : state.user?.role === 'creator' ? '/creator-dashboard' : '/feed'} replace />
@@ -144,23 +154,29 @@ function AppRoutes() {
 function Providers({ children }: { children: React.ReactNode }) {
 	return (
 		<BrowserRouter>
-			<AuthProvider>
-				<NotificationProvider>
-					<ContentProvider>
-						<ChatProvider>
-							<WalletProvider>
-								<CallProvider>
-									<SessionProvider>
-										<LiveStreamProvider>
-											{children}
-										</LiveStreamProvider>
-									</SessionProvider>
-								</CallProvider>
-							</WalletProvider>
-						</ChatProvider>
-					</ContentProvider>
-				</NotificationProvider>
-			</AuthProvider>
+			<ThemeProvider>
+				<AuthProvider>
+					<WsProvider>
+						<NotificationProvider>
+							<ContentProvider>
+								<ChatProvider>
+									<WalletProvider>
+										<CallProvider>
+											<SessionProvider>
+												<SessionsProvider>
+													<LiveStreamProvider>
+														{children}
+													</LiveStreamProvider>
+												</SessionsProvider>
+											</SessionProvider>
+										</CallProvider>
+									</WalletProvider>
+								</ChatProvider>
+							</ContentProvider>
+						</NotificationProvider>
+					</WsProvider>
+				</AuthProvider>
+			</ThemeProvider>
 		</BrowserRouter>
 	);
 }

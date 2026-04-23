@@ -1,19 +1,36 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, SlidersHorizontal, TrendingUp, Star, Users, Eye } from '../../components/icons';
+import { Search, SlidersHorizontal, TrendingUp, Star, Users, Eye, Compass } from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';
 import { CreatorCard } from '../../components/ui/CreatorCard';
+import { PostCard } from '../../components/ui/PostCard';
 import { mockCreators } from '../../data/users';
+import type { Creator } from '../../types';
+import { useContent } from '../../context/ContentContext';
 import { useLiveStream } from '../../context/LiveStreamContext';
+import { creatorSummaryToCardCreator } from '../../services/creatorWsMap';
+import { isPostsMockMode } from '../../services/postsMode';
 import { useDragScroll } from '../../hooks/useDragScroll';
 
 const CATEGORIES = ['All', 'Fitness', 'Art', 'Tech', 'Travel', 'Music', 'Food', 'Gaming'];
 
 export function Explore() {
 	const navigate = useNavigate();
+	const { state: contentState, loadMoreExplore, creatorWsSearch } = useContent();
+	const postsMock = isPostsMockMode();
+	const explorePosts = useMemo(
+		() =>
+			contentState.explorePostIds
+				.map(pid => contentState.posts.find(p => p.id === pid))
+				.filter((p): p is NonNullable<typeof p> => Boolean(p)),
+		[contentState.explorePostIds, contentState.posts]
+	);
 	const [search, setSearch] = useState('');
 	const [category, setCategory] = useState('All');
 	const [sortBy, setSortBy] = useState<'popular' | 'new' | 'price'>('popular');
+	const [wsCreators, setWsCreators] = useState<Creator[]>([]);
+	const [wsDirCursor, setWsDirCursor] = useState<string | null>(null);
+	const [wsDirLoading, setWsDirLoading] = useState(false);
 	const { getLiveStreams } = useLiveStream();
 	const liveStreams = getLiveStreams();
 	const liveRef = useDragScroll();
@@ -22,34 +39,86 @@ export function Explore() {
 
 	const approvedCreators = mockCreators.filter(c => c.isKYCVerified);
 
-	const filtered = approvedCreators
-		.filter(c => {
-			const matchesSearch = !search ||
-				c.name.toLowerCase().includes(search.toLowerCase()) ||
-				c.username.toLowerCase().includes(search.toLowerCase()) ||
-				c.bio.toLowerCase().includes(search.toLowerCase());
-			const matchesCategory = category === 'All' || c.category === category;
-			return matchesSearch && matchesCategory;
-		})
-		.sort((a, b) => {
-			if (sortBy === 'popular') return b.subscriberCount - a.subscriberCount;
-			if (sortBy === 'new') return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-			return a.subscriptionPrice - b.subscriptionPrice;
-		});
+	useEffect(() => {
+		if (postsMock || contentState.postsWsStatus !== 'ready') {
+			if (!postsMock) {
+				setWsCreators([]);
+				setWsDirCursor(null);
+			}
+			return;
+		}
+		setWsDirLoading(true);
+		const cat = category === 'All' ? undefined : category;
+		const q = search.trim() || undefined;
+		void creatorWsSearch({ q, category: cat, limit: 30 })
+			.then(r => {
+				setWsCreators(r.creators.map(d => creatorSummaryToCardCreator(d, mockCreators[0])));
+				setWsDirCursor(r.nextCursor ?? null);
+			})
+			.catch(() => {
+				setWsCreators([]);
+				setWsDirCursor(null);
+			})
+			.finally(() => setWsDirLoading(false));
+	}, [postsMock, contentState.postsWsStatus, search, category, creatorWsSearch]);
 
-	const trendingCreators = approvedCreators.slice(0, 3);
+	const filtered = useMemo(() => {
+		if (!postsMock) {
+			return [...wsCreators].sort((a, b) => {
+				if (sortBy === 'popular') return b.subscriberCount - a.subscriberCount;
+				if (sortBy === 'new') return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+				return a.subscriptionPrice - b.subscriptionPrice;
+			});
+		}
+		return approvedCreators
+			.filter(c => {
+				const matchesSearch = !search ||
+					c.name.toLowerCase().includes(search.toLowerCase()) ||
+					c.username.toLowerCase().includes(search.toLowerCase()) ||
+					c.bio.toLowerCase().includes(search.toLowerCase());
+				const matchesCategory = category === 'All' || c.category === category;
+				return matchesSearch && matchesCategory;
+			})
+			.sort((a, b) => {
+				if (sortBy === 'popular') return b.subscriberCount - a.subscriberCount;
+				if (sortBy === 'new') return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+				return a.subscriptionPrice - b.subscriptionPrice;
+			});
+	}, [postsMock, wsCreators, approvedCreators, search, category, sortBy]);
+
+	const trendingCreators = !postsMock ?
+		(wsCreators.length ? wsCreators.slice(0, 3) : approvedCreators.slice(0, 3)) :
+		approvedCreators.slice(0, 3);
+
+	function loadMoreDirectory() {
+		if (postsMock || !wsDirCursor || contentState.postsWsStatus !== 'ready') return;
+		const cat = category === 'All' ? undefined : category;
+		const q = search.trim() || undefined;
+		void creatorWsSearch({ q, category: cat, limit: 30, beforeCursor: wsDirCursor })
+			.then(r => {
+				const next = r.creators.map(d => creatorSummaryToCardCreator(d, mockCreators[0]));
+				setWsCreators(prev => {
+					const seen: Record<string, true> = {};
+					for (const c of prev) seen[c.id] = true;
+					const add = next.filter(c => !seen[c.id]);
+					return [...prev, ...add];
+				});
+				setWsDirCursor(r.nextCursor ?? null);
+			})
+			.catch(() => {});
+	}
 
 	return (
 		<Layout>
 			<div className="max-w-6xl mx-auto px-4 py-6">
 				<div className="mb-6">
 					<div className="relative mb-4">
-						<Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+						<Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
 						<input
 							value={search}
 							onChange={e => setSearch(e.target.value)}
 							placeholder="Search creators by name, category..."
-							className="w-full bg-white/5 border border-white/10 rounded-2xl pl-11 pr-4 py-3 text-sm text-white placeholder-white/25 focus:outline-none focus:border-rose-500/30 transition-colors"
+							className="w-full bg-input border border-border/20 rounded-2xl pl-11 pr-4 py-3 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40 transition-colors"
 						/>
 					</div>
 
@@ -58,8 +127,7 @@ export function Explore() {
 							<button
 								key={cat}
 								onClick={() => setCategory(cat)}
-								className={`shrink-0 text-sm px-3 py-1.5 rounded-xl font-medium transition-all ${
-									category === cat ? 'bg-rose-500 text-white' : 'bg-white/5 text-white/50 hover:text-white hover:bg-white/10'
+								className={`shrink-0 text-sm px-3 py-1.5 rounded-xl font-medium transition-all ${category === cat ? 'bg-rose-500 text-white' : 'bg-foreground/5 text-muted hover:text-foreground hover:bg-foreground/10'
 								}`}
 							>
 								{cat}
@@ -68,35 +136,60 @@ export function Explore() {
 					</div>
 				</div>
 
+				{!postsMock && (
+					<div className="mb-8 space-y-4">
+						<div className="flex items-center gap-2">
+							<Compass className="w-4 h-4 text-rose-400" />
+							<h2 className="font-semibold text-foreground text-sm">Discover posts</h2>
+						</div>
+						{contentState.postsWsStatus === 'connecting' && (
+							<p className="text-xs text-muted">Loading posts…</p>
+						)}
+						{contentState.postsWsStatus === 'error' && contentState.postsWsError && (
+							<p className="text-xs text-rose-400">{contentState.postsWsError}</p>
+						)}
+						<div className="space-y-4">
+							{explorePosts.map(post => (
+								<PostCard key={post.id} post={post} />
+							))}
+						</div>
+						{contentState.exploreNextCursor ? (
+							<button
+								type="button"
+								onClick={() => { void loadMoreExplore(); }}
+								className="text-sm font-medium text-rose-400 hover:text-rose-300"
+							>
+								Load more posts
+							</button>
+						) : null}
+					</div>
+				)}
+
 				{!search && category === 'All' && liveStreams.length > 0 && (
 					<div className="mb-8">
 						<div className="flex items-center gap-2 mb-4">
-							<div className="flex items-center gap-1.5 bg-rose-500 rounded-lg px-2 py-0.5">
-								<div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
-								<span className="text-white text-[10px] font-bold">LIVE</span>
-							</div>
-							<h2 className="font-semibold text-white text-sm">Live Now</h2>
+							<h2 className="font-semibold text-foreground text-sm">Live Now</h2>
 						</div>
 						<div ref={liveRef} className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4 mb-8">
 							{liveStreams.map(stream => (
 								<button
 									key={stream.id}
 									onClick={() => { void navigate(`/live/${stream.id}`); }}
-									className="relative bg-[#161616] border border-white/5 rounded-2xl overflow-hidden hover:border-white/10 transition-all group flex-shrink-0 w-64 sm:w-72"
+									className="relative bg-surface border border-border/20 rounded-2xl overflow-hidden hover:border-border/30 transition-all group flex-shrink-0 w-64 sm:w-72"
 								>
 									<div className="relative h-28">
 										<img src={stream.creatorAvatar} alt={stream.creatorName} className="w-full h-full object-cover scale-105 blur-sm brightness-50" />
-										<div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/60" />
+										<div className="absolute inset-0 bg-gradient-to-b from-transparent to-overlay/60" />
 										<div className="absolute top-2 left-2 flex items-center gap-1.5 bg-rose-500 rounded-lg px-2 py-0.5">
 											<div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
 											<span className="text-white text-[10px] font-bold">LIVE</span>
 										</div>
-										<div className="absolute top-2 right-2 flex items-center gap-1 bg-black/50 rounded-lg px-2 py-0.5">
-											<Eye className="w-3 h-3 text-white/70" />
-											<span className="text-white text-[10px] font-semibold">{stream.viewerCount.toLocaleString()}</span>
+										<div className="absolute top-2 right-2 flex items-center gap-1 bg-background/70 text-foreground dark:bg-overlay/50 dark:text-white rounded-lg px-2 py-0.5 backdrop-blur-sm">
+											<Eye className="w-3 h-3 text-muted dark:text-white/70" />
+											<span className="text-foreground dark:text-white text-[10px] font-semibold">{stream.viewerCount.toLocaleString()}</span>
 										</div>
 										<div className="px-3 py-2.5">
-											<p className="text-white/70 text-xs truncate">{stream.title}</p>
+											<p className="text-muted dark:text-white/70 text-xs truncate">{stream.title}</p>
 										</div>
 									</div>
 								</button>
@@ -109,7 +202,7 @@ export function Explore() {
 					<div className="mb-8">
 						<div className="flex items-center gap-2 mb-4">
 							<TrendingUp className="w-4 h-4 text-rose-400" />
-							<h2 className="font-semibold text-white text-sm">Trending Now</h2>
+							<h2 className="font-semibold text-foreground text-sm">Trending Now</h2>
 						</div>
 						<div ref={trendingRef} className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4">
 							{trendingCreators.map((creator, idx) => (
@@ -128,16 +221,18 @@ export function Explore() {
 				)}
 
 				<div className="flex items-center justify-between mb-4">
-					<div className="flex items-center gap-1.5 text-white/50 text-sm">
+					<div className="flex items-center gap-1.5 text-muted text-sm">
 						<Users className="w-4 h-4" />
-						<span>{filtered.length} creator{filtered.length !== 1 ? 's' : ''}</span>
+						<span>
+							{wsDirLoading && !postsMock ? '…' : filtered.length} creator{filtered.length !== 1 ? 's' : ''}
+						</span>
 					</div>
 					<div className="flex items-center gap-2">
-						<SlidersHorizontal className="w-4 h-4 text-white/30" />
+						<SlidersHorizontal className="w-4 h-4 text-muted" />
 						<select
 							value={sortBy}
 							onChange={e => setSortBy(e.target.value as typeof sortBy)}
-							className="bg-white/5 border border-white/10 rounded-xl px-2 py-1.5 text-xs text-white/70 focus:outline-none [color-scheme:dark]"
+							className="bg-input border border-border/20 rounded-xl px-2 py-1.5 text-xs text-foreground/80 focus:outline-none"
 						>
 							<option value="popular">Most Popular</option>
 							<option value="new">Newest</option>
@@ -148,8 +243,8 @@ export function Explore() {
 
 				{filtered.length === 0 ? (
 					<div className="text-center py-16">
-						<Search className="w-10 h-10 text-white/10 mx-auto mb-3" />
-						<p className="text-white/30">No creators found</p>
+						<Search className="w-10 h-10 text-muted/50 mx-auto mb-3" />
+						<p className="text-muted">No creators found</p>
 					</div>
 				) : (
 					<div ref={allRef} className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4">
@@ -160,6 +255,18 @@ export function Explore() {
 						))}
 					</div>
 				)}
+
+				{!postsMock && wsDirCursor ? (
+					<div className="mt-4 text-center">
+						<button
+							type="button"
+							onClick={() => { loadMoreDirectory(); }}
+							className="text-sm font-medium text-rose-400 hover:text-rose-300"
+						>
+							Load more creators
+						</button>
+					</div>
+				) : null}
 			</div>
 		</Layout>
 	);

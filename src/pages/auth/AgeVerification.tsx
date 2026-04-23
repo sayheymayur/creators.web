@@ -30,14 +30,14 @@ export function AgeVerification() {
 	maxDate.setFullYear(maxDate.getFullYear() - 18);
 
 	return (
-		<div className="min-h-screen bg-[#0d0d0d] flex items-center justify-center px-4">
+		<div className="min-h-screen bg-background text-foreground flex items-center justify-center px-4">
 			<div className="w-full max-w-sm">
 				<div className="text-center mb-8">
 					<div className="w-16 h-16 bg-amber-500/15 rounded-2xl flex items-center justify-center mx-auto mb-4">
 						<Shield className="w-8 h-8 text-amber-400" />
 					</div>
-					<h1 className="text-2xl font-bold text-white mb-2">Age Verification</h1>
-					<p className="text-white/40 text-sm">This platform contains adult content. You must be 18 or older to continue.</p>
+					<h1 className="text-2xl font-bold text-foreground mb-2">Age Verification</h1>
+					<p className="text-muted text-sm">This platform contains adult content. You must be 18 or older to continue.</p>
 				</div>
 
 				<div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 mb-6 flex gap-2">
@@ -46,7 +46,7 @@ export function AgeVerification() {
 				</div>
 
 				<div className="mb-5">
-					<label className="block text-sm font-medium text-white/60 mb-2">
+					<label className="block text-sm font-medium text-muted mb-2">
 						<Calendar className="w-4 h-4 inline mr-1.5 -mt-0.5" />
 						Date of Birth
 					</label>
@@ -55,7 +55,7 @@ export function AgeVerification() {
 						value={dob}
 						onChange={e => { setDob(e.target.value); setError(''); }}
 						max={maxDate.toISOString().split('T')[0]}
-						className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-rose-500/50 transition-colors [color-scheme:dark]"
+						className="w-full bg-input border border-border/20 rounded-xl px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40 transition-colors"
 					/>
 					{error && <p className="text-rose-400 text-xs mt-1.5">{error}</p>}
 				</div>
@@ -64,7 +64,7 @@ export function AgeVerification() {
 					Verify My Age
 				</Button>
 
-				<p className="text-center text-xs text-white/20 mt-4">
+				<p className="text-center text-xs text-muted/80 mt-4">
 					Exit if you are under 18
 				</p>
 			</div>

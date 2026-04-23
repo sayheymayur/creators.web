@@ -5,7 +5,8 @@ import { Button } from '../ui/Button';
 import { useAuth } from '../../context/AuthContext';
 import { useWallet } from '../../context/WalletContext';
 import { useNotifications } from '../../context/NotificationContext';
-import { usdToInr, formatINR } from '../../services/razorpay';
+import { formatINR } from '../../services/razorpay';
+import { compareMinor, formatINRFromMinor, inrRupeesToMinor } from '../../utils/money';
 import { delayMs } from '../../utils/delay';
 
 const TIP_PRESETS = [3, 5, 10, 20, 50, 100];
@@ -18,22 +19,23 @@ interface TipModalProps {
 	creatorAvatar: string;
 }
 
-type PayMode = 'razorpay' | 'wallet';
+type PayMode = 'external' | 'wallet';
 
 export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvatar }: TipModalProps) {
 	const { state: authState } = useAuth();
-	const { deductFunds, payViaRazorpay } = useWallet();
+	const { deductFunds, payExternally } = useWallet();
 	const { showToast } = useNotifications();
 	const [amount, setAmount] = useState<number>(10);
 	const [customAmount, setCustomAmount] = useState('');
 	const [isLoading, setIsLoading] = useState(false);
 	const [success, setSuccess] = useState(false);
-	const [payMode, setPayMode] = useState<PayMode>('razorpay');
+	const [payMode, setPayMode] = useState<PayMode>('external');
 	const [error, setError] = useState('');
 
 	const tipAmount = customAmount ? parseFloat(customAmount) || 0 : amount;
-	const balance = authState.user?.walletBalance ?? 0;
-	const inrTip = usdToInr(tipAmount);
+	const balanceMinor = authState.user?.walletBalanceMinor ?? '0';
+	const tipMinor = inrRupeesToMinor(tipAmount);
+	const canAffordWallet = compareMinor(balanceMinor, '>=', tipMinor);
 
 	function handleSendTip() {
 		if (!tipAmount || tipAmount <= 0) return;
@@ -41,8 +43,8 @@ export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvata
 		void delayMs(800).then(() => {
 			setError('');
 
-			if (payMode === 'razorpay') {
-				void payViaRazorpay(tipAmount, 'tip', `Tip to ${creatorName}`, creatorId, creatorName).then(result => {
+			if (payMode === 'external') {
+				void payExternally(tipAmount, 'tip', `Tip to ${creatorName}`, creatorId, creatorName).then(result => {
 					if (!result.ok) {
 						if (!result.cancelled) setError(result.error || 'Payment failed.');
 						setIsLoading(false);
@@ -50,7 +52,7 @@ export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvata
 					}
 
 					setSuccess(true);
-					showToast(`Sent $${tipAmount.toFixed(2)} tip to ${creatorName}!`);
+					showToast(`Sent ${formatINR(tipAmount)} tip to ${creatorName}!`);
 					setTimeout(onClose, 1500);
 					setIsLoading(false);
 				});
@@ -65,7 +67,7 @@ export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvata
 			}
 
 			setSuccess(true);
-			showToast(`Sent $${tipAmount.toFixed(2)} tip to ${creatorName}!`);
+			showToast(`Sent ${formatINR(tipAmount)} tip to ${creatorName}!`);
 			setTimeout(onClose, 1500);
 			setIsLoading(false);
 		});
@@ -79,20 +81,20 @@ export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvata
 						<div className="w-16 h-16 bg-amber-500/20 rounded-full flex items-center justify-center mx-auto mb-3">
 							<Zap className="w-8 h-8 text-amber-400 fill-amber-400" />
 						</div>
-						<p className="text-white font-semibold text-lg">Tip Sent!</p>
-						<p className="text-white/50 text-sm mt-1">${tipAmount.toFixed(2)} sent to {creatorName}</p>
+						<p className="text-foreground font-semibold text-lg">Tip Sent!</p>
+						<p className="text-muted text-sm mt-1">{formatINR(tipAmount)} sent to {creatorName}</p>
 					</div>
 				) : (
 					<>
-						<div className="flex items-center gap-3 mb-5 p-3 bg-white/5 rounded-xl">
+						<div className="flex items-center gap-3 mb-5 p-3 bg-foreground/5 rounded-xl">
 							<img src={creatorAvatar} alt={creatorName} className="w-10 h-10 rounded-full object-cover" />
 							<div>
-								<p className="text-sm font-semibold text-white">{creatorName}</p>
-								<p className="text-xs text-white/40">Your tip supports their work directly</p>
+								<p className="text-sm font-semibold text-foreground">{creatorName}</p>
+								<p className="text-xs text-muted">Your tip supports their work directly</p>
 							</div>
 						</div>
 
-						<p className="text-xs text-white/40 mb-2 font-medium">CHOOSE AMOUNT</p>
+						<p className="text-xs text-muted mb-2 font-medium">CHOOSE AMOUNT</p>
 						<div className="grid grid-cols-3 gap-2 mb-3">
 							{TIP_PRESETS.map(preset => (
 								<button
@@ -101,10 +103,10 @@ export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvata
 									className={`py-2.5 rounded-xl text-sm font-semibold transition-all ${
 										amount === preset && !customAmount ?
 											'bg-amber-500 text-white' :
-											'bg-white/5 text-white/70 hover:bg-white/10'
+											'bg-foreground/5 text-muted hover:bg-foreground/10'
 									}`}
 								>
-									${preset}
+									{formatINR(preset)}
 								</button>
 							))}
 						</div>
@@ -113,27 +115,27 @@ export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvata
 							value={customAmount}
 							onChange={e => setCustomAmount(e.target.value)}
 							placeholder="Custom amount..."
-							className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/30 focus:outline-none focus:border-amber-500/50 mb-4"
+							className="w-full bg-input border border-border/20 rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40 mb-4"
 						/>
 
-						<p className="text-xs font-semibold text-white/40 uppercase tracking-widest mb-2">Payment Method</p>
+						<p className="text-xs font-semibold text-muted uppercase tracking-widest mb-2">Payment Method</p>
 						<div className="flex gap-2 mb-4">
 							<button
-								onClick={() => setPayMode('razorpay')}
+								onClick={() => setPayMode('external')}
 								className={`flex-1 py-2.5 rounded-xl text-xs font-semibold border transition-all ${
-									payMode === 'razorpay' ? 'border-amber-500/40 bg-amber-500/10 text-amber-400' : 'border-white/10 bg-white/5 text-white/50 hover:bg-white/8'
+									payMode === 'external' ? 'border-amber-500/40 bg-amber-500/10 text-amber-500' : 'border-border/20 bg-foreground/5 text-muted hover:bg-foreground/10'
 								}`}
 							>
-								Pay {tipAmount > 0 ? formatINR(inrTip) : 'via Razorpay'}
+								Pay {tipAmount > 0 ? formatINR(tipAmount) : 'Checkout'}
 							</button>
 							<button
 								onClick={() => setPayMode('wallet')}
 								className={`flex-1 py-2.5 rounded-xl text-xs font-semibold border transition-all ${
-									payMode === 'wallet' ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400' : 'border-white/10 bg-white/5 text-white/50 hover:bg-white/8'
+									payMode === 'wallet' ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-500' : 'border-border/20 bg-foreground/5 text-muted hover:bg-foreground/10'
 								}`}
 							>
 								<Wallet className="w-3 h-3 inline mr-1" />
-								Wallet (${balance.toFixed(2)})
+								Wallet ({formatINRFromMinor(balanceMinor)})
 							</button>
 						</div>
 
@@ -148,14 +150,14 @@ export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvata
 							fullWidth
 							isLoading={isLoading}
 							onClick={() => { void handleSendTip(); }}
-							disabled={tipAmount <= 0 || (payMode === 'wallet' && balance < tipAmount)}
+							disabled={tipAmount <= 0 || (payMode === 'wallet' && !canAffordWallet)}
 							className="bg-amber-500 hover:bg-amber-600 shadow-amber-500/20"
 						>
 							<Zap className="w-4 h-4 fill-white" />
-							Send ${tipAmount.toFixed(2)} Tip
+							Send {formatINR(tipAmount)} Tip
 						</Button>
-						{payMode === 'wallet' && balance < tipAmount && (
-							<p className="text-center text-xs text-rose-400 mt-2">Insufficient balance. Switch to Razorpay or add funds.</p>
+						{payMode === 'wallet' && !canAffordWallet && (
+							<p className="text-center text-xs text-rose-400 mt-2">Insufficient balance. Use checkout or add funds.</p>
 						)}
 					</>
 				)}

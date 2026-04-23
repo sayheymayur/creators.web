@@ -1,4 +1,5 @@
 import * as Fi from 'react-icons/fi';
+import { TbCurrencyRupee } from 'react-icons/tb';
 
 // Generic icon aliases used across the app.
 // Using namespace import avoids build-time errors if some icons
@@ -8,14 +9,15 @@ export const Users = Fi.FiUsers;
 export const TrendingUp = Fi.FiTrendingUp;
 export const Shield = Fi.FiShield;
 export const AlertTriangle = Fi.FiAlertTriangle;
-export const DollarSign = Fi.FiDollarSign;
+/** Revenue / wallet stats (INR). */
+export const DollarSign = TbCurrencyRupee;
 export const Star = Fi.FiStar;
 export const ArrowRight = Fi.FiArrowRight;
 
 export const Plus = Fi.FiPlus;
 export const Lock = Fi.FiLock;
 export const Unlock = Fi.FiUnlock;
-export const Trash2 = (Fi as any).FiTrash2 ?? Fi.FiX;
+export const Trash2 = (Fi as any)['FiTrash2'] ?? Fi.FiX;
 export const Pin = Fi.FiMapPin;
 export const Eye = Fi.FiEye;
 export const Heart = Fi.FiHeart;
@@ -23,7 +25,7 @@ export const Image = Fi.FiImage;
 export const Type = Fi.FiType;
 
 export const Bell = Fi.FiBell;
-export const Wallet = (Fi as any).FiWallet ?? Fi.FiCreditCard;
+export const Wallet = Fi.FiCreditCard;
 export const ChevronDown = Fi.FiChevronDown;
 export const LogOut = Fi.FiLogOut;
 export const Settings = Fi.FiSettings;
@@ -34,6 +36,7 @@ export const CheckCircle = Fi.FiCheckCircle;
 export const XCircle = Fi.FiXCircle;
 export const Info = Fi.FiInfo;
 export const X = Fi.FiX;
+export const Menu = (Fi as any)['FiMenu'] ?? Fi.FiMoreHorizontal;
 
 export const MessageCircle = Fi.FiMessageCircle;
 export const Zap = Fi.FiZap;
@@ -42,14 +45,14 @@ export const Bookmark = Fi.FiBookmark;
 export const Send = Fi.FiSend;
 
 export const Home = Fi.FiHome;
-export const Compass = (Fi as any).FiCompass ?? Fi.FiMapPin;
+export const Compass = (Fi as any)['FiCompass'] ?? Fi.FiMapPin;
 export const FileText = Fi.FiFileText;
 export const PhoneCall = Fi.FiPhoneCall;
 
 export const CheckCheck = Fi.FiCheckCircle;
 
 export const Phone = Fi.FiPhone;
-export const PhoneOff = (Fi as any).FiPhoneOff ?? Fi.FiPhone;
+export const PhoneOff = (Fi as any)['FiPhoneOff'] ?? Fi.FiPhone;
 export const Video = Fi.FiVideo;
 export const Clock = Fi.FiClock;
 export const AlertCircle = Fi.FiAlertCircle;
@@ -74,7 +77,7 @@ export const Grid3x3 = Fi.FiGrid;
 
 export const Share2 = Fi.FiShare2;
 
-export const Ban = (Fi as any).FiSlash ?? Fi.FiX;
+export const Ban = (Fi as any)['FiSlash'] ?? Fi.FiX;
 
 export const Check = Fi.FiCheck;
 
@@ -102,3 +105,6 @@ export const SlidersHorizontal = Fi.FiSliders;
 export const Upload = Fi.FiUpload;
 
 export const Loader2 = Fi.FiLoader;
+
+export const Sun = (Fi as any)['FiSun'] ?? Fi.FiZap;
+export const Moon = (Fi as any)['FiMoon'] ?? Fi.FiZap;

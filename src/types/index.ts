@@ -103,11 +103,17 @@ export interface User {
 	name: string;
 	username: string;
 	avatar: string;
+	// Optional creator-profile fields. These may be returned for creators depending on backend shape,
+	// and are updated via POST /me/profile in the frontend.
+	bio?: string;
+	banner?: string;
+	category?: string;
 	role: UserRole;
 	createdAt: string;
 	isAgeVerified: boolean;
 	status: AccountStatus;
-	walletBalance: number;
+	/** INR paise as decimal string (API `balance_cents` / `amount_cents` scale). */
+	walletBalanceMinor: string;
 }
 
 export interface Creator extends User {
@@ -152,6 +158,8 @@ export interface Post {
 	likes: number;
 	likedBy: string[];
 	comments: Comment[];
+	/** Server `comment_count` on PostDTO; used before comments are loaded. */
+	commentCount: number;
 	createdAt: string;
 	isPinned: boolean;
 	unlockedBy: string[];

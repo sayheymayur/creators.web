@@ -89,7 +89,7 @@ export function OTPVerification() {
 	}
 
 	return (
-		<div className="min-h-screen bg-[#0d0d0d] flex items-center justify-center px-4">
+		<div className="min-h-screen bg-background text-foreground flex items-center justify-center px-4">
 			<div className="w-full max-w-sm">
 				<div className="text-center mb-8">
 					{success ? (
@@ -101,16 +101,16 @@ export function OTPVerification() {
 							<Mail className="w-8 h-8 text-rose-400" />
 						</div>
 					)}
-					<h1 className="text-2xl font-bold text-white mb-2">
+					<h1 className="text-2xl font-bold text-foreground mb-2">
 						{success ? 'Email Verified!' : 'Verify Your Email'}
 					</h1>
-					<p className="text-white/40 text-sm">
+					<p className="text-muted text-sm">
 						{success ?
 							'Your account is ready. Redirecting...' :
 							`Enter the 6-digit code sent to ${state.pendingEmail || 'your email'}`}
 					</p>
 					{!success && (
-						<p className="text-white/25 text-xs mt-1">Demo code: 123456</p>
+						<p className="text-muted/80 text-xs mt-1">Demo code: 123456</p>
 					)}
 				</div>
 
@@ -127,8 +127,8 @@ export function OTPVerification() {
 									value={digit}
 									onChange={e => handleChange(i, e.target.value)}
 									onKeyDown={e => handleKeyDown(i, e)}
-									className={`w-11 h-12 text-center text-lg font-bold bg-white/5 border rounded-xl text-white focus:outline-none transition-all ${
-										digit ? 'border-rose-500 bg-rose-500/5' : error ? 'border-rose-500/50' : 'border-white/10 focus:border-rose-500/50'
+									className={`w-11 h-12 text-center text-lg font-bold bg-input border rounded-xl text-foreground focus:outline-none transition-all ${
+										digit ? 'border-rose-500 bg-rose-500/5' : error ? 'border-rose-500/50' : 'border-border/20 focus:border-ring/40'
 									}`}
 								/>
 							))}
@@ -143,7 +143,7 @@ export function OTPVerification() {
 							onClick={handleResend}
 							disabled={!canResend}
 							className={`w-full flex items-center justify-center gap-2 mt-4 text-sm transition-colors ${
-								canResend ? 'text-rose-400 hover:text-rose-300' : 'text-white/25'
+								canResend ? 'text-rose-400 hover:text-rose-300' : 'text-muted/80'
 							}`}
 						>
 							<RefreshCw className="w-4 h-4" />

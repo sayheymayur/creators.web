@@ -1,33 +1,77 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Send, Image as ImageIcon, Zap, Lock, Unlock, CheckCheck, Check, Phone, Video } from '../../components/icons';
 import { useAuth } from '../../context/AuthContext';
 import { useChat } from '../../context/ChatContext';
+import { useContent } from '../../context/ContentContext';
 import { useWallet } from '../../context/WalletContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { useCall } from '../../context/CallContext';
+import { useSessions } from '../../context/SessionsContext';
 import { Avatar } from '../../components/ui/Avatar';
 import { TipModal } from '../../components/modals/TipModal';
 import { formatDistanceToNow } from '../../utils/date';
 import type { Message } from '../../types';
 import { ToastContainer } from '../../components/ui/Toast';
 import { Navbar } from '../../components/layout/Navbar';
+import { useRoomChat } from '../../hooks/useRoomChat';
+import { formatINR } from '../../services/razorpay';
 
 export function ChatRoom() {
 	const { id: convId } = useParams<{ id: string }>();
 	const navigate = useNavigate();
 	const { state: authState } = useAuth();
-	const { state: chatState, sendMessage, markRead, unlockMessage } = useChat();
+	const {
+		state: chatState,
+		sendMessage,
+		markRead,
+		unlockMessage,
+		upsertRoomMessages,
+		addRoomMessage,
+	} = useChat();
+	const { state: contentState } = useContent();
 	const { deductFunds } = useWallet();
 	const { showToast } = useNotifications();
 	const { startCall } = useCall();
+	const { state: sessionsState, endSession: endBookedSession } = useSessions();
 	const [text, setText] = useState('');
 	const [showTipModal, setShowTipModal] = useState(false);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
+	const replyIdxRef = useRef(0);
 
 	const conv = chatState.conversations.find(c => c.id === convId);
 	const messages = convId ? (chatState.messages[convId] ?? []) : [];
 	const userId = authState.user?.id ?? '';
+
+	const getParticipantMeta = useCallback(
+		(uid: string) => {
+			if (!conv) return { name: 'User', avatar: '' };
+			const idx = conv.participantIds.indexOf(uid);
+			if (idx === -1) return { name: 'User', avatar: '' };
+			return {
+				name: conv.participantNames[idx] ?? 'User',
+				avatar: conv.participantAvatars[idx] ?? '',
+			};
+		},
+		[conv]
+	);
+
+	const onProtocolError = useCallback(
+		(msg: string) => {
+			showToast(msg, 'error');
+		},
+		[showToast]
+	);
+
+	const { otherTyping, realtimeActive, notifyTyping, sendRealtime } = useRoomChat({
+		roomUuid: conv && convId ? convId : undefined,
+		currentUserId: userId,
+		postsWsStatus: contentState.postsWsStatus,
+		getParticipantMeta,
+		upsertRoomMessages,
+		addRoomMessage,
+		onProtocolError,
+	});
 
 	useEffect(() => {
 		if (convId) markRead(convId);
@@ -39,27 +83,57 @@ export function ChatRoom() {
 
 	if (!conv || !convId) {
 		return (
-			<div className="min-h-screen bg-[#0d0d0d] flex items-center justify-center">
-				<p className="text-white/40">Conversation not found</p>
+			<div className="min-h-screen bg-background text-foreground flex items-center justify-center">
+				<p className="text-muted">Conversation not found</p>
 			</div>
 		);
 	}
+
+	const roomId = convId;
+	const activeChatBooking =
+		sessionsState.active?.accepted.kind === 'chat' && sessionsState.active.accepted.room_id === roomId ?
+			sessionsState.active.accepted :
+			null;
 
 	const otherIdx = conv.participantIds.indexOf(userId) === 0 ? 1 : 0;
 	const otherName = conv.participantNames[otherIdx];
 	const otherAvatar = conv.participantAvatars[otherIdx];
 	const otherId = conv.participantIds[otherIdx];
 
+	const replies = [
+		'Thank you for the message.',
+		'I appreciate the feedback. New content is planned.',
+		'Thanks for the support. Let me know if you have any requests.',
+		'I appreciate you being here.',
+		'That took some time to prepare, glad you noticed.',
+	];
+	function getAutoReply() {
+		const reply = replies[replyIdxRef.current % replies.length];
+		replyIdxRef.current++;
+		return reply;
+	}
+
 	function handleSend(e: React.FormEvent) {
 		e.preventDefault();
 		if (!text.trim() || !authState.user) return;
+		const trimmed = text.trim();
+
+		if (realtimeActive) {
+			void sendRealtime(trimmed).then(() => {
+				setText('');
+			}).catch(err => {
+				showToast(err instanceof Error ? err.message : 'Send failed', 'error');
+			});
+			return;
+		}
+
 		const msg: Message = {
 			id: `msg-${Date.now()}`,
-			conversationId: convId!,
+			conversationId: roomId,
 			senderId: userId,
 			senderName: authState.user.name,
 			senderAvatar: authState.user.avatar,
-			content: text.trim(),
+			content: trimmed,
 			isPaid: false,
 			isUnlocked: true,
 			createdAt: new Date().toISOString(),
@@ -71,7 +145,7 @@ export function ChatRoom() {
 		setTimeout(() => {
 			const reply: Message = {
 				id: `msg-${Date.now()}-reply`,
-				conversationId: convId!,
+				conversationId: roomId,
 				senderId: otherId,
 				senderName: otherName,
 				senderAvatar: otherAvatar,
@@ -89,54 +163,59 @@ export function ChatRoom() {
 		if (!msg.price) return;
 		const ok = deductFunds(msg.price, 'ppv', `Unlock message from ${otherName}`, otherId, otherName);
 		if (ok) {
-			unlockMessage(msg.id, convId!);
+			unlockMessage(msg.id, roomId);
 			showToast('Message unlocked!');
 		} else {
 			showToast('Insufficient balance', 'error');
 		}
 	}
 
-	const replies = [
-		'Thank you for the message.',
-		'I appreciate the feedback. New content is planned.',
-		'Thanks for the support. Let me know if you have any requests.',
-		'I appreciate you being here.',
-		'That took some time to prepare, glad you noticed.',
-	];
-	let replyIdx = 0;
-	function getAutoReply() {
-		const reply = replies[replyIdx % replies.length];
-		replyIdx++;
-		return reply;
-	}
+	const statusLine = otherTyping ?
+		'Typing…' :
+		conv.isOnline ?
+			'Online now' :
+			'Offline';
 
 	return (
-		<div className="min-h-screen bg-[#0d0d0d] flex flex-col">
+		<div className="min-h-screen bg-background text-foreground flex flex-col">
 			<Navbar />
 			<ToastContainer />
 
-			<div className="fixed top-14 left-0 right-0 z-30 bg-[#0d0d0d]/90 backdrop-blur-xl border-b border-white/5">
+			<div className="fixed top-14 left-0 right-0 z-30 bg-background/90 backdrop-blur-xl border-b border-border/10">
 				<div className="max-w-2xl mx-auto px-4 h-14 flex items-center gap-3">
-					<button type="button" onClick={() => { void navigate('/messages'); }} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors">
-						<ArrowLeft className="w-5 h-5 text-white/60" />
+					<button type="button" onClick={() => { void navigate('/messages'); }} className="p-1.5 rounded-lg hover:bg-foreground/10 transition-colors">
+						<ArrowLeft className="w-5 h-5 text-muted" />
 					</button>
 					<Avatar src={otherAvatar} alt={otherName} size="md" isOnline={conv.isOnline} />
 					<div>
-						<p className="text-sm font-semibold text-white">{otherName}</p>
-						<p className="text-xs text-white/40">{conv.isOnline ? 'Online now' : 'Offline'}</p>
+						<p className="text-sm font-semibold text-foreground">{otherName}</p>
+						<p className="text-xs text-muted">{statusLine}</p>
 					</div>
 					<div className="ml-auto flex items-center gap-2">
+						{activeChatBooking && (
+							<button
+								type="button"
+								onClick={() => {
+									void endBookedSession(activeChatBooking.request_id)
+										.then(() => showToast('Session ended'))
+										.catch(err => showToast(err instanceof Error ? err.message : 'Failed to end session', 'error'));
+								}}
+								className="text-xs font-semibold px-3 py-1.5 rounded-xl border border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/15 transition-colors"
+							>
+								End session
+							</button>
+						)}
 						<button
 							type="button"
 							onClick={() => { startCall(otherId, otherName, otherAvatar, 'audio'); void navigate('/call'); }}
-							className="w-8 h-8 rounded-xl bg-white/8 hover:bg-emerald-500/20 hover:text-emerald-400 text-white/50 flex items-center justify-center transition-all"
+							className="w-8 h-8 rounded-xl bg-foreground/10 hover:bg-emerald-500/20 hover:text-emerald-400 text-muted flex items-center justify-center transition-all"
 						>
 							<Phone className="w-4 h-4" />
 						</button>
 						<button
 							type="button"
 							onClick={() => { startCall(otherId, otherName, otherAvatar, 'video'); void navigate('/call'); }}
-							className="w-8 h-8 rounded-xl bg-white/8 hover:bg-sky-500/20 hover:text-sky-400 text-white/50 flex items-center justify-center transition-all"
+							className="w-8 h-8 rounded-xl bg-foreground/10 hover:bg-sky-500/20 hover:text-sky-400 text-muted flex items-center justify-center transition-all"
 						>
 							<Video className="w-4 h-4" />
 						</button>
@@ -160,12 +239,12 @@ export function ChatRoom() {
 								{!isMe && <Avatar src={msg.senderAvatar} alt={msg.senderName} size="sm" className="mt-auto mb-1" />}
 								<div className={`max-w-[75%] ${isMe ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
 									{!msg.isUnlocked && msg.isPaid ? (
-										<div className={`rounded-2xl overflow-hidden border ${isMe ? 'border-white/10 bg-white/5' : 'border-rose-500/20 bg-rose-500/5'}`}>
+										<div className={`rounded-2xl overflow-hidden border ${isMe ? 'border-border/20 bg-foreground/5' : 'border-rose-500/20 bg-rose-500/5'}`}>
 											<div className="px-4 py-3 flex items-center gap-2">
 												<Lock className="w-4 h-4 text-rose-400 shrink-0" />
 												<div className="flex-1">
-													<p className="text-xs text-white/60">Paid message (${msg.price?.toFixed(2)})</p>
-													<p className="text-[10px] text-white/30">Select to unlock and view this message.</p>
+													<p className="text-xs text-foreground/70">Paid message ({formatINR(msg.price ?? 0)})</p>
+													<p className="text-[10px] text-muted/80">Select to unlock and view this message.</p>
 												</div>
 												{!isMe && (
 													<button
@@ -182,7 +261,7 @@ export function ChatRoom() {
 										<div className={`px-4 py-2.5 rounded-2xl text-sm ${
 											isMe ?
 												'bg-rose-500 text-white rounded-tr-sm' :
-												'bg-[#1e1e1e] text-white/80 rounded-tl-sm'
+												'bg-surface2 text-foreground/90 rounded-tl-sm'
 										}`}
 										>
 											{msg.isUnlocked && msg.isPaid && (
@@ -194,11 +273,11 @@ export function ChatRoom() {
 										</div>
 									)}
 									<div className={`flex items-center gap-1 ${isMe ? 'flex-row-reverse' : ''}`}>
-										<p className="text-[10px] text-white/20">{formatDistanceToNow(msg.createdAt)}</p>
+										<p className="text-[10px] text-muted/70">{formatDistanceToNow(msg.createdAt)}</p>
 										{isMe && (
 											msg.isSeen ?
 												<CheckCheck className="w-3 h-3 text-rose-400" /> :
-												<Check className="w-3 h-3 text-white/20" />
+												<Check className="w-3 h-3 text-muted/70" />
 										)}
 									</div>
 								</div>
@@ -209,17 +288,24 @@ export function ChatRoom() {
 				</div>
 			</div>
 
-			<div className="fixed bottom-0 left-0 right-0 bg-[#0d0d0d]/95 backdrop-blur-xl border-t border-white/5">
+			<div className="fixed bottom-0 left-0 right-0 bg-background/95 backdrop-blur-xl border-t border-border/10">
 				<div className="max-w-2xl mx-auto px-4 py-3">
 					<form onSubmit={handleSend} className="flex gap-2">
-						<button type="button" className="p-2.5 rounded-xl hover:bg-white/10 transition-colors text-white/40 hover:text-white/70">
+						<button type="button" className="p-2.5 rounded-xl hover:bg-foreground/10 transition-colors text-muted hover:text-foreground">
 							<ImageIcon className="w-5 h-5" />
 						</button>
 						<input
 							value={text}
-							onChange={e => setText(e.target.value)}
+							onChange={e => {
+								const v = e.target.value;
+								setText(v);
+								if (realtimeActive && v.trim()) notifyTyping(true);
+							}}
+							onBlur={() => {
+								if (realtimeActive) notifyTyping(false);
+							}}
 							placeholder="Type a message..."
-							className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-4 py-2.5 text-sm text-white placeholder-white/25 focus:outline-none focus:border-rose-500/30"
+							className="flex-1 bg-input border border-border/20 rounded-2xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
 						/>
 						<button
 							type="submit"

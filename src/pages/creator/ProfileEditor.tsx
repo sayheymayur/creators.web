@@ -1,15 +1,20 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Camera, Save } from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';
 import { Button } from '../../components/ui/Button';
 import { useAuth, useCurrentCreator } from '../../context/AuthContext';
+import { useContent } from '../../context/ContentContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { mockCreators } from '../../data/users';
-import { delayMs } from '../../utils/delay';
+import { ApiError, creatorsApi } from '../../services/creatorsApi';
+import { uploadMediaAsset } from '../../services/mediaUpload';
+import { isPostsMockMode } from '../../services/postsMode';
+import { formatINR } from '../../services/razorpay';
 
 export function ProfileEditor() {
 	const creator = useCurrentCreator();
-	const { state: authState, updateUser, updateCreatorProfile } = useAuth();
+	const { state: authState, updateUser } = useAuth();
+	const { creatorWsUpsert } = useContent();
 	const { showToast } = useNotifications();
 
 	const creatorData = creator ?? mockCreators[0];
@@ -27,131 +32,209 @@ export function ProfileEditor() {
 	const [avatarUrl, setAvatarUrl] = useState(isNewGoogleCreator && currentUser ? currentUser.avatar : creatorData.avatar);
 	const [bannerUrl, setBannerUrl] = useState(creatorData.banner);
 	const [isSaving, setIsSaving] = useState(false);
+	const [avatarFile, setAvatarFile] = useState<File | null>(null);
+	const [bannerFile, setBannerFile] = useState<File | null>(null);
+
+	const avatarInputRef = useRef<HTMLInputElement | null>(null);
+	const bannerInputRef = useRef<HTMLInputElement | null>(null);
+
+	const avatarPreviewUrl = useMemo(() => {
+		if (!avatarFile) return null;
+		return URL.createObjectURL(avatarFile);
+	}, [avatarFile]);
+
+	const bannerPreviewUrl = useMemo(() => {
+		if (!bannerFile) return null;
+		return URL.createObjectURL(bannerFile);
+	}, [bannerFile]);
+
+	useEffect(() => {
+		return () => {
+			if (avatarPreviewUrl) URL.revokeObjectURL(avatarPreviewUrl);
+		};
+	}, [avatarPreviewUrl]);
+
+	useEffect(() => {
+		return () => {
+			if (bannerPreviewUrl) URL.revokeObjectURL(bannerPreviewUrl);
+		};
+	}, [bannerPreviewUrl]);
 
 	const CATEGORIES = ['Fitness', 'Art', 'Tech', 'Travel', 'Music', 'Food', 'Gaming', 'Lifestyle'];
 
 	function handleSave() {
+		if (isSaving) return;
 		setIsSaving(true);
-		void delayMs(800).then(() => {
-			const parsedPrice = Math.max(1, parseFloat(price) || 0);
-			const perMinuteRate = Math.max(0.5, parseFloat((parsedPrice / 4).toFixed(2)));
+		const avatarPromise = avatarFile ? uploadMediaAsset('avatar', avatarFile).then(r => r.assetId) : Promise.resolve(undefined);
+		const bannerPromise = bannerFile ? uploadMediaAsset('banner', bannerFile).then(r => r.assetId) : Promise.resolve(undefined);
 
-			updateUser({
-				name,
-				username,
-				avatar: avatarUrl,
-			});
-			updateCreatorProfile({
-				name,
-				username,
-				bio,
-				category,
-				avatar: avatarUrl,
-				banner: bannerUrl,
-				subscriptionPrice: parsedPrice,
-				perMinuteRate,
-			});
-			showToast('Creator profile updated!');
-			setIsSaving(false);
-		});
+		void Promise.all([avatarPromise, bannerPromise])
+			.then(([avatarAssetId, bannerAssetId]) =>
+				creatorsApi.me.updateProfile({
+					name: name.trim() || undefined,
+					username: username.trim() || undefined,
+					bio: bio.trim() || undefined,
+					category: category?.trim() || undefined,
+					avatarAssetId,
+					bannerAssetId,
+				})
+			)
+			.then(({ user }) => {
+				updateUser(user);
+				if (!isPostsMockMode()) {
+					void creatorWsUpsert(
+						username.trim() || creatorData.username,
+						name.trim() || creatorData.name,
+						bio.trim() || undefined
+					).catch(() => {});
+				}
+				showToast('Profile updated!');
+				setAvatarFile(null);
+				setBannerFile(null);
+			})
+			.catch(err => {
+				if (err instanceof ApiError) {
+					const body = err.body;
+					const msg =
+						typeof body === 'object' && body && 'message' in body && typeof (body as { message?: unknown }).message === 'string' ?
+							(body as { message: string }).message :
+							`Save failed (HTTP ${err.status}).`;
+					showToast(msg, 'error');
+					return;
+				}
+				showToast(err instanceof Error ? err.message : 'Save failed.', 'error');
+			})
+			.finally(() => setIsSaving(false));
 	}
 
 	return (
 		<Layout>
 			<div className="max-w-2xl mx-auto px-4 py-6">
-				<h1 className="text-xl font-bold text-white mb-1">Set Up Creator Profile</h1>
-				<p className="text-sm text-white/40 mb-6">
+				<h1 className="text-xl font-bold text-foreground dark:text-white mb-1">Set Up Creator Profile</h1>
+				<p className="text-sm text-muted dark:text-white/40 mb-6">
 					This is how your fan-facing profile appears after Google signup.
 				</p>
 
 				<div className="relative mb-6">
 					<div className="h-32 rounded-2xl overflow-hidden relative">
-						<img src={bannerUrl} alt="" className="w-full h-full object-cover" />
-						<button className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 hover:opacity-100 transition-opacity">
-							<div className="bg-black/60 rounded-xl px-3 py-2 flex items-center gap-2 text-white text-sm">
+						<img src={bannerPreviewUrl ?? bannerUrl} alt="" className="w-full h-full object-cover" />
+						<button
+							type="button"
+							onClick={() => bannerInputRef.current?.click()}
+							className="absolute inset-0 flex items-center justify-center bg-background/40 dark:bg-black/40 opacity-0 hover:opacity-100 transition-opacity"
+						>
+							<div className="bg-background/70 text-foreground dark:bg-black/60 dark:text-white rounded-xl px-3 py-2 flex items-center gap-2 text-sm backdrop-blur-sm border border-border/20">
 								<Camera className="w-4 h-4" />
 								Change Banner
 							</div>
 						</button>
+						<input
+							ref={bannerInputRef}
+							type="file"
+							accept="image/*"
+							className="hidden"
+							onChange={e => {
+								const f = e.target.files?.[0] ?? null;
+								setBannerFile(f);
+							}}
+						/>
 					</div>
 
 					<div className="absolute -bottom-6 left-4">
 						<div className="relative">
-							<img src={avatarUrl} alt="" className="w-16 h-16 rounded-2xl border-4 border-[#0d0d0d] object-cover" />
-							<button className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-2xl opacity-0 hover:opacity-100 transition-opacity">
-								<Camera className="w-4 h-4 text-white" />
+							<img
+								src={avatarPreviewUrl ?? avatarUrl}
+								alt=""
+								className="w-16 h-16 rounded-2xl border-4 border-background object-cover"
+							/>
+							<button
+								type="button"
+								onClick={() => avatarInputRef.current?.click()}
+								className="absolute inset-0 flex items-center justify-center bg-background/50 dark:bg-black/50 rounded-2xl opacity-0 hover:opacity-100 transition-opacity"
+							>
+								<Camera className="w-4 h-4 text-foreground dark:text-white" />
 							</button>
+							<input
+								ref={avatarInputRef}
+								type="file"
+								accept="image/*"
+								className="hidden"
+								onChange={e => {
+									const f = e.target.files?.[0] ?? null;
+									setAvatarFile(f);
+								}}
+							/>
 						</div>
 					</div>
 				</div>
 
 				<div className="mt-10 space-y-4">
 					<div>
-						<label className="block text-sm font-medium text-white/60 mb-1.5">Email</label>
+						<label className="block text-sm font-medium text-muted dark:text-white/60 mb-1.5">Email</label>
 						<input
 							value={authState.user?.email ?? creatorData.email}
 							readOnly
-							className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white/60 cursor-not-allowed"
+							className="w-full bg-foreground/5 border border-border/20 rounded-xl px-4 py-3 text-sm text-muted cursor-not-allowed"
 						/>
 					</div>
 
 					<div>
-						<label className="block text-sm font-medium text-white/60 mb-1.5">Display Name</label>
+						<label className="block text-sm font-medium text-muted dark:text-white/60 mb-1.5">Display Name</label>
 						<input
 							value={name}
 							onChange={e => setName(e.target.value)}
-							className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-rose-500/50"
+							className="w-full bg-input border border-border/20 rounded-xl px-4 py-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
 						/>
 					</div>
 
 					<div>
-						<label className="block text-sm font-medium text-white/60 mb-1.5">Username</label>
+						<label className="block text-sm font-medium text-muted mb-1.5">Username</label>
 						<input
 							value={username}
 							onChange={e => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
-							className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-rose-500/50"
+							className="w-full bg-input border border-border/20 rounded-xl px-4 py-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
 						/>
 					</div>
 
 					<div>
-						<label className="block text-sm font-medium text-white/60 mb-1.5">Avatar URL</label>
+						<label className="block text-sm font-medium text-muted dark:text-white/60 mb-1.5">Avatar URL</label>
 						<input
 							value={avatarUrl}
 							onChange={e => setAvatarUrl(e.target.value)}
 							placeholder="https://..."
-							className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-rose-500/50"
+							className="w-full bg-input border border-border/20 rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
 						/>
 					</div>
 
 					<div>
-						<label className="block text-sm font-medium text-white/60 mb-1.5">Banner URL</label>
+						<label className="block text-sm font-medium text-muted dark:text-white/60 mb-1.5">Banner URL</label>
 						<input
 							value={bannerUrl}
 							onChange={e => setBannerUrl(e.target.value)}
 							placeholder="https://..."
-							className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-rose-500/50"
+							className="w-full bg-input border border-border/20 rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
 						/>
 					</div>
 
 					<div>
-						<label className="block text-sm font-medium text-white/60 mb-1.5">Bio</label>
+						<label className="block text-sm font-medium text-muted dark:text-white/60 mb-1.5">Bio</label>
 						<textarea
 							value={bio}
 							onChange={e => setBio(e.target.value)}
 							rows={4}
-							className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-rose-500/50 resize-none"
+							className="w-full bg-input border border-border/20 rounded-xl px-4 py-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40 resize-none"
 						/>
 					</div>
 
 					<div>
-						<label className="block text-sm font-medium text-white/60 mb-1.5">Category</label>
+						<label className="block text-sm font-medium text-muted mb-1.5">Category</label>
 						<div className="grid grid-cols-4 gap-2">
 							{CATEGORIES.map(cat => (
 								<button
 									key={cat}
 									onClick={() => setCategory(cat)}
 									className={`py-2 rounded-xl text-xs font-medium transition-all ${
-										category === cat ? 'bg-rose-500 text-white' : 'bg-white/5 text-white/50 hover:bg-white/10'
+										category === cat ? 'bg-rose-500 text-white' : 'bg-foreground/5 text-muted hover:bg-foreground/10'
 									}`}
 								>
 									{cat}
@@ -161,19 +244,19 @@ export function ProfileEditor() {
 					</div>
 
 					<div>
-						<label className="block text-sm font-medium text-white/60 mb-1.5">Subscription Price ($/month)</label>
+						<label className="block text-sm font-medium text-muted mb-1.5">Subscription Price (₹/month)</label>
 						<div className="relative">
-							<span className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40">$</span>
+							<span className="absolute left-4 top-1/2 -translate-y-1/2 text-muted">₹</span>
 							<input
 								type="number"
 								value={price}
 								onChange={e => setPrice(e.target.value)}
 								min="1"
 								step="0.99"
-								className="w-full bg-white/5 border border-white/10 rounded-xl pl-8 pr-4 py-3 text-sm text-white focus:outline-none focus:border-rose-500/50"
+								className="w-full bg-input border border-border/20 rounded-xl pl-8 pr-4 py-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
 							/>
 						</div>
-						<p className="text-xs text-white/30 mt-1">Platform fee 20%. You receive ${((parseFloat(price) || 0) * 0.8).toFixed(2)} per subscriber.</p>
+						<p className="text-xs text-muted/80 mt-1">Platform fee 20%. You receive {formatINR((parseFloat(price) || 0) * 0.8)} per subscriber.</p>
 					</div>
 
 					<Button variant="primary" fullWidth isLoading={isSaving} onClick={() => { void handleSave(); }} leftIcon={<Save className="w-4 h-4" />}>

@@ -41,26 +41,26 @@ export function CreatorApproval() {
 		pending: 'bg-amber-500/20 text-amber-400',
 		approved: 'bg-emerald-500/20 text-emerald-400',
 		rejected: 'bg-rose-500/20 text-rose-400',
-		not_submitted: 'bg-white/10 text-white/40',
+		not_submitted: 'bg-foreground/10 text-muted',
 	};
 
 	return (
-		<div className="min-h-screen bg-[#0d0d0d]">
+		<div className="min-h-screen bg-background text-foreground">
 			<Navbar />
 			<ToastContainer />
 			<div className="max-w-4xl mx-auto px-4 pt-20 pb-8">
 				<div className="flex items-center gap-3 mb-6">
 					<Shield className="w-5 h-5 text-rose-400" />
-					<h1 className="text-xl font-bold text-white">KYC Applications</h1>
+					<h1 className="text-xl font-bold text-foreground">KYC Applications</h1>
 				</div>
 
-				<div className="flex gap-1 bg-white/5 p-0.5 rounded-xl mb-4 w-fit">
+				<div className="flex gap-1 bg-foreground/5 p-0.5 rounded-xl mb-4 w-fit">
 					{(['pending', 'all'] as const).map(tab => (
 						<button
 							key={tab}
 							onClick={() => setActiveTab(tab)}
 							className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-all capitalize ${
-								activeTab === tab ? 'bg-white/10 text-white' : 'text-white/40'
+								activeTab === tab ? 'bg-foreground/10 text-foreground' : 'text-muted'
 							}`}
 						>
 							{tab} {tab === 'pending' && `(${applications.filter(a => a.status === 'pending').length})`}
@@ -70,21 +70,21 @@ export function CreatorApproval() {
 
 				<div className="space-y-3">
 					{displayed.length === 0 ? (
-						<div className="text-center py-10 bg-[#161616] border border-white/5 rounded-2xl">
-							<Clock className="w-8 h-8 text-white/10 mx-auto mb-2" />
-							<p className="text-white/30 text-sm">No pending applications</p>
+						<div className="text-center py-10 bg-surface border border-border/20 rounded-2xl">
+							<Clock className="w-8 h-8 text-muted/50 mx-auto mb-2" />
+							<p className="text-muted text-sm">No pending applications</p>
 						</div>
 					) : (
 						displayed.map(app => (
-							<div key={app.id} className="bg-[#161616] border border-white/5 rounded-2xl p-4">
+							<div key={app.id} className="bg-surface border border-border/20 rounded-2xl p-4">
 								<div className="flex items-start gap-4">
 									<img src={app.creatorAvatar} alt={app.creatorName} className="w-12 h-12 rounded-xl object-cover shrink-0" />
 									<div className="flex-1 min-w-0">
 										<div className="flex items-start justify-between gap-2 mb-1">
 											<div>
-												<p className="font-semibold text-white">{app.creatorName}</p>
-												<p className="text-xs text-white/40">{app.creatorEmail}</p>
-												<p className="text-xs text-white/30 mt-0.5">Submitted {formatDate(app.submittedAt)}</p>
+												<p className="font-semibold text-foreground">{app.creatorName}</p>
+												<p className="text-xs text-muted">{app.creatorEmail}</p>
+												<p className="text-xs text-muted/80 mt-0.5">Submitted {formatDate(app.submittedAt)}</p>
 											</div>
 											<span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${statusColors[app.status]}`}>
 												{app.status}
@@ -101,7 +101,7 @@ export function CreatorApproval() {
 									<div className="flex gap-2 mt-3">
 										<button
 											onClick={() => setSelectedApp(app)}
-											className="flex-1 flex items-center justify-center gap-1.5 bg-white/5 hover:bg-white/10 text-white/60 hover:text-white text-sm py-2 rounded-xl transition-colors"
+											className="flex-1 flex items-center justify-center gap-1.5 bg-foreground/5 hover:bg-foreground/10 text-muted hover:text-foreground text-sm py-2 rounded-xl transition-colors"
 										>
 											<Eye className="w-4 h-4" /> Review
 										</button>
@@ -131,8 +131,8 @@ export function CreatorApproval() {
 						<div className="flex items-center gap-3">
 							<img src={selectedApp.creatorAvatar} alt="" className="w-12 h-12 rounded-xl object-cover" />
 							<div>
-								<p className="font-semibold text-white">{selectedApp.creatorName}</p>
-								<p className="text-xs text-white/40">{selectedApp.creatorEmail}</p>
+								<p className="font-semibold text-foreground">{selectedApp.creatorName}</p>
+								<p className="text-xs text-muted">{selectedApp.creatorEmail}</p>
 							</div>
 						</div>
 						<div className="grid grid-cols-3 gap-2">
@@ -142,7 +142,7 @@ export function CreatorApproval() {
 								{ label: 'Selfie', url: selectedApp.selfieUrl },
 							].map(({ label, url }) => (
 								<div key={label}>
-									<p className="text-xs text-white/40 mb-1">{label}</p>
+									<p className="text-xs text-muted mb-1">{label}</p>
 									<img src={url} alt={label} className="w-full h-24 object-cover rounded-xl" />
 								</div>
 							))}
@@ -161,13 +161,13 @@ export function CreatorApproval() {
 
 			<Modal isOpen={showRejectModal} onClose={() => setShowRejectModal(false)} title="Reject Application">
 				<div className="p-5">
-					<p className="text-sm text-white/60 mb-3">Provide a reason for rejection. This will be shared with the creator.</p>
+					<p className="text-sm text-muted mb-3">Provide a reason for rejection. This will be shared with the creator.</p>
 					<textarea
 						value={rejectReason}
 						onChange={e => setRejectReason(e.target.value)}
 						placeholder="e.g., ID documents are blurry..."
 						rows={3}
-						className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/25 focus:outline-none focus:border-rose-500/50 resize-none mb-3"
+						className="w-full bg-input border border-border/20 rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40 resize-none mb-3"
 					/>
 					<Button variant="danger" fullWidth onClick={handleReject}>
 						Confirm Rejection

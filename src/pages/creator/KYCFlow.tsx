@@ -28,8 +28,8 @@ export function KYCFlow() {
 					<div className="w-16 h-16 bg-emerald-500/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
 						<CheckCircle className="w-8 h-8 text-emerald-400" />
 					</div>
-					<h2 className="text-xl font-bold text-white mb-2">Identity Verified</h2>
-					<p className="text-white/40 mb-6">Your account is fully verified and you can monetize your content.</p>
+					<h2 className="text-xl font-bold text-foreground mb-2">Identity Verified</h2>
+					<p className="text-muted mb-6">Your account is fully verified and you can monetize your content.</p>
 					<Button variant="primary" onClick={() => { void navigate('/creator-dashboard'); }}>Go to Dashboard</Button>
 				</div>
 			</Layout>
@@ -55,13 +55,13 @@ export function KYCFlow() {
 					<div className="w-16 h-16 bg-amber-500/15 rounded-2xl flex items-center justify-center mx-auto mb-4">
 						<Clock className="w-8 h-8 text-amber-400" />
 					</div>
-					<h2 className="text-xl font-bold text-white mb-2">Under Review</h2>
-					<p className="text-white/40 mb-6">Your documents have been submitted and are being reviewed. This typically takes 1-2 business days.</p>
-					<div className="bg-[#161616] border border-white/5 rounded-2xl p-4 text-left mb-6">
+					<h2 className="text-xl font-bold text-foreground mb-2">Under Review</h2>
+					<p className="text-muted mb-6">Your documents have been submitted and are being reviewed. This typically takes 1-2 business days.</p>
+					<div className="bg-surface border border-border/20 rounded-2xl p-4 text-left mb-6">
 						{['Government ID (Front)', 'Government ID (Back)', 'Selfie with ID'].map(doc => (
-							<div key={doc} className="flex items-center gap-3 py-2 border-b border-white/5 last:border-0">
+							<div key={doc} className="flex items-center gap-3 py-2 border-b border-border/10 last:border-0">
 								<CheckCircle className="w-4 h-4 text-emerald-400" />
-								<span className="text-sm text-white/60">{doc}</span>
+								<span className="text-sm text-foreground/80">{doc}</span>
 								<span className="ml-auto text-xs text-emerald-400">Submitted</span>
 							</div>
 						))}
@@ -90,8 +90,8 @@ export function KYCFlow() {
 						<Shield className="w-5 h-5 text-rose-400" />
 					</div>
 					<div>
-						<h1 className="text-xl font-bold text-white">Identity Verification</h1>
-						<p className="text-white/40 text-sm">Required to monetize your content</p>
+						<h1 className="text-xl font-bold text-foreground">Identity Verification</h1>
+						<p className="text-muted text-sm">Required to monetize your content</p>
 					</div>
 				</div>
 
@@ -107,13 +107,13 @@ export function KYCFlow() {
 
 				<div className="flex gap-2 mb-6">
 					{[1, 2, 3].map(s => (
-						<div key={s} className={`flex-1 h-1 rounded-full transition-all ${s <= step ? 'bg-rose-500' : 'bg-white/10'}`} />
+						<div key={s} className={`flex-1 h-1 rounded-full transition-all ${s <= step ? 'bg-rose-500' : 'bg-foreground/10'}`} />
 					))}
 				</div>
 
-				<div className="bg-[#161616] border border-white/5 rounded-2xl p-5 mb-4">
-					<h3 className="font-semibold text-white mb-1">Step {step}: {currentStep.title}</h3>
-					<p className="text-white/40 text-sm mb-4">Upload a clear photo of your {currentStep.title.toLowerCase()}</p>
+				<div className="bg-surface border border-border/20 rounded-2xl p-5 mb-4">
+					<h3 className="font-semibold text-foreground mb-1">Step {step}: {currentStep.title}</h3>
+					<p className="text-muted text-sm mb-4">Upload a clear photo of your {currentStep.title.toLowerCase()}</p>
 
 					<button
 						type="button"
@@ -121,7 +121,7 @@ export function KYCFlow() {
 						className={`w-full border-2 border-dashed rounded-2xl py-10 flex flex-col items-center gap-3 transition-all ${
 							uploadedMap[currentStep.key] ?
 								'border-emerald-500/50 bg-emerald-500/5' :
-								'border-white/10 hover:border-rose-500/30 hover:bg-white/2'
+								'border-border/20 hover:border-rose-500/30 hover:bg-foreground/5'
 						}`}
 					>
 						{uploadedMap[currentStep.key] ? (
@@ -131,9 +131,9 @@ export function KYCFlow() {
 							</>
 						) : (
 							<>
-								<Upload className="w-10 h-10 text-white/20" />
-								<p className="text-white/40 text-sm">Click to upload {currentStep.title}</p>
-								<p className="text-white/20 text-xs">Accepted: JPG, PNG, PDF</p>
+								<Upload className="w-10 h-10 text-muted/60" />
+								<p className="text-muted text-sm">Click to upload {currentStep.title}</p>
+								<p className="text-muted/70 text-xs">Accepted: JPG, PNG, PDF</p>
 							</>
 						)}
 					</button>

@@ -8,6 +8,7 @@ import { useChat } from '../../context/ChatContext';
 import { formatDistanceToNow } from '../../utils/date';
 import { mockCreators } from '../../data/users';
 import { useContent } from '../../context/ContentContext';
+import { randomUuid } from '../../utils/isUuid';
 
 export function MessagesList() {
 	const { state: authState } = useAuth();
@@ -43,7 +44,7 @@ export function MessagesList() {
 			navigate(`/messages/${existing.id}`);
 			return;
 		}
-		const convId = `conv-${Date.now()}`;
+		const convId = randomUuid();
 		addConversation({
 			id: convId,
 			participantIds: [userId, creatorId],
@@ -66,7 +67,7 @@ export function MessagesList() {
 		<Layout>
 			<div className="max-w-2xl mx-auto px-4 py-6">
 				<div className="flex items-center justify-between mb-5">
-					<h1 className="text-xl font-bold text-white">Messages</h1>
+					<h1 className="text-xl font-bold text-foreground">Messages</h1>
 					<button
 						onClick={() => setShowNewChat(v => !v)}
 						className="w-9 h-9 bg-rose-500 hover:bg-rose-600 rounded-xl flex items-center justify-center transition-colors"
@@ -76,22 +77,22 @@ export function MessagesList() {
 				</div>
 
 				{showNewChat && (
-					<div className="bg-[#161616] border border-white/10 rounded-2xl p-4 mb-4">
-						<p className="text-xs text-white/40 font-medium mb-3 uppercase tracking-wider">Start a new conversation</p>
+					<div className="bg-surface border border-border/20 rounded-2xl p-4 mb-4">
+						<p className="text-xs text-muted font-medium mb-3 uppercase tracking-wider">Start a new conversation</p>
 						{messagableCreators.length === 0 ? (
-							<p className="text-white/30 text-sm">Subscribe to creators to message them</p>
+							<p className="text-muted text-sm">Subscribe to creators to message them</p>
 						) : (
 							<div className="space-y-2">
 								{messagableCreators.map(creator => (
 									<button
 										key={creator.id}
 										onClick={() => startNewChat(creator.id, creator.name, creator.avatar, creator.isOnline)}
-										className="w-full flex items-center gap-3 hover:bg-white/5 rounded-xl p-2 transition-colors"
+										className="w-full flex items-center gap-3 hover:bg-foreground/5 rounded-xl p-2 transition-colors"
 									>
 										<Avatar src={creator.avatar} alt={creator.name} size="md" isOnline={creator.isOnline} />
 										<div className="text-left">
-											<p className="text-sm font-medium text-white">{creator.name}</p>
-											<p className="text-xs text-white/40">{creator.category}</p>
+											<p className="text-sm font-medium text-foreground">{creator.name}</p>
+											<p className="text-xs text-muted">{creator.category}</p>
 										</div>
 									</button>
 								))}
@@ -101,22 +102,22 @@ export function MessagesList() {
 				)}
 
 				<div className="relative mb-4">
-					<Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+					<Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
 					<input
 						value={search}
 						onChange={e => setSearch(e.target.value)}
 						placeholder="Search conversations..."
-						className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-white/25 focus:outline-none focus:border-rose-500/30"
+						className="w-full bg-input border border-border/20 rounded-xl pl-10 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
 					/>
 				</div>
 
 				{conversations.length === 0 ? (
 					<div className="text-center py-16">
-						<div className="w-14 h-14 bg-white/5 rounded-2xl flex items-center justify-center mx-auto mb-3">
-							<MessageCircle className="w-6 h-6 text-white/20" />
+						<div className="w-14 h-14 bg-foreground/5 rounded-2xl flex items-center justify-center mx-auto mb-3">
+							<MessageCircle className="w-6 h-6 text-muted/60" />
 						</div>
-						<p className="text-white/40 font-medium mb-1">No conversations yet</p>
-						<p className="text-sm text-white/25">Subscribe to creators to start chatting</p>
+						<p className="text-muted font-medium mb-1">No conversations yet</p>
+						<p className="text-sm text-muted/80">Subscribe to creators to start chatting</p>
 					</div>
 				) : (
 					<div className="space-y-1">
@@ -126,20 +127,20 @@ export function MessagesList() {
 								<button
 									key={conv.id}
 									onClick={() => { void navigate(`/messages/${conv.id}`); }}
-									className="w-full flex items-center gap-3 p-3 hover:bg-white/5 rounded-2xl transition-colors text-left"
+									className="w-full flex items-center gap-3 p-3 hover:bg-foreground/5 rounded-2xl transition-colors text-left"
 								>
 									<Avatar src={other.avatar} alt={other.name} size="lg" isOnline={conv.isOnline} />
 									<div className="flex-1 min-w-0">
 										<div className="flex items-center justify-between mb-0.5">
-											<p className={`text-sm font-semibold truncate ${conv.unreadCount > 0 ? 'text-white' : 'text-white/70'}`}>
+											<p className={`text-sm font-semibold truncate ${conv.unreadCount > 0 ? 'text-foreground' : 'text-foreground/80'}`}>
 												{other.name}
 											</p>
-											<p className="text-xs text-white/30 shrink-0 ml-2">
+											<p className="text-xs text-muted/80 shrink-0 ml-2">
 												{formatDistanceToNow(conv.lastMessageTime)}
 											</p>
 										</div>
 										<div className="flex items-center justify-between">
-											<p className={`text-xs truncate ${conv.unreadCount > 0 ? 'text-white/60' : 'text-white/30'}`}>
+											<p className={`text-xs truncate ${conv.unreadCount > 0 ? 'text-foreground/70' : 'text-muted/80'}`}>
 												{conv.lastMessage || 'Start a conversation'}
 											</p>
 											{conv.unreadCount > 0 && (

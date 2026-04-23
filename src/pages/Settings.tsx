@@ -1,10 +1,12 @@
-import { useState } from 'react';
-import { User, Bell, Shield, LogOut, Eye, EyeOff, Save } from '../components/icons';
+import { useMemo, useRef, useState } from 'react';
+import { User, Bell, Shield, LogOut, Eye, EyeOff, Save, Camera } from '../components/icons';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
 import { Button } from '../components/ui/Button';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
+import { ApiError, creatorsApi } from '../services/creatorsApi';
+import { uploadMediaAsset } from '../services/mediaUpload';
 import { delayMs } from '../utils/delay';
 
 export function Settings() {
@@ -19,6 +21,9 @@ export function Settings() {
 	const [showCurrent, setShowCurrent] = useState(false);
 	const [showNew, setShowNew] = useState(false);
 	const [isSaving, setIsSaving] = useState(false);
+	const [avatarFile, setAvatarFile] = useState<File | null>(null);
+	const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+	const avatarInputRef = useRef<HTMLInputElement | null>(null);
 	const [notifPrefs, setNotifPrefs] = useState({
 		messages: true,
 		subscriptions: true,
@@ -29,11 +34,44 @@ export function Settings() {
 
 	function handleSaveProfile() {
 		setIsSaving(true);
-		void delayMs(700).then(() => {
-			updateUser({ name });
-			showToast('Profile updated!');
-			setIsSaving(false);
-		});
+		void creatorsApi.me.updateProfile({ name: name.trim() || undefined })
+			.then(({ user: updated }) => {
+				updateUser(updated);
+				showToast('Profile updated!');
+			})
+			.catch(err => {
+				if (err instanceof ApiError) {
+					showToast(`Save failed (HTTP ${err.status}).`, 'error');
+					return;
+				}
+				showToast('Save failed.', 'error');
+			})
+			.finally(() => setIsSaving(false));
+	}
+
+	const avatarPreviewUrl = useMemo(() => {
+		if (!avatarFile) return null;
+		return URL.createObjectURL(avatarFile);
+	}, [avatarFile]);
+
+	function handleSaveAvatar() {
+		if (!avatarFile) return;
+		setIsUploadingAvatar(true);
+		void uploadMediaAsset('avatar', avatarFile)
+			.then(r => creatorsApi.me.updateProfile({ avatarAssetId: r.assetId }))
+			.then(({ user: updated }) => {
+				updateUser(updated);
+				showToast('Avatar updated!');
+				setAvatarFile(null);
+			})
+			.catch(err => {
+				const msg =
+					err instanceof ApiError ? `Avatar update failed (HTTP ${err.status}).` :
+					err instanceof Error ? err.message :
+					'Avatar update failed.';
+				showToast(msg, 'error');
+			})
+			.finally(() => setIsUploadingAvatar(false));
 	}
 
 	function handleChangePassword() {
@@ -58,27 +96,67 @@ export function Settings() {
 	return (
 		<Layout>
 			<div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
-				<h1 className="text-xl font-bold text-white mb-6">Settings</h1>
+				<h1 className="text-xl font-bold text-foreground mb-6">Settings</h1>
 
-				<section className="bg-[#161616] border border-white/5 rounded-2xl p-5">
+				<section className="bg-surface border border-border/20 rounded-2xl p-5">
 					<div className="flex items-center gap-2 mb-4">
 						<User className="w-4 h-4 text-rose-400" />
-						<h2 className="font-semibold text-white">Profile</h2>
+						<h2 className="font-semibold text-foreground">Profile</h2>
 					</div>
 					<div className="flex items-center gap-4 mb-4">
-						<img src={user.avatar} alt={user.name} className="w-14 h-14 rounded-2xl object-cover" />
+						<div className="relative">
+							<img src={avatarPreviewUrl ?? user.avatar} alt={user.name} className="w-14 h-14 rounded-2xl object-cover" />
+							{user.role === 'fan' && (
+								<button
+									type="button"
+									onClick={() => avatarInputRef.current?.click()}
+									className="absolute -bottom-2 -right-2 w-7 h-7 rounded-xl bg-foreground/10 hover:bg-foreground/20 border border-border/30 flex items-center justify-center transition-colors"
+									aria-label="Change avatar"
+								>
+									<Camera className="w-4 h-4 text-foreground" />
+								</button>
+							)}
+						</div>
 						<div>
-							<p className="font-semibold text-white">{user.name}</p>
-							<p className="text-sm text-white/40">{user.email}</p>
+							<p className="font-semibold text-foreground">{user.name}</p>
+							<p className="text-sm text-muted">{user.email}</p>
 							<p className="text-xs text-rose-400/70 capitalize mt-0.5">{user.role} account</p>
 						</div>
 					</div>
+					{user.role === 'fan' && (
+						<div className="mb-4">
+							<input
+								ref={avatarInputRef}
+								type="file"
+								accept="image/*"
+								className="hidden"
+								onChange={e => {
+									const f = e.target.files?.[0] ?? null;
+									setAvatarFile(f);
+								}}
+							/>
+							<div className="flex items-center justify-between gap-3">
+								<p className="text-xs text-muted">
+									Upload a profile picture (avatar) for your fan account.
+								</p>
+								<Button
+									variant="outline"
+									size="sm"
+									onClick={() => { handleSaveAvatar(); }}
+									isLoading={isUploadingAvatar}
+									disabled={!avatarFile || isUploadingAvatar}
+								>
+									Save avatar
+								</Button>
+							</div>
+						</div>
+					)}
 					<div className="mb-3">
-						<label className="block text-sm text-white/50 mb-1.5">Display Name</label>
+						<label className="block text-sm text-muted mb-1.5">Display Name</label>
 						<input
 							value={name}
 							onChange={e => setName(e.target.value)}
-							className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-rose-500/50"
+							className="w-full bg-input border border-border/20 rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
 						/>
 					</div>
 					<Button
@@ -92,38 +170,38 @@ export function Settings() {
 					</Button>
 				</section>
 
-				<section className="bg-[#161616] border border-white/5 rounded-2xl p-5">
+				<section className="bg-surface border border-border/20 rounded-2xl p-5">
 					<div className="flex items-center gap-2 mb-4">
 						<Shield className="w-4 h-4 text-rose-400" />
-						<h2 className="font-semibold text-white">Security</h2>
+						<h2 className="font-semibold text-foreground">Security</h2>
 					</div>
 					<div className="space-y-3">
 						<div>
-							<label className="block text-sm text-white/50 mb-1.5">Current Password</label>
+							<label className="block text-sm text-muted mb-1.5">Current Password</label>
 							<div className="relative">
 								<input
 									type={showCurrent ? 'text' : 'password'}
 									value={currentPassword}
 									onChange={e => setCurrentPassword(e.target.value)}
 									placeholder="••••••••"
-									className="w-full bg-white/5 border border-white/10 rounded-xl px-4 pr-10 py-2.5 text-sm text-white focus:outline-none focus:border-rose-500/50"
+									className="w-full bg-input border border-border/20 rounded-xl px-4 pr-10 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
 								/>
-								<button onClick={() => setShowCurrent(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30">
+								<button onClick={() => setShowCurrent(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted">
 									{showCurrent ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
 								</button>
 							</div>
 						</div>
 						<div>
-							<label className="block text-sm text-white/50 mb-1.5">New Password</label>
+							<label className="block text-sm text-muted mb-1.5">New Password</label>
 							<div className="relative">
 								<input
 									type={showNew ? 'text' : 'password'}
 									value={newPassword}
 									onChange={e => setNewPassword(e.target.value)}
 									placeholder="Min 8 characters"
-									className="w-full bg-white/5 border border-white/10 rounded-xl px-4 pr-10 py-2.5 text-sm text-white focus:outline-none focus:border-rose-500/50"
+									className="w-full bg-input border border-border/20 rounded-xl px-4 pr-10 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
 								/>
-								<button onClick={() => setShowNew(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30">
+								<button onClick={() => setShowNew(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted">
 									{showNew ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
 								</button>
 							</div>
@@ -134,18 +212,18 @@ export function Settings() {
 					</div>
 				</section>
 
-				<section className="bg-[#161616] border border-white/5 rounded-2xl p-5">
+				<section className="bg-surface border border-border/20 rounded-2xl p-5">
 					<div className="flex items-center gap-2 mb-4">
 						<Bell className="w-4 h-4 text-rose-400" />
-						<h2 className="font-semibold text-white">Notifications</h2>
+						<h2 className="font-semibold text-foreground">Notifications</h2>
 					</div>
 					<div className="space-y-3">
 						{(Object.keys(notifPrefs) as (keyof typeof notifPrefs)[]).map(key => (
 							<div key={key} className="flex items-center justify-between">
-								<span className="text-sm text-white/60 capitalize">{key}</span>
+								<span className="text-sm text-muted capitalize">{key}</span>
 								<button
 									onClick={() => setNotifPrefs(p => ({ ...p, [key]: !p[key] }))}
-									className={`w-10 rounded-full transition-all relative ${notifPrefs[key] ? 'bg-rose-500' : 'bg-white/20'}`}
+									className={`w-10 rounded-full transition-all relative ${notifPrefs[key] ? 'bg-rose-500' : 'bg-foreground/20'}`}
 									style={{ height: '22px' }}
 								>
 									<div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${notifPrefs[key] ? 'left-5' : 'left-0.5'}`} />
@@ -155,8 +233,8 @@ export function Settings() {
 					</div>
 				</section>
 
-				<section className="bg-[#161616] border border-white/5 rounded-2xl p-5">
-					<h2 className="font-semibold text-white mb-3">Danger Zone</h2>
+				<section className="bg-surface border border-border/20 rounded-2xl p-5">
+					<h2 className="font-semibold text-foreground mb-3">Danger Zone</h2>
 					<Button
 						variant="danger"
 						fullWidth

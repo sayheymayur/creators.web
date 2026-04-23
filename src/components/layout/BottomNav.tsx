@@ -36,7 +36,7 @@ export function BottomNav() {
 	const links = isCreator ? creatorLinks : fanLinks;
 
 	return (
-		<nav className="fixed bottom-0 left-0 right-0 z-40 bg-[#0d0d0d]/95 backdrop-blur-xl border-t border-white/5 md:hidden">
+		<nav className="fixed bottom-0 left-0 right-0 z-40 bg-background/95 backdrop-blur-xl border-t border-border/10 md:hidden">
 			<div className="flex items-center justify-around h-16 px-2">
 				{links.map(({ icon: Icon, label, path, badge }) => {
 					const isActive = location.pathname === path || (path !== '/' && location.pathname.startsWith(path));
@@ -46,7 +46,7 @@ export function BottomNav() {
 							key={path}
 							onClick={() => { void navigate(path); }}
 							className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl transition-all relative ${
-								isActive ? 'text-rose-400' : 'text-white/40 hover:text-white/70'
+								isActive ? 'text-rose-500' : 'text-muted hover:text-foreground'
 							}`}
 						>
 							<div className="relative">

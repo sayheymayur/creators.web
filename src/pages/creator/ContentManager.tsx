@@ -1,18 +1,23 @@
-import { useState } from 'react';
-import { Plus, Lock, Unlock, Trash2, Pin, Eye, Heart, Image, Type } from '../../components/icons';
+import { useEffect, useMemo, useState } from 'react';
+import { Plus, Lock, Unlock, Trash2, Pin, Image, Type, MessageCircle, Sparkles } from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';
 import { Modal } from '../../components/ui/Toast';
 import { Button } from '../../components/ui/Button';
-import { useCurrentCreator } from '../../context/AuthContext';
+import { useAuth, useCurrentCreator } from '../../context/AuthContext';
 import { useContent } from '../../context/ContentContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { mockCreators } from '../../data/users';
+import { isPostsMockMode } from '../../services/postsMode';
+import { uploadPostMediaFile } from '../../services/uploadPostMedia';
 import type { Post } from '../../types';
+import { formatINR } from '../../services/razorpay';
+import { PostCard } from '../../components/ui/PostCard';
 
 export function ContentManager() {
 	const creator = useCurrentCreator();
-	const { state: contentState, addPost, deletePost, updatePost } = useContent();
+	const { state: contentState, addPost, createPost, deletePost, updatePost, loadCreatorPosts } = useContent();
 	const { showToast } = useNotifications();
+	const { state: authState } = useAuth();
 	const [showNewPost, setShowNewPost] = useState(false);
 	const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
@@ -22,62 +27,161 @@ export function ContentManager() {
 	const [newPostPPV, setNewPostPPV] = useState(false);
 	const [newPostPrice, setNewPostPrice] = useState('4.99');
 	const [newPostImageUrl, setNewPostImageUrl] = useState('');
+	const [remoteMediaFile, setRemoteMediaFile] = useState<File | null>(null);
 	const [isPosting, setIsPosting] = useState(false);
+	const [uploadError, setUploadError] = useState<string>('');
 
-	const creatorData = creator ?? mockCreators[0];
-	const myPosts = contentState.posts.filter(p => p.creatorId === creatorData.id);
+	const authedCreatorId = authState.user?.id ?? '';
+	const creatorData = creator ?? (authState.user?.role === 'creator' ? {
+		...mockCreators[0],
+		id: authState.user.id,
+		name: authState.user.name,
+		email: authState.user.email,
+		username: authState.user.username,
+		avatar: authState.user.avatar,
+	} : mockCreators[0]);
+	const myPosts = contentState.posts.filter(p =>
+		String(p.creatorId) === String(authedCreatorId || creatorData.id)
+	);
+	const totalLikes = useMemo(() => myPosts.reduce((s, p) => s + (p.likes ?? 0), 0), [myPosts]);
+	const totalComments = useMemo(() => myPosts.reduce((s, p) => s + Math.max(p.commentCount ?? 0, p.comments?.length ?? 0), 0), [myPosts]);
+	const useMockPosts = isPostsMockMode();
+
+	useEffect(() => {
+		if (useMockPosts) return;
+		// Wait until the WebSocket is ready before fetching — calling loadCreatorPosts
+		// while the WS client is still connecting returns silently with no data.
+		if (contentState.postsWsStatus !== 'ready') return;
+		const id = authedCreatorId || creatorData.id;
+		if (!id) return;
+		void loadCreatorPosts(id, true);
+	}, [useMockPosts, authedCreatorId, creatorData.id, loadCreatorPosts, contentState.postsWsStatus]);
 
 	function handleCreatePost() {
-		if (!newPostText.trim()) {
-			showToast('Post text is required', 'error');
+		const text = newPostText.trim();
+		if (useMockPosts) {
+			if (!text) {
+				showToast('Post text is required', 'error');
+				return;
+			}
+			setIsPosting(true);
+			const post: Post = {
+				id: `post-${Date.now()}`,
+				creatorId: creatorData.id,
+				creatorName: creatorData.name,
+				creatorAvatar: creatorData.avatar,
+				creatorUsername: creatorData.username,
+				type: newPostType,
+				text: newPostText,
+				mediaUrl: newPostType === 'image' ?
+					(newPostImageUrl ||
+						'https://images.pexels.com/photos/3076509/pexels-photo-3076509.jpeg?auto=compress&cs=tinysrgb&w=800') :
+					undefined,
+				isLocked: newPostLocked || newPostPPV,
+				isPPV: newPostPPV,
+				ppvPrice: newPostPPV ? parseFloat(newPostPrice) || 4.99 : undefined,
+				likes: 0,
+				likedBy: [],
+				comments: [],
+				commentCount: 0,
+				createdAt: new Date().toISOString(),
+				isPinned: false,
+				unlockedBy: [],
+			};
+			addPost(post);
+			showToast('Post published!');
+			setShowNewPost(false);
+			setNewPostText('');
+			setNewPostImageUrl('');
+			setNewPostLocked(false);
+			setNewPostPPV(false);
+			setIsPosting(false);
 			return;
 		}
+
+		if (!text && !remoteMediaFile) {
+			showToast('Add text or upload media', 'error');
+			return;
+		}
+
 		setIsPosting(true);
-		const post: Post = {
-			id: `post-${Date.now()}`,
-			creatorId: creatorData.id,
-			creatorName: creatorData.name,
-			creatorAvatar: creatorData.avatar,
-			creatorUsername: creatorData.username,
-			type: newPostType,
-			text: newPostText,
-			mediaUrl: newPostType === 'image' ?
-				(newPostImageUrl ||
-					'https://images.pexels.com/photos/3076509/pexels-photo-3076509.jpeg?auto=compress&cs=tinysrgb&w=800') :
-				undefined,
-			isLocked: newPostLocked || newPostPPV,
-			isPPV: newPostPPV,
-			ppvPrice: newPostPPV ? parseFloat(newPostPrice) || 4.99 : undefined,
-			likes: 0,
-			likedBy: [],
-			comments: [],
-			createdAt: new Date().toISOString(),
-			isPinned: false,
-			unlockedBy: [],
-		};
-		addPost(post);
-		showToast('Post published!');
-		setShowNewPost(false);
-		setNewPostText('');
-		setNewPostImageUrl('');
-		setNewPostLocked(false);
-		setNewPostPPV(false);
-		setIsPosting(false);
+		setUploadError('');
+		const uploadStep = remoteMediaFile ?
+			uploadPostMediaFile(
+				remoteMediaFile,
+				remoteMediaFile.type.startsWith('video/') ? 'post_video' : 'post_image'
+			) :
+			Promise.resolve(null);
+
+		void uploadStep
+			.then(assetId => {
+				const assetIds = assetId ? [assetId] : [];
+				const visibility = newPostPPV ? 'ppv' : newPostLocked ? 'subscribers' : 'public';
+				const ppvUsdCents = newPostPPV ? Math.round((parseFloat(newPostPrice) || 4.99) * 100) : undefined;
+				return createPost({
+					visibility,
+					text,
+					assetIds: assetIds.length ? assetIds : undefined,
+					ppvUsdCents,
+				});
+			})
+			.then(() => {
+				showToast('Post published!');
+				setShowNewPost(false);
+				setNewPostText('');
+				setNewPostImageUrl('');
+				setRemoteMediaFile(null);
+				setNewPostLocked(false);
+				setNewPostPPV(false);
+				setUploadError('');
+			})
+			.catch(e => {
+				// Avoid showing raw URLs/tokens from upload errors in UI.
+				if (e instanceof Error && e.message.includes('Upload failed')) {
+					const statusMatch = /HTTP\s+(\d{3})/.exec(e.message);
+					const status = statusMatch ? Number(statusMatch[1]) : null;
+					const hint =
+						status === 500 ?
+							'Upload server error (500). The upload service may be down or misconfigured.' :
+							status ?
+								`Upload failed (${status}).` :
+								'Upload failed.';
+					setUploadError(`${hint} Please try again.`);
+					return;
+				}
+				showToast(e instanceof Error ? e.message : 'Could not create post', 'error');
+			})
+			.finally(() => {
+				setIsPosting(false);
+			});
 	}
 
 	function handleDelete(postId: string) {
-		deletePost(postId);
-		setDeleteConfirm(null);
-		showToast('Post deleted');
+		void deletePost(postId)
+			.then(() => {
+				setDeleteConfirm(null);
+				showToast('Post deleted');
+			})
+			.catch(() => {
+				showToast('Could not delete post', 'error');
+			});
 	}
 
 	function handleToggleLock(post: Post) {
-		updatePost({ id: post.id, isLocked: !post.isLocked });
+		if (!useMockPosts) {
+			showToast('Visibility is set when you create a post.', 'error');
+			return;
+		}
+		void updatePost({ id: post.id, isLocked: !post.isLocked });
 		showToast(post.isLocked ? 'Post unlocked' : 'Post locked');
 	}
 
 	function handleTogglePin(post: Post) {
-		updatePost({ id: post.id, isPinned: !post.isPinned });
+		if (!useMockPosts) {
+			showToast('Pin is only available in mock mode.', 'error');
+			return;
+		}
+		void updatePost({ id: post.id, isPinned: !post.isPinned });
 		showToast(post.isPinned ? 'Post unpinned' : 'Post pinned to top');
 	}
 
@@ -86,8 +190,8 @@ export function ContentManager() {
 			<div className="max-w-4xl mx-auto px-4 py-6">
 				<div className="flex items-center justify-between mb-6">
 					<div>
-						<h1 className="text-xl font-bold text-white">Content Manager</h1>
-						<p className="text-white/40 text-sm">{myPosts.length} posts</p>
+						<h1 className="text-xl font-bold text-foreground">Content Manager</h1>
+						<p className="text-muted text-sm">{myPosts.length} posts</p>
 					</div>
 					<Button
 						variant="primary"
@@ -98,72 +202,84 @@ export function ContentManager() {
 					</Button>
 				</div>
 
+				<div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+					<div className="bg-surface border border-border/20 rounded-2xl p-4">
+						<p className="text-xs text-muted mb-1">Total likes</p>
+						<p className="text-lg font-bold text-foreground">{totalLikes.toLocaleString()}</p>
+					</div>
+					<div className="bg-surface border border-border/20 rounded-2xl p-4">
+						<p className="text-xs text-muted mb-1">Total comments</p>
+						<p className="text-lg font-bold text-foreground">{totalComments.toLocaleString()}</p>
+					</div>
+					<div className="bg-surface border border-border/20 rounded-2xl p-4">
+						<p className="text-xs text-muted mb-1">Tips & earnings</p>
+						<p className="text-sm text-muted">See breakdown in Earnings.</p>
+					</div>
+				</div>
+
 				{myPosts.length === 0 ? (
-					<div className="text-center py-16 bg-[#161616] border border-white/5 rounded-2xl">
-						<Image className="w-10 h-10 text-white/10 mx-auto mb-3" />
-						<p className="text-white/40 mb-4">No posts yet. Create your first post!</p>
+					<div className="text-center py-16 bg-surface border border-border/20 rounded-2xl">
+						<Sparkles className="w-10 h-10 text-muted/50 mx-auto mb-3" />
+						<p className="text-muted mb-1">No posts yet</p>
+						<p className="text-xs text-muted/80 mb-4">Create your first post and start engaging with fans.</p>
 						<Button variant="primary" onClick={() => setShowNewPost(true)} leftIcon={<Plus className="w-4 h-4" />}>
 							Create Post
 						</Button>
 					</div>
 				) : (
-					<div className="space-y-3">
+					<div className="space-y-4">
 						{myPosts.map(post => (
-							<div key={post.id} className="bg-[#161616] border border-white/5 rounded-2xl p-4">
-								<div className="flex gap-3">
-									{post.mediaUrl ? (
-										<img src={post.mediaUrl} alt="" className="w-16 h-16 rounded-xl object-cover shrink-0" />
-									) : (
-										<div className="w-16 h-16 rounded-xl bg-white/5 flex items-center justify-center shrink-0">
-											<Type className="w-5 h-5 text-white/20" />
+							<div key={post.id} className="space-y-2">
+								<div className="flex items-center justify-between">
+									<div className="flex items-center gap-2 flex-wrap">
+										{post.isLocked && !post.isPPV && (
+											<span className="text-[10px] bg-rose-500/15 text-rose-400 px-2 py-0.5 rounded-full flex items-center gap-1">
+												<Lock className="w-3 h-3" /> Subscribers
+											</span>
+										)}
+										{post.isPPV && (
+											<span className="text-[10px] bg-amber-500/15 text-amber-400 px-2 py-0.5 rounded-full">
+												PPV {formatINR(post.ppvPrice ?? 0)}
+											</span>
+										)}
+										<span className="text-[10px] bg-foreground/10 text-muted px-2 py-0.5 rounded-full flex items-center gap-1">
+											<MessageCircle className="w-3 h-3" />
+											{Math.max(post.commentCount ?? 0, post.comments?.length ?? 0)} comments
+										</span>
+										{useMockPosts && post.isPinned && (
+											<span className="text-[10px] bg-foreground/10 text-muted px-2 py-0.5 rounded-full flex items-center gap-1">
+												<Pin className="w-3 h-3" /> Pinned
+											</span>
+										)}
+									</div>
+									{useMockPosts && (
+										<div className="flex gap-1">
+											<button
+												onClick={() => handleTogglePin(post)}
+												className={`p-1.5 rounded-lg transition-colors ${post.isPinned ? 'text-amber-400 bg-amber-400/10' : 'text-muted hover:text-foreground hover:bg-foreground/10'}`}
+												title={post.isPinned ? 'Unpin' : 'Pin'}
+											>
+												<Pin className="w-3.5 h-3.5" />
+											</button>
+											<button
+												onClick={() => handleToggleLock(post)}
+												className={`p-1.5 rounded-lg transition-colors ${post.isLocked ? 'text-rose-400 bg-rose-400/10' : 'text-muted hover:text-foreground hover:bg-foreground/10'}`}
+												title={post.isLocked ? 'Unlock' : 'Lock'}
+											>
+												{post.isLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+											</button>
+											<button
+												onClick={() => setDeleteConfirm(post.id)}
+												className="p-1.5 rounded-lg text-muted hover:text-rose-500 hover:bg-rose-400/10 transition-colors"
+												title="Delete"
+											>
+												<Trash2 className="w-3.5 h-3.5" />
+											</button>
 										</div>
 									)}
-									<div className="flex-1 min-w-0">
-										<div className="flex items-start justify-between gap-2 mb-1">
-											<p className="text-sm text-white/70 line-clamp-2">{post.text}</p>
-											<div className="flex gap-1 shrink-0">
-												<button
-													onClick={() => handleTogglePin(post)}
-													className={`p-1.5 rounded-lg transition-colors ${post.isPinned ? 'text-amber-400 bg-amber-400/10' : 'text-white/30 hover:text-white/60 hover:bg-white/10'}`}
-													title={post.isPinned ? 'Unpin' : 'Pin'}
-												>
-													<Pin className="w-3.5 h-3.5" />
-												</button>
-												<button
-													onClick={() => handleToggleLock(post)}
-													className={`p-1.5 rounded-lg transition-colors ${post.isLocked ? 'text-rose-400 bg-rose-400/10' : 'text-white/30 hover:text-white/60 hover:bg-white/10'}`}
-													title={post.isLocked ? 'Unlock' : 'Lock'}
-												>
-													{post.isLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
-												</button>
-												<button
-													onClick={() => setDeleteConfirm(post.id)}
-													className="p-1.5 rounded-lg text-white/30 hover:text-rose-400 hover:bg-rose-400/10 transition-colors"
-													title="Delete"
-												>
-													<Trash2 className="w-3.5 h-3.5" />
-												</button>
-											</div>
-										</div>
-										<div className="flex items-center gap-3 flex-wrap">
-											<span className="flex items-center gap-1 text-xs text-white/30">
-												<Heart className="w-3 h-3" /> {post.likes}
-											</span>
-											<span className="flex items-center gap-1 text-xs text-white/30">
-												<Eye className="w-3 h-3" /> {post.comments.length} comments
-											</span>
-											{post.isLocked && !post.isPPV && (
-												<span className="text-[10px] bg-rose-500/15 text-rose-400 px-2 py-0.5 rounded-full">Subscribers only</span>
-											)}
-											{post.isPPV && (
-												<span className="text-[10px] bg-amber-500/15 text-amber-400 px-2 py-0.5 rounded-full">PPV ${post.ppvPrice}</span>
-											)}
-											{post.isPinned && (
-												<span className="text-[10px] bg-white/10 text-white/50 px-2 py-0.5 rounded-full">Pinned</span>
-											)}
-										</div>
-									</div>
 								</div>
+
+								<PostCard post={post} showCreatorLink={false} />
 							</div>
 						))}
 					</div>
@@ -172,13 +288,28 @@ export function ContentManager() {
 
 			<Modal isOpen={showNewPost} onClose={() => setShowNewPost(false)} title="Create New Post" maxWidth="max-w-lg">
 				<div className="p-5 space-y-4">
+					{uploadError && (
+						<div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-sm text-rose-200 flex items-start justify-between gap-3">
+							<div className="min-w-0">
+								<p className="font-semibold">Upload failed</p>
+								<p className="text-xs text-rose-100/80 mt-1 break-words">{uploadError}</p>
+							</div>
+							<button
+								type="button"
+								onClick={() => { if (!isPosting) handleCreatePost(); }}
+								className="shrink-0 text-xs font-semibold px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30"
+							>
+								Try again
+							</button>
+						</div>
+					)}
 					<div className="flex gap-2">
 						{(['text', 'image'] as const).map(t => (
 							<button
 								key={t}
 								onClick={() => setNewPostType(t)}
 								className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-sm font-medium transition-all ${
-									newPostType === t ? 'bg-rose-500 text-white' : 'bg-white/5 text-white/50 hover:bg-white/10'
+									newPostType === t ? 'bg-rose-500 text-white' : 'bg-foreground/5 text-muted hover:bg-foreground/10'
 								}`}
 							>
 								{t === 'text' ? <Type className="w-4 h-4" /> : <Image className="w-4 h-4" />}
@@ -192,23 +323,37 @@ export function ContentManager() {
 						onChange={e => setNewPostText(e.target.value)}
 						placeholder="Write your post..."
 						rows={4}
-						className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/25 focus:outline-none focus:border-rose-500/50 resize-none"
+						className="w-full bg-input border border-border/20 rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40 resize-none"
 					/>
 
-					{newPostType === 'image' && (
+					{newPostType === 'image' && useMockPosts && (
 						<input
 							value={newPostImageUrl}
 							onChange={e => setNewPostImageUrl(e.target.value)}
 							placeholder="Image URL (or leave blank for default)"
-							className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/25 focus:outline-none focus:border-rose-500/50"
+							className="w-full bg-input border border-border/20 rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
 						/>
+					)}
+					{newPostType === 'image' && !useMockPosts && (
+						<div>
+							<label className="block text-xs text-muted mb-1">Image or video file</label>
+							<input
+								type="file"
+								accept="image/*,video/*"
+								onChange={e => { setRemoteMediaFile(e.target.files?.[0] ?? null); setUploadError(''); }}
+								className="w-full text-sm text-foreground file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-foreground/10 file:text-foreground"
+							/>
+							{remoteMediaFile && (
+								<p className="text-xs text-muted mt-1 truncate">{remoteMediaFile.name}</p>
+							)}
+						</div>
 					)}
 
 					<div className="space-y-2">
 						<label className="flex items-center justify-between cursor-pointer">
 							<div>
-								<p className="text-sm font-medium text-white">Lock for subscribers</p>
-								<p className="text-xs text-white/40">Only subscribers can view this</p>
+								<p className="text-sm font-medium text-foreground">Lock for subscribers</p>
+								<p className="text-xs text-muted">Only subscribers can view this</p>
 							</div>
 							<div
 								onClick={() => { setNewPostLocked(v => !v); if (!newPostLocked) setNewPostPPV(false); }}
@@ -221,8 +366,8 @@ export function ContentManager() {
 
 						<label className="flex items-center justify-between cursor-pointer">
 							<div>
-								<p className="text-sm font-medium text-white">Pay-per-view (PPV)</p>
-								<p className="text-xs text-white/40">Set a one-time unlock price</p>
+								<p className="text-sm font-medium text-foreground">Pay-per-view (PPV)</p>
+								<p className="text-xs text-muted">Set a one-time unlock price</p>
 							</div>
 							<div
 								onClick={() => { setNewPostPPV(v => !v); if (!newPostPPV) setNewPostLocked(true); }}
@@ -235,18 +380,18 @@ export function ContentManager() {
 
 						{newPostPPV && (
 							<div className="flex items-center gap-2">
-								<span className="text-white/50 text-sm">$</span>
+								<span className="text-muted text-sm">₹</span>
 								<input
 									value={newPostPrice}
 									onChange={e => setNewPostPrice(e.target.value)}
 									placeholder="4.99"
-									className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
+									className="flex-1 bg-input border border-border/20 rounded-xl px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
 								/>
 							</div>
 						)}
 					</div>
 
-					<Button variant="primary" fullWidth isLoading={isPosting} onClick={handleCreatePost}>
+					<Button variant="primary" fullWidth isLoading={isPosting} onClick={() => { handleCreatePost(); }}>
 						Publish Post
 					</Button>
 				</div>
@@ -254,12 +399,12 @@ export function ContentManager() {
 
 			<Modal isOpen={!!deleteConfirm} onClose={() => setDeleteConfirm(null)} title="Delete Post">
 				<div className="p-5">
-					<p className="text-white/60 text-sm mb-4">Are you sure you want to delete this post? This action cannot be undone.</p>
+					<p className="text-muted text-sm mb-4">Are you sure you want to delete this post? This action cannot be undone.</p>
 					<div className="flex gap-2">
-						<button onClick={() => setDeleteConfirm(null)} className="flex-1 bg-white/5 hover:bg-white/10 text-white py-2.5 rounded-xl text-sm font-medium transition-colors">
+						<button onClick={() => setDeleteConfirm(null)} className="flex-1 bg-foreground/5 hover:bg-foreground/10 text-foreground py-2.5 rounded-xl text-sm font-medium transition-colors">
 							Cancel
 						</button>
-						<button onClick={() => deleteConfirm && handleDelete(deleteConfirm)} className="flex-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 py-2.5 rounded-xl text-sm font-semibold transition-colors">
+						<button onClick={() => { if (deleteConfirm) handleDelete(deleteConfirm); }} className="flex-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 py-2.5 rounded-xl text-sm font-semibold transition-colors">
 							Delete
 						</button>
 					</div>

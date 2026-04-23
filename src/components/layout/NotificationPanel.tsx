@@ -23,11 +23,11 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
 	}
 
 	return (
-		<div className="absolute right-0 top-full mt-2 w-80 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden">
-			<div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
+		<div className="absolute right-0 top-full mt-2 w-80 bg-surface2 border border-border/20 rounded-2xl shadow-2xl z-50 overflow-hidden">
+			<div className="flex items-center justify-between px-4 py-3 border-b border-border/10">
 				<div className="flex items-center gap-2">
-					<Bell className="w-4 h-4 text-white/60" />
-					<span className="text-sm font-semibold text-white">Notifications</span>
+					<Bell className="w-4 h-4 text-muted" />
+					<span className="text-sm font-semibold text-foreground">Notifications</span>
 				</div>
 				<button onClick={markAllRead} className="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1">
 					<CheckCheck className="w-3.5 h-3.5" />
@@ -37,7 +37,7 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
 
 			<div className="max-h-80 overflow-y-auto">
 				{notifications.length === 0 ? (
-					<div className="text-center py-8 text-white/30 text-sm">No notifications</div>
+					<div className="text-center py-8 text-muted text-sm">No notifications</div>
 				) : (
 					notifications.map(n => {
 						const data = (n.data ?? {}) as Record<string, unknown>;

@@ -117,48 +117,48 @@ export function Explore() {
 				</div>
 
 				<div className="mb-8 space-y-4">
-						<div className="flex items-center gap-2">
-							<Compass className="w-4 h-4 text-rose-400" />
-							<h2 className="font-semibold text-foreground text-sm">Discover posts</h2>
-						</div>
-						{tagFilter && (
-							<div className="flex items-center justify-between gap-3 bg-surface border border-border/20 rounded-2xl px-4 py-2">
-								<p className="text-xs text-muted">
-									Showing posts tagged <span className="text-rose-400 font-semibold">#{tagFilter}</span>
-								</p>
-								<button
-									type="button"
-									onClick={() => {
-										const next = new URLSearchParams(searchParams);
-										next.delete('tag');
-										setSearchParams(next, { replace: true });
-									}}
-									className="text-xs font-semibold text-muted hover:text-foreground"
-								>
-									Clear
-								</button>
-							</div>
-						)}
-						{contentState.postsWsStatus === 'connecting' && (
-							<p className="text-xs text-muted">Loading posts…</p>
-						)}
-						{contentState.postsWsStatus === 'error' && contentState.postsWsError && (
-							<p className="text-xs text-rose-400">{contentState.postsWsError}</p>
-						)}
-						<div className="space-y-4">
-							{filteredExplorePosts.map(post => (
-								<PostCard key={post.id} post={post} />
-							))}
-						</div>
-						{contentState.exploreNextCursor ? (
+					<div className="flex items-center gap-2">
+						<Compass className="w-4 h-4 text-rose-400" />
+						<h2 className="font-semibold text-foreground text-sm">Discover posts</h2>
+					</div>
+					{tagFilter && (
+						<div className="flex items-center justify-between gap-3 bg-surface border border-border/20 rounded-2xl px-4 py-2">
+							<p className="text-xs text-muted">
+								Showing posts tagged <span className="text-rose-400 font-semibold">#{tagFilter}</span>
+							</p>
 							<button
 								type="button"
-								onClick={() => { void loadMoreExplore(); }}
-								className="text-sm font-medium text-rose-400 hover:text-rose-300"
+								onClick={() => {
+									const next = new URLSearchParams(searchParams);
+									next.delete('tag');
+									setSearchParams(next, { replace: true });
+								}}
+								className="text-xs font-semibold text-muted hover:text-foreground"
 							>
-								Load more posts
+								Clear
 							</button>
-						) : null}
+						</div>
+					)}
+					{contentState.postsWsStatus === 'connecting' && (
+						<p className="text-xs text-muted">Loading posts…</p>
+					)}
+					{contentState.postsWsStatus === 'error' && contentState.postsWsError && (
+						<p className="text-xs text-rose-400">{contentState.postsWsError}</p>
+					)}
+					<div className="space-y-4">
+						{filteredExplorePosts.map(post => (
+							<PostCard key={post.id} post={post} />
+						))}
+					</div>
+					{contentState.exploreNextCursor ? (
+						<button
+							type="button"
+							onClick={() => { void loadMoreExplore(); }}
+							className="text-sm font-medium text-rose-400 hover:text-rose-300"
+						>
+							Load more posts
+						</button>
+					) : null}
 				</div>
 
 				{!search && category === 'All' && liveStreams.length > 0 && (

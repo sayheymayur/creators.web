@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Lock, Unlock, Trash2, Pin, Image, Type, MessageCircle, Sparkles } from '../../components/icons';
+import { Plus, Lock, Trash2, Image, Type, MessageCircle, Sparkles } from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';
 import { Modal } from '../../components/ui/Toast';
 import { Button } from '../../components/ui/Button';

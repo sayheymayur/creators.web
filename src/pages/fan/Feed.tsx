@@ -4,8 +4,8 @@ import { Sparkles, Zap, Users } from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';
 import { PostCard } from '../../components/ui/PostCard';
 import { useContent } from '../../context/ContentContext';
-import { mockCreators } from '../../data/users';
 import { useDragScroll } from '../../hooks/useDragScroll';
+import type { Creator } from '../../types';
 
 export function Feed() {
 	const { state: contentState, isSubscribed, loadMoreFeed, refreshFeed } = useContent();
@@ -19,7 +19,7 @@ export function Feed() {
 	});
 
 	// Creator directory may be loaded via WS; in the meantime we don't render mock “following” pills.
-	const subscribedCreators: typeof mockCreators = [];
+	const subscribedCreators: Creator[] = [];
 
 	return (
 		<Layout>

@@ -8,7 +8,6 @@ import { useNotifications } from '../../context/NotificationContext';
 import { mockCreators } from '../../data/users';
 import { ApiError, creatorsApi } from '../../services/creatorsApi';
 import { uploadMediaAsset } from '../../services/mediaUpload';
-import { isPostsMockMode } from '../../services/postsMode';
 import { formatINR } from '../../services/razorpay';
 
 export function ProfileEditor() {

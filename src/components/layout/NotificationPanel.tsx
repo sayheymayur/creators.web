@@ -39,29 +39,38 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
 				{notifications.length === 0 ? (
 					<div className="text-center py-8 text-white/30 text-sm">No notifications</div>
 				) : (
-					notifications.map(n => (
-						<button
-							key={n.id}
-							onClick={() => handleClick(n.id, n.link)}
-							className={`w-full flex gap-3 px-4 py-3 hover:bg-white/5 transition-colors text-left border-b border-white/5 last:border-0 ${
-								!n.isRead ? 'bg-rose-500/5' : ''
-							}`}
-						>
-							{n.fromAvatar ? (
-								<img src={n.fromAvatar} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" />
-							) : (
-								<div className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center shrink-0">
-									<Bell className="w-4 h-4 text-white/40" />
+					notifications.map(n => {
+						const data = (n.data ?? {}) as Record<string, unknown>;
+						const link = typeof data.link === 'string' ? data.link : undefined;
+						const fromAvatar =
+							typeof data.from_avatar === 'string' ? data.from_avatar :
+							typeof data.fromAvatar === 'string' ? data.fromAvatar :
+							undefined;
+						const isRead = n.read_at != null;
+						return (
+							<button
+								key={n.id}
+								onClick={() => handleClick(n.id, link)}
+								className={`w-full flex gap-3 px-4 py-3 hover:bg-white/5 transition-colors text-left border-b border-white/5 last:border-0 ${
+									!isRead ? 'bg-rose-500/5' : ''
+								}`}
+							>
+								{fromAvatar ? (
+									<img src={fromAvatar} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" />
+								) : (
+									<div className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center shrink-0">
+										<Bell className="w-4 h-4 text-white/40" />
+									</div>
+								)}
+								<div className="flex-1 min-w-0">
+									<p className={`text-xs font-medium ${isRead ? 'text-white/60' : 'text-white'} truncate`}>{n.title}</p>
+									<p className="text-xs text-white/40 truncate mt-0.5">{n.body ?? ''}</p>
+									<p className="text-[10px] text-white/25 mt-1">{formatDistanceToNow(n.created_at)}</p>
 								</div>
-							)}
-							<div className="flex-1 min-w-0">
-								<p className={`text-xs font-medium ${n.isRead ? 'text-white/60' : 'text-white'} truncate`}>{n.title}</p>
-								<p className="text-xs text-white/40 truncate mt-0.5">{n.body}</p>
-								<p className="text-[10px] text-white/25 mt-1">{formatDistanceToNow(n.createdAt)}</p>
-							</div>
-							{!n.isRead && <div className="w-2 h-2 bg-rose-500 rounded-full mt-1 shrink-0" />}
-						</button>
-					))
+								{!isRead && <div className="w-2 h-2 bg-rose-500 rounded-full mt-1 shrink-0" />}
+							</button>
+						);
+					})
 				)}
 			</div>
 		</div>

@@ -232,14 +232,11 @@ export interface Report {
 
 export interface Notification {
 	id: string;
-	userId: string;
-	type: 'like' | 'comment' | 'subscription' | 'tip' | 'message' | 'system';
 	title: string;
-	body: string;
-	isRead: boolean;
-	createdAt: string;
-	link?: string;
-	fromAvatar?: string;
+	body: string | null;
+	data: Record<string, unknown>;
+	created_at: string;
+	read_at: string | null;
 }
 
 export interface KYCApplication {

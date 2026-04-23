@@ -33,3 +33,11 @@ dist-ssr
 firebase-adminsdk*.json
 secrets.json
 credentials.json
+*.postman_collection.json
+*.postman_environment.json
+.postman/
+postman/
+src/.postman/
+src/postman/
+.env.api
+.env.mock

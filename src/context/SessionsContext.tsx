@@ -289,7 +289,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 		const offEnded = ws.on('call', 'ended', data => {
 			const payload = data as { session_id?: string };
 			const active = state.active?.accepted;
-			if (!active || active.kind !== 'call') return;
+			if (active?.kind !== 'call') return;
 			if (!payload?.session_id) return;
 			if (active.call_session_id && active.call_session_id !== payload.session_id) return;
 			dispatch({ type: 'ACTIVE_CLEAR' });

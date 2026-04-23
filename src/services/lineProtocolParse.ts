@@ -19,7 +19,7 @@ export function parseCreatorsWsLine(line: string): ParsedCreatorsWsLine | null {
 
 	const svc = parts[1];
 	if (svc !== 'posts' && svc !== 'user' && svc !== 'creator' && svc !== 'chat') return null;
-	const service = svc as WsService;
+	const service: WsService = svc;
 
 	if (parts[2] === 'error') {
 		if (parts.length < 5) return null;

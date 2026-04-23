@@ -29,7 +29,7 @@ function readStoredTheme(): ThemeMode | null {
 }
 
 function getSystemTheme(): ThemeMode {
-	return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+	return window.matchMedia?.('(prefers-color-scheme: dark)')?.matches === true ? 'dark' : 'light';
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {

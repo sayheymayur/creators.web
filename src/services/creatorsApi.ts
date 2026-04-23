@@ -15,6 +15,12 @@ function normalizeCreatorProfileResponse(json: unknown): CreatorProfileResponse 
 	const maybeWrapped = root && typeof root === 'object' && 'creator' in root ? root.creator : root;
 	const obj = (maybeWrapped ?? {}) as Record<string, unknown>;
 
+	const asString = (v: unknown): string => (
+		typeof v === 'string' ? v :
+		typeof v === 'number' ? String(v) :
+		''
+	);
+
 	const avatar =
 		(typeof obj.avatar === 'string' && obj.avatar) ||
 		(typeof obj.avatar_url === 'string' && obj.avatar_url) ||
@@ -26,10 +32,10 @@ function normalizeCreatorProfileResponse(json: unknown): CreatorProfileResponse 
 
 	return {
 		...(obj as unknown as User),
-		id: String(obj.id ?? obj.user_id ?? ''),
-		email: String(obj.email ?? ''),
-		name: String(obj.name ?? ''),
-		username: String(obj.username ?? ''),
+		id: asString(obj.id ?? obj.user_id),
+		email: asString(obj.email),
+		name: asString(obj.name),
+		username: asString(obj.username),
 		avatar,
 		role: 'creator',
 		bio: typeof obj.bio === 'string' ? obj.bio : undefined,

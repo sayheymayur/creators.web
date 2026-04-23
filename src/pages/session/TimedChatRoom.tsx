@@ -43,7 +43,7 @@ export function TimedChatRoom() {
 	const creator = mockCreators.find(c => c.id === creatorId);
 
 	useEffect(() => {
-		if (!session || session.type !== 'chat') {
+		if (session?.type !== 'chat') {
 			navigate(-1);
 		}
 	}, [session, navigate]);

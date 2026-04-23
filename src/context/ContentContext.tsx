@@ -377,7 +377,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 	const resolveCreatorDisplay = useCallback(
 		(userId: string, profiles: Record<string, CreatorDisplay>): CreatorDisplay | undefined => {
 			const u = authUserRef.current;
-			if (u && u.id === userId) {
+			if (u?.id === userId) {
 				return { name: u.name, avatar: u.avatar, username: u.username };
 			}
 			return profiles[userId];
@@ -683,7 +683,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 							creatorPkByUserIdRef.current[uid] = match.id;
 							return creatorWsGetByPk(match.id);
 						}
-						if (!r.nextCursor || page >= maxPages) return { creator: null } as CreatorGetResponse;
+						if (!r.nextCursor || page >= maxPages) return { creator: null };
 						return walk(r.nextCursor, page + 1);
 					});
 
@@ -704,13 +704,13 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 		if (mockMode) return;
 		if (state.postsWsStatus !== 'ready') return;
 		const u = authUserRef.current;
-		if (!u || u.role !== 'creator') return;
+		if (u?.role !== 'creator') return;
 		const username = (u.username ?? '').trim();
 		const name = (u.name ?? '').trim();
 		if (!username || !name) return;
 
 		const prev = creatorBootstrapRef.current;
-		if (prev && prev.userId === u.id && prev.username === username) return;
+		if (prev?.userId === u.id && prev.username === username) return;
 		creatorBootstrapRef.current = { userId: u.id, username };
 
 		const bio = (u as unknown as { bio?: string }).bio;

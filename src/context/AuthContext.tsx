@@ -47,8 +47,15 @@ const initialState: AuthState = {
 /** Ensure `walletBalanceMinor` and string `id` for API / mock user payloads. */
 function normalizeUserFromApi(payload: User): User {
 	const raw = payload as unknown as Record<string, unknown>;
-	const id = String(raw.id ?? '');
-	let minor = raw.walletBalanceMinor != null ? String(raw.walletBalanceMinor) : '';
+	const id =
+		typeof raw.id === 'string' ? raw.id :
+		typeof raw.id === 'number' ? String(raw.id) :
+		'';
+
+	let minor =
+		typeof raw.walletBalanceMinor === 'string' ? raw.walletBalanceMinor :
+		typeof raw.walletBalanceMinor === 'number' ? String(raw.walletBalanceMinor) :
+		'';
 	if (!minor && raw.walletBalance != null) {
 		// Backend spec: `walletBalance` on GET /me user payload.
 		// Treat numeric as INR rupees and convert to paise; accept stringified minor as-is.
@@ -146,7 +153,7 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
 					state.creatorProfiles,
 			};
 		case 'UPDATE_CREATOR_PROFILE':
-			if (!state.user || state.user.role !== 'creator') return state;
+			if (state.user?.role !== 'creator') return state;
 			return {
 				...state,
 				creatorProfiles: {
@@ -481,7 +488,7 @@ export function useAuth() {
 
 export function useCurrentCreator(): Creator | null {
 	const { state } = useAuth();
-	if (!state.user || state.user.role !== 'creator') return null;
+	if (state.user?.role !== 'creator') return null;
 	const currentUser = state.user;
 	const creatorMatch = mockCreators.find(c => c.id === currentUser.id);
 	if (creatorMatch) return creatorMatch;

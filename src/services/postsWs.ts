@@ -9,7 +9,7 @@ export type PostsParsedFrame =
 /** @deprecated Prefer parseCreatorsWsLine — kept for callers that only handle posts frames. */
 export function parsePostsLine(line: string): PostsParsedFrame | null {
 	const f = parseCreatorsWsLine(line);
-	if (!f || f.service !== 'posts') return null;
+	if (f?.service !== 'posts') return null;
 	if (f.kind === 'success') {
 		return { kind: 'success', command: f.command, requestId: f.requestId, json: f.json };
 	}

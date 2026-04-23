@@ -42,7 +42,7 @@ export function LiveStreamRoom() {
 	const stream = getStream(streamId ?? '');
 
 	useEffect(() => {
-		if (!stream || stream.status !== 'live') {
+		if (stream?.status !== 'live') {
 			navigate(-1);
 		}
 	}, [stream, navigate]);

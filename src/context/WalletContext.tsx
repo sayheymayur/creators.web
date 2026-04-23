@@ -299,10 +299,22 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 			return Promise.reject(new Error('Amount must be greater than zero'));
 		}
 
+		const formatNoteValue = (val: unknown): string => {
+			if (val == null) return '';
+			if (typeof val === 'string') return val;
+			if (typeof val === 'number' || typeof val === 'boolean' || typeof val === 'bigint') return String(val);
+			if (val instanceof Date) return val.toISOString();
+			try {
+				return JSON.stringify(val);
+			} catch {
+				return '';
+			}
+		};
+
 		const checkoutNotes: Record<string, string> = {};
 		for (const [k, v] of Object.entries(apiOrderNotes)) {
 			if (v === undefined) continue;
-			checkoutNotes[k] = typeof v === 'string' ? v : String(v);
+			checkoutNotes[k] = formatNoteValue(v);
 		}
 
 		const createOrder = wsConnected ?

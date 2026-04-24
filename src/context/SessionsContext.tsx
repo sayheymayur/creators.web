@@ -234,7 +234,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 		(requestId: string) =>
 			sessionsComplete(ws, requestId).then(res => {
 				const active = state.active?.accepted;
-				if (active && active.request_id === requestId) {
+				if (active?.request_id === requestId) {
 					// Optimistically reflect end immediately; backend will also push `sessions|ended`.
 					dispatch({
 						type: 'ENDED_SET',
@@ -302,7 +302,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 			// arrives late or was missed; the feedback prompt implies completion.
 			const active = state.active?.accepted;
 			const roomId =
-				active && active.request_id === payload.request_id ?
+				active?.request_id === payload.request_id ?
 					active.room_id :
 					roomIdByRequestIdRef.current[payload.request_id];
 			if (roomId) {
@@ -310,7 +310,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 					type: 'ENDED_SET',
 					payload: { request_id: payload.request_id, room_id: roomId, reason: 'manual' },
 				});
-				if (active && active.room_id === roomId) {
+				if (active?.room_id === roomId) {
 					dispatch({ type: 'ACTIVE_CLEAR' });
 				}
 			}
@@ -333,7 +333,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 			// Always record the ended booking so chat UI can reflect it by `room_id`,
 			// even if the local `active` booking is different or already cleared.
 			dispatch({ type: 'ENDED_SET', payload });
-			if (active && active.room_id === payload.room_id) {
+			if (active?.room_id === payload.room_id) {
 				dispatch({ type: 'ACTIVE_CLEAR' });
 			}
 		});

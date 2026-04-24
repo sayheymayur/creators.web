@@ -151,10 +151,11 @@ export function ChatRoom() {
 			// Guard against accidental double-submit (e.g. mobile enter+tap, focus glitches).
 			const now = Date.now();
 			const last = lastSendRef.current;
-			if (
-				realtimeSending ||
-				(last && last.roomId === roomId && last.text === trimmed && now - last.at < 800)
-			) {
+			const isDuplicate =
+				last?.roomId === roomId &&
+				last.text === trimmed &&
+				now - last.at < 800;
+			if (realtimeSending || isDuplicate) {
 				return;
 			}
 			lastSendRef.current = { at: now, roomId, text: trimmed };
@@ -278,10 +279,9 @@ export function ChatRoom() {
 						type="button"
 						onClick={() => {
 							const role = authState.user?.role;
-							const home =
-								role === 'admin' ? '/admin' :
-									role === 'creator' ? '/creator-dashboard' :
-										'/feed';
+							let home = '/feed';
+							if (role === 'admin') home = '/admin';
+							else if (role === 'creator') home = '/creator-dashboard';
 							void navigate(home);
 						}}
 						className="p-1.5 rounded-lg hover:bg-foreground/10 transition-colors"

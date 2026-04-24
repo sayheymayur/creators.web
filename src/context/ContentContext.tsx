@@ -14,6 +14,7 @@ import {
 	setCreatorsMultiplexSingleton,
 } from '../services/creatorsMultiplexWs';
 import { creatorsWsUrl } from '../services/wsUrl';
+import { isPostsMockMode } from '../services/postsMode';
 import {
 	creatorWsGet,
 	creatorWsList,
@@ -350,6 +351,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 	const authUserRef = useRef(authState.user);
 	authUserRef.current = authState.user;
 	const clientRef = useRef<CreatorsMultiplexWs | null>(null);
+	const mockMode = isPostsMockMode();
 	const stateRef = useRef(state);
 	stateRef.current = state;
 	const connectSeqRef = useRef(0);

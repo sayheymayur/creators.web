@@ -11,7 +11,6 @@ import { formatINR } from '../../services/razorpay';
 import { TipModal } from '../modals/TipModal';
 import { PPVUnlockModal } from '../modals/PPVUnlockModal';
 import { Modal } from './Toast';
-import { creatorsApi, ApiError } from '../../services/creatorsApi';
 import { isPostCommented } from '../../services/commentedPosts';
 import { RichTextarea } from './RichTextarea';
 import { tokenizeHashtags } from '../../utils/hashtag';
@@ -23,7 +22,7 @@ interface PostCardProps {
 
 export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 	const { state: authState } = useAuth();
-	const { toggleLike, addComment, isSubscribed, loadPostComments, loadMorePostComments, updatePost, deletePost, state: contentState } = useContent();
+	const { toggleLike, addComment, isSubscribed, loadPostComments, loadMorePostComments, editPost, reportPost, deletePost, state: contentState } = useContent();
 	const { showToast } = useNotifications();
 	const navigate = useNavigate();
 	const [commentText, setCommentText] = useState('');
@@ -144,7 +143,7 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 			showToast('Post text cannot be empty', 'error');
 			return;
 		}
-		void updatePost({ id: post.id, text })
+		void editPost(post.id, text)
 			.then(() => {
 				showToast('Post updated');
 				setShowEditModal(false);
@@ -185,22 +184,17 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 		if (!authState.user) { void navigate('/login'); return; }
 		if (reportSending) return;
 		setReportSending(true);
-		void creatorsApi.reports.create({
-			targetType: 'post',
-			targetId: post.id,
-			reason: reportReason.trim() || 'Other',
-			description: reportDesc.trim() || undefined,
-		})
-			.then(() => {
-				showToast('Report submitted. Thank you.');
+		const reason = reportReason.trim() || 'Other';
+		const desc = reportDesc.trim();
+		const payload = desc ? `${reason}: ${desc}` : reason;
+
+		void reportPost(post.id, payload)
+			.then(r => {
+				showToast(r.already_reported ? 'Already reported. Thank you.' : 'Report submitted. Thank you.');
 				setShowReportModal(false);
 			})
 			.catch(err => {
-				if (err instanceof ApiError) {
-					console.error('[report] create failed', { status: err.status, body: err.body });
-				} else {
-					console.error('[report] create failed', err);
-				}
+				console.error('[report] ws failed', err);
 				showToast('Could not submit report. Please try again.', 'error');
 			})
 			.finally(() => setReportSending(false));

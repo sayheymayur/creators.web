@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useReducer, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { signInWithPopup, signOut, signOut as firebaseSignOut } from 'firebase/auth';
 import type { User, Creator } from '../types';
-import { mockCreators, mockFanUser, mockAdminUser, DEMO_ACCOUNTS } from '../data/users';
+import { mockCreators } from '../data/users';
 import { delayMs } from '../utils/delay';
 import { isFirebaseConfigured, firebaseMissingConfigKeys } from '../config/firebase';
 import { getFirebaseAuth, getGoogleProvider } from '../lib/firebaseClient';
@@ -9,7 +9,6 @@ import { exchangeFirebaseToken } from '../services/authApi';
 import { creatorsApi, ApiError } from '../services/creatorsApi';
 import { clearSessionToken, getSessionToken } from '../services/sessionToken';
 import { clearStoredUser, getStoredUser, setStoredUser } from '../services/sessionUser';
-import { isPostsMockMode } from '../services/postsMode';
 import { clearPaymentGatewayCache } from '../services/payments';
 import { ZERO_MINOR } from '../utils/money';
 
@@ -257,34 +256,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 	const login = useCallback((email: string, password: string): Promise<boolean> => {
 		dispatch({ type: 'CLEAR_ERROR' });
 		return delayMs(250).then(() => {
-			const emailLower = email.toLowerCase().trim();
-
-			// Only use local demo users when posts are mocked; otherwise prefer real backend auth
-			// to avoid mixing mock ids (creator-1) with backend numeric ids ("27") and breaking filters.
-			if (isPostsMockMode()) {
-				if (emailLower === DEMO_ACCOUNTS.fan.email && password === DEMO_ACCOUNTS.fan.password) {
-					dispatch({ type: 'LOGIN', payload: mockFanUser });
-					setStoredUser(mockFanUser);
-					setAuthStatus('authenticated');
-					return true;
-				}
-
-				if (emailLower === DEMO_ACCOUNTS.creator.email && password === DEMO_ACCOUNTS.creator.password) {
-					const creatorUser = mockCreators[0];
-					dispatch({ type: 'LOGIN', payload: creatorUser });
-					setStoredUser(creatorUser);
-					setAuthStatus('authenticated');
-					return true;
-				}
-
-				if (emailLower === DEMO_ACCOUNTS.admin.email && password === DEMO_ACCOUNTS.admin.password) {
-					dispatch({ type: 'LOGIN', payload: mockAdminUser });
-					setStoredUser(mockAdminUser);
-					setAuthStatus('authenticated');
-					return true;
-				}
-			}
-
 			return creatorsApi.auth.login({ email, password })
 				.then(() => creatorsApi.auth.me())
 				.then(({ user }) => {

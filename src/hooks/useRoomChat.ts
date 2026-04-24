@@ -10,7 +10,6 @@ import {
 import type { ChatMessageDTO, ChatTypingEventPayload } from '../services/chatWsTypes';
 import type { Message } from '../types';
 import { isUuid } from '../utils/isUuid';
-import { isPostsMockMode } from '../services/postsMode';
 
 function mergeChatDTOs(cache: ChatMessageDTO[], page: ChatMessageDTO[]): ChatMessageDTO[] {
 	const byId: Record<string, ChatMessageDTO> = {};
@@ -82,9 +81,7 @@ export function useRoomChat(params: UseRoomChatParams): UseRoomChatResult {
 	const roomRef = useRef(roomUuid);
 	roomRef.current = roomUuid;
 
-	const mockMode = isPostsMockMode();
 	const realtimeActive =
-		!mockMode &&
 		postsWsStatus === 'ready' &&
 		!!roomUuid &&
 		isUuid(roomUuid);

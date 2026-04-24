@@ -4,13 +4,11 @@ import { Sparkles, Zap, Users } from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';
 import { PostCard } from '../../components/ui/PostCard';
 import { useContent } from '../../context/ContentContext';
-import { mockCreators } from '../../data/users';
-import { isPostsMockMode } from '../../services/postsMode';
 import { useDragScroll } from '../../hooks/useDragScroll';
+import type { Creator } from '../../types';
 
 export function Feed() {
 	const { state: contentState, isSubscribed, loadMoreFeed, refreshFeed } = useContent();
-	const postsRemote = !isPostsMockMode();
 	const navigate = useNavigate();
 	const [filter, setFilter] = useState<'all' | 'subscribed'>('all');
 	const followingRef = useDragScroll();
@@ -20,7 +18,8 @@ export function Feed() {
 		return true;
 	});
 
-	const subscribedCreators = mockCreators.filter(c => isSubscribed(c.id));
+	// Creator directory may be loaded via WS; in the meantime we don't render mock “following” pills.
+	const subscribedCreators: Creator[] = [];
 
 	return (
 		<Layout>
@@ -92,7 +91,7 @@ export function Feed() {
 					</div>
 				) : (
 					<>
-						{postsRemote && contentState.postsWsError && (
+						{contentState.postsWsError && (
 							<div className="mb-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-sm text-rose-200 flex items-center justify-between gap-2">
 								<span>{contentState.postsWsError}</span>
 								<button
@@ -109,7 +108,7 @@ export function Feed() {
 								<PostCard key={post.id} post={post} />
 							))}
 						</div>
-						{postsRemote && contentState.feedNextCursor && (
+						{contentState.feedNextCursor && (
 							<div className="pt-4 flex justify-center">
 								<button
 									type="button"

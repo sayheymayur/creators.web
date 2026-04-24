@@ -19,7 +19,6 @@ import { useAuth, useCurrentCreator } from '../../context/AuthContext';
 import { useContent } from '../../context/ContentContext';
 import { useSession } from '../../context/SessionContext';
 import { mockCreators } from '../../data/users';
-import { isPostsMockMode } from '../../services/postsMode';
 import { formatINR } from '../../services/razorpay';
 
 function StatCard({ label, value, sub, icon, color, onClick }: {
@@ -65,7 +64,6 @@ export function CreatorDashboard() {
 	const [rateInput, setRateInput] = useState('');
 
 	const authedCreatorId = authState.user?.id ?? '';
-	const useMockPosts = isPostsMockMode();
 	const creatorData = creator ?? (authState.user?.role === 'creator' ? {
 		...mockCreators[0],
 		id: authState.user.id,
@@ -77,10 +75,9 @@ export function CreatorDashboard() {
 	const creatorIdForPosts = authedCreatorId || creatorData.id;
 
 	useEffect(() => {
-		if (useMockPosts) return;
 		if (!creatorIdForPosts) return;
 		void loadCreatorPosts(creatorIdForPosts, true);
-	}, [useMockPosts, creatorIdForPosts, loadCreatorPosts]);
+	}, [creatorIdForPosts, loadCreatorPosts]);
 
 	const creatorPosts = contentState.posts.filter(p => p.creatorId === creatorIdForPosts);
 

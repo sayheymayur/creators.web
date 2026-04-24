@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Lock, Unlock, Trash2, Pin, Image, Type, MessageCircle, Sparkles } from '../../components/icons';
+import { Plus, Lock, Trash2, Image, Type, MessageCircle, Sparkles } from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';
 import { Modal } from '../../components/ui/Toast';
 import { Button } from '../../components/ui/Button';
@@ -7,16 +7,14 @@ import { useAuth, useCurrentCreator } from '../../context/AuthContext';
 import { useContent } from '../../context/ContentContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { mockCreators } from '../../data/users';
-import { isPostsMockMode } from '../../services/postsMode';
 import { uploadPostMediaFile } from '../../services/uploadPostMedia';
-import type { Post } from '../../types';
 import { formatINR } from '../../services/razorpay';
 import { PostCard } from '../../components/ui/PostCard';
 import { RichTextarea } from '../../components/ui/RichTextarea';
 
 export function ContentManager() {
 	const creator = useCurrentCreator();
-	const { state: contentState, addPost, createPost, deletePost, updatePost, loadCreatorPosts } = useContent();
+	const { state: contentState, createPost, deletePost, loadCreatorPosts } = useContent();
 	const { showToast } = useNotifications();
 	const { state: authState } = useAuth();
 	const [showNewPost, setShowNewPost] = useState(false);
@@ -46,10 +44,8 @@ export function ContentManager() {
 	);
 	const totalLikes = useMemo(() => myPosts.reduce((s, p) => s + (p.likes ?? 0), 0), [myPosts]);
 	const totalComments = useMemo(() => myPosts.reduce((s, p) => s + Math.max(p.commentCount ?? 0, p.comments?.length ?? 0), 0), [myPosts]);
-	const useMockPosts = isPostsMockMode();
 
 	useEffect(() => {
-		if (useMockPosts) return;
 		// Wait until the WebSocket is ready before fetching — calling loadCreatorPosts
 		// while the WS client is still connecting returns silently with no data.
 		if (contentState.postsWsStatus !== 'ready') return;
@@ -60,45 +56,6 @@ export function ContentManager() {
 
 	function handleCreatePost() {
 		const text = newPostText.trim();
-		if (useMockPosts) {
-			if (!text) {
-				showToast('Post text is required', 'error');
-				return;
-			}
-			setIsPosting(true);
-			const post: Post = {
-				id: `post-${Date.now()}`,
-				creatorId: creatorData.id,
-				creatorName: creatorData.name,
-				creatorAvatar: creatorData.avatar,
-				creatorUsername: creatorData.username,
-				type: newPostType,
-				text: newPostText,
-				mediaUrl: newPostType === 'image' ?
-					(newPostImageUrl ||
-						'https://images.pexels.com/photos/3076509/pexels-photo-3076509.jpeg?auto=compress&cs=tinysrgb&w=800') :
-					undefined,
-				isLocked: newPostLocked || newPostPPV,
-				isPPV: newPostPPV,
-				ppvPrice: newPostPPV ? parseFloat(newPostPrice) || 4.99 : undefined,
-				likes: 0,
-				likedBy: [],
-				comments: [],
-				commentCount: 0,
-				createdAt: new Date().toISOString(),
-				isPinned: false,
-				unlockedBy: [],
-			};
-			addPost(post);
-			showToast('Post published!');
-			setShowNewPost(false);
-			setNewPostText('');
-			setNewPostImageUrl('');
-			setNewPostLocked(false);
-			setNewPostPPV(false);
-			setIsPosting(false);
-			return;
-		}
 
 		if (!text && !remoteMediaFile) {
 			showToast('Add text or upload media', 'error');
@@ -168,24 +125,6 @@ export function ContentManager() {
 			});
 	}
 
-	function handleToggleLock(post: Post) {
-		if (!useMockPosts) {
-			showToast('Visibility is set when you create a post.', 'error');
-			return;
-		}
-		void updatePost({ id: post.id, isLocked: !post.isLocked });
-		showToast(post.isLocked ? 'Post unlocked' : 'Post locked');
-	}
-
-	function handleTogglePin(post: Post) {
-		if (!useMockPosts) {
-			showToast('Pin is only available in mock mode.', 'error');
-			return;
-		}
-		void updatePost({ id: post.id, isPinned: !post.isPinned });
-		showToast(post.isPinned ? 'Post unpinned' : 'Post pinned to top');
-	}
-
 	return (
 		<Layout>
 			<div className="max-w-4xl mx-auto px-4 py-6">
@@ -247,37 +186,16 @@ export function ContentManager() {
 											<MessageCircle className="w-3 h-3" />
 											{Math.max(post.commentCount ?? 0, post.comments?.length ?? 0)} comments
 										</span>
-										{useMockPosts && post.isPinned && (
-											<span className="text-[10px] bg-foreground/10 text-muted px-2 py-0.5 rounded-full flex items-center gap-1">
-												<Pin className="w-3 h-3" /> Pinned
-											</span>
-										)}
 									</div>
-									{useMockPosts && (
-										<div className="flex gap-1">
-											<button
-												onClick={() => handleTogglePin(post)}
-												className={`p-1.5 rounded-lg transition-colors ${post.isPinned ? 'text-amber-400 bg-amber-400/10' : 'text-muted hover:text-foreground hover:bg-foreground/10'}`}
-												title={post.isPinned ? 'Unpin' : 'Pin'}
-											>
-												<Pin className="w-3.5 h-3.5" />
-											</button>
-											<button
-												onClick={() => handleToggleLock(post)}
-												className={`p-1.5 rounded-lg transition-colors ${post.isLocked ? 'text-rose-400 bg-rose-400/10' : 'text-muted hover:text-foreground hover:bg-foreground/10'}`}
-												title={post.isLocked ? 'Unlock' : 'Lock'}
-											>
-												{post.isLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
-											</button>
-											<button
-												onClick={() => setDeleteConfirm(post.id)}
-												className="p-1.5 rounded-lg text-muted hover:text-rose-500 hover:bg-rose-400/10 transition-colors"
-												title="Delete"
-											>
-												<Trash2 className="w-3.5 h-3.5" />
-											</button>
-										</div>
-									)}
+									<div className="flex gap-1">
+										<button
+											onClick={() => setDeleteConfirm(post.id)}
+											className="p-1.5 rounded-lg text-muted hover:text-rose-500 hover:bg-rose-400/10 transition-colors"
+											title="Delete"
+										>
+											<Trash2 className="w-3.5 h-3.5" />
+										</button>
+									</div>
 								</div>
 
 								<PostCard post={post} showCreatorLink={false} />

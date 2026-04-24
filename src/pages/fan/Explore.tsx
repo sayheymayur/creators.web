@@ -9,7 +9,6 @@ import type { Creator } from '../../types';
 import { useContent } from '../../context/ContentContext';
 import { useLiveStream } from '../../context/LiveStreamContext';
 import { creatorSummaryToCardCreator } from '../../services/creatorWsMap';
-import { isPostsMockMode } from '../../services/postsMode';
 import { useDragScroll } from '../../hooks/useDragScroll';
 import { normalizeHashtagTag, textHasHashtag } from '../../utils/hashtag';
 
@@ -19,7 +18,6 @@ export function Explore() {
 	const navigate = useNavigate();
 	const [searchParams, setSearchParams] = useSearchParams();
 	const { state: contentState, loadMoreExplore, creatorWsSearch } = useContent();
-	const postsMock = isPostsMockMode();
 	const explorePosts = useMemo(
 		() =>
 			contentState.explorePostIds
@@ -40,16 +38,8 @@ export function Explore() {
 	const trendingRef = useDragScroll();
 	const allRef = useDragScroll();
 
-	const approvedCreators = mockCreators.filter(c => c.isKYCVerified);
-
 	useEffect(() => {
-		if (postsMock || contentState.postsWsStatus !== 'ready') {
-			if (!postsMock) {
-				setWsCreators([]);
-				setWsDirCursor(null);
-			}
-			return;
-		}
+		if (contentState.postsWsStatus !== 'ready') return;
 		setWsDirLoading(true);
 		const cat = category === 'All' ? undefined : category;
 		const q = search.trim() || undefined;
@@ -63,43 +53,25 @@ export function Explore() {
 				setWsDirCursor(null);
 			})
 			.finally(() => setWsDirLoading(false));
-	}, [postsMock, contentState.postsWsStatus, search, category, creatorWsSearch]);
+	}, [contentState.postsWsStatus, search, category, creatorWsSearch]);
 
 	const filtered = useMemo(() => {
-		if (!postsMock) {
-			return [...wsCreators].sort((a, b) => {
-				if (sortBy === 'popular') return b.subscriberCount - a.subscriberCount;
-				if (sortBy === 'new') return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-				return a.subscriptionPrice - b.subscriptionPrice;
-			});
-		}
-		return approvedCreators
-			.filter(c => {
-				const matchesSearch = !search ||
-					c.name.toLowerCase().includes(search.toLowerCase()) ||
-					c.username.toLowerCase().includes(search.toLowerCase()) ||
-					c.bio.toLowerCase().includes(search.toLowerCase());
-				const matchesCategory = category === 'All' || c.category === category;
-				return matchesSearch && matchesCategory;
-			})
-			.sort((a, b) => {
-				if (sortBy === 'popular') return b.subscriberCount - a.subscriberCount;
-				if (sortBy === 'new') return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-				return a.subscriptionPrice - b.subscriptionPrice;
-			});
-	}, [postsMock, wsCreators, approvedCreators, search, category, sortBy]);
+		return [...wsCreators].sort((a, b) => {
+			if (sortBy === 'popular') return b.subscriberCount - a.subscriberCount;
+			if (sortBy === 'new') return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+			return a.subscriptionPrice - b.subscriptionPrice;
+		});
+	}, [wsCreators, sortBy]);
 
 	const filteredExplorePosts = useMemo(() => {
 		if (!tagFilter) return explorePosts;
 		return explorePosts.filter(p => textHasHashtag(p.text ?? '', tagFilter));
 	}, [explorePosts, tagFilter]);
 
-	const trendingCreators = !postsMock ?
-		(wsCreators.length ? wsCreators.slice(0, 3) : approvedCreators.slice(0, 3)) :
-		approvedCreators.slice(0, 3);
+	const trendingCreators = wsCreators.slice(0, 3);
 
 	function loadMoreDirectory() {
-		if (postsMock || !wsDirCursor || contentState.postsWsStatus !== 'ready') return;
+		if (!wsDirCursor || contentState.postsWsStatus !== 'ready') return;
 		const cat = category === 'All' ? undefined : category;
 		const q = search.trim() || undefined;
 		void creatorWsSearch({ q, category: cat, limit: 30, beforeCursor: wsDirCursor })
@@ -144,52 +116,50 @@ export function Explore() {
 					</div>
 				</div>
 
-				{!postsMock && (
-					<div className="mb-8 space-y-4">
-						<div className="flex items-center gap-2">
-							<Compass className="w-4 h-4 text-rose-400" />
-							<h2 className="font-semibold text-foreground text-sm">Discover posts</h2>
-						</div>
-						{tagFilter && (
-							<div className="flex items-center justify-between gap-3 bg-surface border border-border/20 rounded-2xl px-4 py-2">
-								<p className="text-xs text-muted">
-									Showing posts tagged <span className="text-rose-400 font-semibold">#{tagFilter}</span>
-								</p>
-								<button
-									type="button"
-									onClick={() => {
-										const next = new URLSearchParams(searchParams);
-										next.delete('tag');
-										setSearchParams(next, { replace: true });
-									}}
-									className="text-xs font-semibold text-muted hover:text-foreground"
-								>
-									Clear
-								</button>
-							</div>
-						)}
-						{contentState.postsWsStatus === 'connecting' && (
-							<p className="text-xs text-muted">Loading posts…</p>
-						)}
-						{contentState.postsWsStatus === 'error' && contentState.postsWsError && (
-							<p className="text-xs text-rose-400">{contentState.postsWsError}</p>
-						)}
-						<div className="space-y-4">
-							{filteredExplorePosts.map(post => (
-								<PostCard key={post.id} post={post} />
-							))}
-						</div>
-						{contentState.exploreNextCursor ? (
+				<div className="mb-8 space-y-4">
+					<div className="flex items-center gap-2">
+						<Compass className="w-4 h-4 text-rose-400" />
+						<h2 className="font-semibold text-foreground text-sm">Discover posts</h2>
+					</div>
+					{tagFilter && (
+						<div className="flex items-center justify-between gap-3 bg-surface border border-border/20 rounded-2xl px-4 py-2">
+							<p className="text-xs text-muted">
+								Showing posts tagged <span className="text-rose-400 font-semibold">#{tagFilter}</span>
+							</p>
 							<button
 								type="button"
-								onClick={() => { void loadMoreExplore(); }}
-								className="text-sm font-medium text-rose-400 hover:text-rose-300"
+								onClick={() => {
+									const next = new URLSearchParams(searchParams);
+									next.delete('tag');
+									setSearchParams(next, { replace: true });
+								}}
+								className="text-xs font-semibold text-muted hover:text-foreground"
 							>
-								Load more posts
+								Clear
 							</button>
-						) : null}
+						</div>
+					)}
+					{contentState.postsWsStatus === 'connecting' && (
+						<p className="text-xs text-muted">Loading posts…</p>
+					)}
+					{contentState.postsWsStatus === 'error' && contentState.postsWsError && (
+						<p className="text-xs text-rose-400">{contentState.postsWsError}</p>
+					)}
+					<div className="space-y-4">
+						{filteredExplorePosts.map(post => (
+							<PostCard key={post.id} post={post} />
+						))}
 					</div>
-				)}
+					{contentState.exploreNextCursor ? (
+						<button
+							type="button"
+							onClick={() => { void loadMoreExplore(); }}
+							className="text-sm font-medium text-rose-400 hover:text-rose-300"
+						>
+							Load more posts
+						</button>
+					) : null}
+				</div>
 
 				{!search && category === 'All' && liveStreams.length > 0 && (
 					<div className="mb-8">
@@ -282,7 +252,7 @@ export function Explore() {
 					</div>
 				)}
 
-				{!postsMock && wsDirCursor ? (
+				{wsDirCursor ? (
 					<div className="mt-4 text-center">
 						<button
 							type="button"

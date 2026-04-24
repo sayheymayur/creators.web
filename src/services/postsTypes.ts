@@ -29,6 +29,11 @@ export interface CommentDTO {
 	created_at: string;
 }
 
+export interface ReportPostResponse {
+	ok: true;
+	already_reported?: true;
+}
+
 export interface ListPostsResponse {
 	posts: PostDTO[];
 	nextCursor: string | null;

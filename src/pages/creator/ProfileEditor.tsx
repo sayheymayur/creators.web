@@ -8,7 +8,6 @@ import { useNotifications } from '../../context/NotificationContext';
 import { mockCreators } from '../../data/users';
 import { ApiError, creatorsApi } from '../../services/creatorsApi';
 import { uploadMediaAsset } from '../../services/mediaUpload';
-import { isPostsMockMode } from '../../services/postsMode';
 import { formatINR } from '../../services/razorpay';
 
 export function ProfileEditor() {
@@ -81,13 +80,11 @@ export function ProfileEditor() {
 			)
 			.then(({ user }) => {
 				updateUser(user);
-				if (!isPostsMockMode()) {
-					void creatorWsUpsert(
-						username.trim() || creatorData.username,
-						name.trim() || creatorData.name,
-						bio.trim() || undefined
-					).catch(() => {});
-				}
+				void creatorWsUpsert(
+					username.trim() || creatorData.username,
+					name.trim() || creatorData.name,
+					bio.trim() || undefined
+				).catch(() => {});
 				showToast('Profile updated!');
 				setAvatarFile(null);
 				setBannerFile(null);

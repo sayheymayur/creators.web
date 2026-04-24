@@ -7,8 +7,6 @@ import React, {
 	useRef,
 } from 'react';
 import type { Post, Comment } from '../types';
-import { mockPosts } from '../data/posts';
-import { isPostsMockMode } from '../services/postsMode';
 import { isPostLiked, setPostLiked } from '../services/likedPosts';
 import { setPostCommented } from '../services/commentedPosts';
 import {
@@ -30,6 +28,7 @@ import type {
 	ListCommentsResponse,
 	ListPostsResponse,
 	PostDTO,
+	ReportPostResponse,
 } from '../services/postsTypes';
 import {
 	type CreatorDisplay,
@@ -80,12 +79,10 @@ type ContentAction =
 	{ type: 'SET_WS', payload: { status: PostsWsStatus, error?: string | null } } |
 	{ type: 'SET_CREATOR_PROFILES', payload: Record<string, CreatorDisplay> };
 
-const mockMode = isPostsMockMode();
-
 const initialState: ContentState = {
-	posts: mockMode ? mockPosts : [],
-	subscribedCreatorIds: ['creator-1', 'creator-2'],
-	postsWsStatus: mockMode ? 'idle' : 'idle',
+	posts: [],
+	subscribedCreatorIds: [],
+	postsWsStatus: 'idle',
 	postsWsError: null,
 	feedNextCursor: null,
 	exploreNextCursor: null,
@@ -319,7 +316,9 @@ interface ContentContextValue {
 	unlockPost: (postId: string, userId: string) => void;
 	addPost: (post: Post) => void;
 	createPost: (input: CreatePostInput) => Promise<void>;
+	editPost: (postId: string, text: string) => Promise<void>;
 	deletePost: (postId: string) => Promise<void>;
+	reportPost: (postId: string, reason: string) => Promise<ReportPostResponse>;
 	subscribe: (creatorId: string) => void;
 	unsubscribe: (creatorId: string) => void;
 	isSubscribed: (creatorId: string) => boolean;
@@ -444,7 +443,6 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 
 	useEffect(() => {
 		// When the socket becomes ready, retry hydration for any creator placeholders already in cache.
-		if (mockMode) return;
 		if (state.postsWsStatus !== 'ready') return;
 		const prev = stateRef.current.creatorProfiles;
 		const ids = Object.keys(prev).filter(id => {
@@ -518,7 +516,6 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 	);
 
 	useEffect(() => {
-		if (mockMode) return;
 		connectSeqRef.current += 1;
 		const seq = connectSeqRef.current;
 
@@ -629,7 +626,6 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 	}, [handlePush, mapList, authState.isAuthenticated, authState.user?.id]);
 
 	const runRemote = useCallback((fn: () => Promise<void>) => {
-		if (mockMode) return Promise.resolve();
 		if (stateRef.current.postsWsStatus !== 'ready') {
 			return Promise.reject(new Error('Posts connection is not ready yet'));
 		}
@@ -640,7 +636,6 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 	}, []);
 
 	const runRemoteTyped = useCallback((fn: (c: CreatorsMultiplexWs) => Promise<unknown>): Promise<unknown> => {
-		if (mockMode) return Promise.reject(new Error('WebSocket unavailable in mock mode'));
 		if (stateRef.current.postsWsStatus !== 'ready' || !clientRef.current) {
 			return Promise.reject(new Error('Posts connection is not ready yet'));
 		}
@@ -701,7 +696,6 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 	useEffect(() => {
 		// Spec: creators must `creator /upsertprofile` to appear in creator directory.
 		// Ensure this happens automatically on creator login/signup (idempotent).
-		if (mockMode) return;
 		if (state.postsWsStatus !== 'ready') return;
 		const u = authUserRef.current;
 		if (!u || u.role !== 'creator') return;
@@ -738,7 +732,6 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 	useEffect(() => {
 		// Hydrate creator directory cache to populate avatars/usernames for post authors
 		// without relying on undocumented HTTP endpoints.
-		if (mockMode) return;
 		if (state.postsWsStatus !== 'ready') return;
 		void creatorWsSearch({})
 			.then(r => {
@@ -761,7 +754,6 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 	}, [mockMode, state.postsWsStatus, creatorWsSearch]);
 
 	const refreshFeed = useCallback(() => {
-		if (mockMode) return Promise.resolve();
 		return runRemote(() => {
 			const c = clientRef.current;
 			if (!c) return Promise.resolve();
@@ -787,7 +779,6 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 	}, [mapList, runRemote]);
 
 	const loadMoreFeed = useCallback(() => {
-		if (mockMode) return Promise.resolve();
 		const cursor = stateRef.current.feedNextCursor;
 		if (!cursor) return Promise.resolve();
 		return runRemote(() => {
@@ -815,7 +806,6 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 	}, [mapList, runRemote]);
 
 	const refreshExplore = useCallback(() => {
-		if (mockMode) return Promise.resolve();
 		return runRemote(() => {
 			const c = clientRef.current;
 			if (!c) return Promise.resolve();
@@ -842,7 +832,6 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 	}, [mapList, runRemote]);
 
 	const loadMoreExplore = useCallback(() => {
-		if (mockMode) return Promise.resolve();
 		const cursor = stateRef.current.exploreNextCursor;
 		if (!cursor) return Promise.resolve();
 		return runRemote(() => {
@@ -871,7 +860,6 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 
 	const loadCreatorPosts = useCallback(
 		(creatorId: string, reset = true) => {
-			if (mockMode) return Promise.resolve();
 			const cursor = reset ? undefined : stateRef.current.creatorCursors[creatorId] ?? undefined;
 			if (!reset && !cursor) return Promise.resolve();
 			return runRemote(() => {
@@ -921,7 +909,6 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 
 	const loadPostComments = useCallback(
 		(postId: string) => {
-			if (mockMode) return Promise.resolve();
 			// eslint-disable-next-line prefer-object-has-own -- TS lib target doesn't include Object.hasOwn yet.
 			if (Object.prototype.hasOwnProperty.call(stateRef.current.commentPagination, postId)) {
 				return Promise.resolve();
@@ -950,7 +937,6 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 
 	const loadMorePostComments = useCallback(
 		(postId: string) => {
-			if (mockMode) return Promise.resolve();
 			const next = stateRef.current.commentPagination[postId];
 			if (typeof next !== 'string' || !next) return Promise.resolve();
 			return runRemote(() => {
@@ -976,13 +962,6 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 	);
 
 	const toggleLike = useCallback((postId: string, userId: string) => {
-		if (mockMode) {
-			dispatch({ type: 'TOGGLE_LIKE', payload: { postId, userId } });
-			const post = stateRef.current.posts.find(p => p.id === postId);
-			const liked = !(post?.likedBy.includes(userId) ?? false);
-			setPostLiked(userId, postId, liked);
-			return Promise.resolve();
-		}
 		const post = stateRef.current.posts.find(p => p.id === postId);
 		const liked = post?.likedBy.includes(userId);
 		const c = clientRef.current;
@@ -1007,27 +986,6 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 
 	const addComment = useCallback(
 		(postId: string, text: string) => {
-			if (mockMode) {
-				const u = authUserRef.current;
-				if (!u) return Promise.resolve();
-				dispatch({
-					type: 'ADD_COMMENT',
-					payload: {
-						postId,
-						comment: {
-							id: `c-${Date.now()}`,
-							userId: u.id,
-							userName: u.name,
-							userAvatar: u.avatar,
-							text: text.trim(),
-							createdAt: new Date().toISOString(),
-							likes: 0,
-						},
-					},
-				});
-				setPostCommented(u.id, postId, true);
-				return Promise.resolve();
-			}
 			const c = clientRef.current;
 			const u = authUserRef.current;
 			if (!c || !u) return Promise.resolve();
@@ -1076,9 +1034,6 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 
 	const createPost = useCallback(
 		(input: CreatePostInput) => {
-			if (mockMode) {
-				return Promise.reject(new Error('Use addPost in mock mode'));
-			}
 			const c = clientRef.current;
 			if (!c) return Promise.reject(new Error('Posts connection not ready'));
 			return c.send('posts', buildCreateCommand(input)).then(json => {
@@ -1094,11 +1049,20 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 		[fetchProfilesForIds, resolveCreatorDisplay]
 	);
 
+	const editPost = useCallback((postId: string, text: string) => {
+		const c = clientRef.current;
+		if (!c) return Promise.resolve();
+		const t = text ?? '';
+		const cmd =
+			t.trim() === '' ?
+				`/edit ${postId}` :
+				`/edit ${postId} ${t}`;
+		return c.send('posts', cmd).then(() => {
+			dispatch({ type: 'UPDATE_POST', payload: { id: postId, text } });
+		});
+	}, []);
+
 	const deletePost = useCallback((postId: string) => {
-		if (mockMode) {
-			dispatch({ type: 'DELETE_POST', payload: postId });
-			return Promise.resolve();
-		}
 		const c = clientRef.current;
 		if (!c) return Promise.resolve();
 		return c.send('posts', `/delete ${postId}`).then(() => {
@@ -1106,11 +1070,18 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 		});
 	}, []);
 
+	const reportPost = useCallback(
+		(postId: string, reason: string): Promise<ReportPostResponse> => {
+			const c = clientRef.current;
+			if (!c) return Promise.reject(new Error('Posts connection not ready'));
+			const trimmed = reason.trim();
+			const cmd = trimmed ? `/report ${postId} ${trimmed}` : `/report ${postId}`;
+			return c.send('posts', cmd).then(json => json as ReportPostResponse);
+		},
+		[]
+	);
+
 	const updatePost = useCallback((post: Partial<Post> & { id: string }) => {
-		if (mockMode) {
-			dispatch({ type: 'UPDATE_POST', payload: post });
-			return Promise.resolve();
-		}
 		if (post.text === undefined) {
 			dispatch({ type: 'UPDATE_POST', payload: post });
 			return Promise.resolve();
@@ -1154,7 +1125,9 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 				unlockPost,
 				addPost,
 				createPost,
+				editPost,
 				deletePost,
+				reportPost,
 				subscribe,
 				unsubscribe,
 				isSubscribed,

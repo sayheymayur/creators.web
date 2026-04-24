@@ -1,3 +1,4 @@
 export function isPostsMockMode(): boolean {
-	return import.meta.env.VITE_POSTS_MOCK === 'true';
+	// Posts must always use the real WebSocket protocol (no mock mode).
+	return false;
 }

@@ -16,7 +16,6 @@ import { SessionPickerModal, type SessionPayMode } from '../../components/modals
 import type { Creator, SessionType } from '../../types';
 import { ApiError } from '../../services/creatorsApi';
 import { creatorProfileDtoToCreator } from '../../services/creatorWsMap';
-import { isPostsMockMode } from '../../services/postsMode';
 import { randomUuid } from '../../utils/isUuid';
 import { formatINR } from '../../services/razorpay';
 import { useSessions } from '../../context/SessionsContext';
@@ -58,12 +57,6 @@ export function CreatorProfile() {
 		if (!id) return;
 		const ac = new AbortController();
 		const base = maybeCreator ?? mockCreators[0];
-
-		if (isPostsMockMode()) {
-			setIsLoadingCreator(false);
-			setRemoteCreator(null);
-			return () => ac.abort();
-		}
 
 		// creator WS commands are multiplexed over the posts socket; wait until it is ready.
 		if (contentState.postsWsStatus !== 'ready') {
@@ -108,7 +101,7 @@ export function CreatorProfile() {
 	}, [id, maybeCreator, creatorWsGetByUserId, contentState.postsWsStatus]);
 
 	useEffect(() => {
-		if (!id || isPostsMockMode()) return;
+		if (!id) return;
 		void loadCreatorPosts(id, true);
 	}, [id, loadCreatorPosts]);
 

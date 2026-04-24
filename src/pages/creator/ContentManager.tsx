@@ -12,6 +12,7 @@ import { uploadPostMediaFile } from '../../services/uploadPostMedia';
 import type { Post } from '../../types';
 import { formatINR } from '../../services/razorpay';
 import { PostCard } from '../../components/ui/PostCard';
+import { RichTextarea } from '../../components/ui/RichTextarea';
 
 export function ContentManager() {
 	const creator = useCurrentCreator();
@@ -318,9 +319,9 @@ export function ContentManager() {
 						))}
 					</div>
 
-					<textarea
+					<RichTextarea
 						value={newPostText}
-						onChange={e => setNewPostText(e.target.value)}
+						onChange={setNewPostText}
 						placeholder="Write your post..."
 						rows={4}
 						className="w-full bg-input border border-border/20 rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40 resize-none"

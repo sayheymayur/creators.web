@@ -13,6 +13,8 @@ import { PPVUnlockModal } from '../modals/PPVUnlockModal';
 import { Modal } from './Toast';
 import { creatorsApi, ApiError } from '../../services/creatorsApi';
 import { isPostCommented } from '../../services/commentedPosts';
+import { RichTextarea } from './RichTextarea';
+import { tokenizeHashtags } from '../../utils/hashtag';
 
 interface PostCardProps {
 	post: Post;
@@ -270,7 +272,22 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 			</div>
 
 			{post.text && (
-				<p className="px-4 pb-3 text-sm text-foreground/90 leading-relaxed whitespace-pre-line line-clamp-4">{post.text}</p>
+				<p className="px-4 pb-3 text-sm text-foreground/90 leading-relaxed whitespace-pre-wrap line-clamp-4">
+					{tokenizeHashtags(post.text).map((t, i) =>
+						t.type === 'hashtag' ? (
+							<button
+								key={`${t.tag}-${i}`}
+								type="button"
+								onClick={() => { void navigate(`/explore?tag=${encodeURIComponent(t.tag)}`); }}
+								className="text-rose-400 font-medium hover:underline"
+							>
+								{t.value}
+							</button>
+						) : (
+							<span key={i}>{t.value}</span>
+						)
+					)}
+				</p>
 			)}
 
 			{post.type !== 'text' && post.mediaUrl && (
@@ -417,9 +434,9 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 				maxWidth="max-w-lg"
 			>
 				<div className="p-5 space-y-4">
-					<textarea
+					<RichTextarea
 						value={editText}
-						onChange={e => setEditText(e.target.value)}
+						onChange={setEditText}
 						className="w-full min-h-[120px] bg-input border border-border/20 rounded-xl px-3 py-2 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
 						placeholder="Update your post..."
 					/>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Search, SlidersHorizontal, TrendingUp, Star, Users, Eye, Compass } from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';
 import { CreatorCard } from '../../components/ui/CreatorCard';
@@ -11,11 +11,13 @@ import { useLiveStream } from '../../context/LiveStreamContext';
 import { creatorSummaryToCardCreator } from '../../services/creatorWsMap';
 import { isPostsMockMode } from '../../services/postsMode';
 import { useDragScroll } from '../../hooks/useDragScroll';
+import { normalizeHashtagTag, textHasHashtag } from '../../utils/hashtag';
 
 const CATEGORIES = ['All', 'Fitness', 'Art', 'Tech', 'Travel', 'Music', 'Food', 'Gaming'];
 
 export function Explore() {
 	const navigate = useNavigate();
+	const [searchParams, setSearchParams] = useSearchParams();
 	const { state: contentState, loadMoreExplore, creatorWsSearch } = useContent();
 	const postsMock = isPostsMockMode();
 	const explorePosts = useMemo(
@@ -28,6 +30,7 @@ export function Explore() {
 	const [search, setSearch] = useState('');
 	const [category, setCategory] = useState('All');
 	const [sortBy, setSortBy] = useState<'popular' | 'new' | 'price'>('popular');
+	const tagFilter = normalizeHashtagTag(searchParams.get('tag') ?? '');
 	const [wsCreators, setWsCreators] = useState<Creator[]>([]);
 	const [wsDirCursor, setWsDirCursor] = useState<string | null>(null);
 	const [wsDirLoading, setWsDirLoading] = useState(false);
@@ -86,6 +89,11 @@ export function Explore() {
 			});
 	}, [postsMock, wsCreators, approvedCreators, search, category, sortBy]);
 
+	const filteredExplorePosts = useMemo(() => {
+		if (!tagFilter) return explorePosts;
+		return explorePosts.filter(p => textHasHashtag(p.text ?? '', tagFilter));
+	}, [explorePosts, tagFilter]);
+
 	const trendingCreators = !postsMock ?
 		(wsCreators.length ? wsCreators.slice(0, 3) : approvedCreators.slice(0, 3)) :
 		approvedCreators.slice(0, 3);
@@ -142,6 +150,24 @@ export function Explore() {
 							<Compass className="w-4 h-4 text-rose-400" />
 							<h2 className="font-semibold text-foreground text-sm">Discover posts</h2>
 						</div>
+						{tagFilter && (
+							<div className="flex items-center justify-between gap-3 bg-surface border border-border/20 rounded-2xl px-4 py-2">
+								<p className="text-xs text-muted">
+									Showing posts tagged <span className="text-rose-400 font-semibold">#{tagFilter}</span>
+								</p>
+								<button
+									type="button"
+									onClick={() => {
+										const next = new URLSearchParams(searchParams);
+										next.delete('tag');
+										setSearchParams(next, { replace: true });
+									}}
+									className="text-xs font-semibold text-muted hover:text-foreground"
+								>
+									Clear
+								</button>
+							</div>
+						)}
 						{contentState.postsWsStatus === 'connecting' && (
 							<p className="text-xs text-muted">Loading posts…</p>
 						)}
@@ -149,7 +175,7 @@ export function Explore() {
 							<p className="text-xs text-rose-400">{contentState.postsWsError}</p>
 						)}
 						<div className="space-y-4">
-							{explorePosts.map(post => (
+							{filteredExplorePosts.map(post => (
 								<PostCard key={post.id} post={post} />
 							))}
 						</div>

@@ -15,7 +15,9 @@ type ChatAction =
 	{ type: 'SET_ACTIVE', payload: string | null } |
 	{ type: 'ADD_CONVERSATION', payload: Conversation } |
 	{ type: 'UPSERT_ROOM_MESSAGES', payload: { conversationId: string, messages: Message[] } } |
-	{ type: 'ADD_ROOM_MESSAGE', payload: Message };
+	{ type: 'ADD_ROOM_MESSAGE', payload: Message } |
+	{ type: 'REPLACE_MESSAGE', payload: { conversationId: string, localId: string, message: Message } } |
+	{ type: 'UPDATE_MESSAGE', payload: { conversationId: string, id: string, patch: Partial<Message> } };
 
 const initialState: ChatState = {
 	conversations: mockConversations,
@@ -99,6 +101,29 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
 				),
 			};
 		}
+		case 'REPLACE_MESSAGE': {
+			const { conversationId, localId, message } = action.payload;
+			const existing = state.messages[conversationId] ?? [];
+			const next = existing.map(m => (m.id === localId ? message : m));
+			const hasLocal = existing.some(m => m.id === localId);
+			const finalList = hasLocal ? next : [...existing, message];
+			return {
+				...state,
+				messages: { ...state.messages, [conversationId]: finalList },
+				conversations: state.conversations.map(c =>
+					c.id === conversationId ?
+						{ ...c, lastMessage: message.content, lastMessageTime: message.createdAt } :
+						c
+				),
+			};
+		}
+		case 'UPDATE_MESSAGE': {
+			const { conversationId, id, patch } = action.payload;
+			const existing = state.messages[conversationId] ?? [];
+			if (!existing.some(m => m.id === id)) return state;
+			const next = existing.map(m => (m.id === id ? { ...m, ...patch } : m));
+			return { ...state, messages: { ...state.messages, [conversationId]: next } };
+		}
 		default:
 			return state;
 	}
@@ -115,6 +140,10 @@ interface ChatContextValue {
 	upsertRoomMessages: (conversationId: string, messages: Message[]) => void;
 	/** Append one message if id is new (e.g. `chat|newmessage`). */
 	addRoomMessage: (message: Message) => void;
+	/** Replace a local optimistic message with the server-acknowledged message. */
+	replaceMessage: (conversationId: string, localId: string, message: Message) => void;
+	/** Patch message properties (e.g. mark `sendStatus: 'failed'`). */
+	updateMessage: (conversationId: string, id: string, patch: Partial<Message>) => void;
 	getConversationForUser: (userId: string) => Conversation | null;
 	totalUnread: number;
 }
@@ -152,6 +181,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 		dispatch({ type: 'ADD_ROOM_MESSAGE', payload: message });
 	}, []);
 
+	const replaceMessage = useCallback((conversationId: string, localId: string, message: Message) => {
+		dispatch({ type: 'REPLACE_MESSAGE', payload: { conversationId, localId, message } });
+	}, []);
+
+	const updateMessage = useCallback((conversationId: string, id: string, patch: Partial<Message>) => {
+		dispatch({ type: 'UPDATE_MESSAGE', payload: { conversationId, id, patch } });
+	}, []);
+
 	const getConversationForUser = useCallback((userId: string) => {
 		return state.conversations.find(c => c.participantIds.includes(userId)) ?? null;
 	}, [state.conversations]);
@@ -162,7 +199,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 		<ChatContext.Provider value={{
 			state, sendMessage, unlockMessage, markRead,
 			setActive, addConversation, upsertRoomMessages, addRoomMessage,
-			getConversationForUser, totalUnread,
+			replaceMessage, updateMessage, getConversationForUser, totalUnread,
 		}}
 		>
 			{children}

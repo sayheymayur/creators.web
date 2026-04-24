@@ -17,6 +17,14 @@ import { Navbar } from '../../components/layout/Navbar';
 import { useRoomChat } from '../../hooks/useRoomChat';
 import { formatINR } from '../../services/razorpay';
 
+function formatRemaining(sec: number): string {
+	if (!Number.isFinite(sec)) return '—';
+	const s = Math.max(0, Math.floor(sec));
+	const m = Math.floor(s / 60);
+	const r = s % 60;
+	return `${m}:${String(r).padStart(2, '0')}`;
+}
+
 export function ChatRoom() {
 	const { id: convId } = useParams<{ id: string }>();
 	const navigate = useNavigate();
@@ -28,16 +36,20 @@ export function ChatRoom() {
 		unlockMessage,
 		upsertRoomMessages,
 		addRoomMessage,
+		replaceMessage,
+		updateMessage,
 	} = useChat();
 	const { state: contentState } = useContent();
 	const { deductFunds } = useWallet();
 	const { showToast } = useNotifications();
 	const { startCall } = useCall();
-	const { state: sessionsState, endSession: endBookedSession } = useSessions();
+	const { state: sessionsState, completeSession: completeBookedSession } = useSessions();
 	const [text, setText] = useState('');
 	const [showTipModal, setShowTipModal] = useState(false);
+	const [realtimeSending, setRealtimeSending] = useState(false);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
 	const replyIdxRef = useRef(0);
+	const lastSendRef = useRef<{ at: number, roomId: string, text: string } | null>(null);
 
 	const conv = chatState.conversations.find(c => c.id === convId);
 	const messages = convId ? (chatState.messages[convId] ?? []) : [];
@@ -63,6 +75,18 @@ export function ChatRoom() {
 		[showToast]
 	);
 
+	const roomId = convId ?? '';
+	const activeChatBooking =
+		sessionsState.active?.accepted.kind === 'chat' && sessionsState.active.accepted.room_id === roomId ?
+			sessionsState.active.accepted :
+			null;
+	const endedChatBooking =
+		sessionsState.ended?.room_id === roomId ?
+			sessionsState.ended :
+			null;
+	const isBookedChatRoom = !!activeChatBooking || !!endedChatBooking;
+	const canSendBookedChat = !isBookedChatRoom || !!activeChatBooking;
+
 	const { otherTyping, realtimeActive, notifyTyping, sendRealtime } = useRoomChat({
 		roomUuid: conv && convId ? convId : undefined,
 		currentUserId: userId,
@@ -71,6 +95,8 @@ export function ChatRoom() {
 		upsertRoomMessages,
 		addRoomMessage,
 		onProtocolError,
+		sendWithAck: !!activeChatBooking,
+		transport: activeChatBooking ? 'ws' : 'multiplex',
 	});
 
 	useEffect(() => {
@@ -89,11 +115,8 @@ export function ChatRoom() {
 		);
 	}
 
-	const roomId = convId;
-	const activeChatBooking =
-		sessionsState.active?.accepted.kind === 'chat' && sessionsState.active.accepted.room_id === roomId ?
-			sessionsState.active.accepted :
-			null;
+	// Booking-derived chat rooms: disable sending after `sessions|ended`.
+	// `roomId` and booking state are computed above so the hook call remains unconditional.
 
 	const otherIdx = conv.participantIds.indexOf(userId) === 0 ? 1 : 0;
 	const otherName = conv.participantNames[otherIdx];
@@ -118,12 +141,70 @@ export function ChatRoom() {
 		if (!text.trim() || !authState.user) return;
 		const trimmed = text.trim();
 
+		if (isBookedChatRoom && !activeChatBooking) {
+			showToast('Session ended. You can’t send more messages.', 'error');
+			return;
+		}
+
 		if (realtimeActive) {
-			void sendRealtime(trimmed).then(() => {
-				setText('');
-			}).catch(err => {
-				showToast(err instanceof Error ? err.message : 'Send failed', 'error');
-			});
+			// Guard against accidental double-submit (e.g. mobile enter+tap, focus glitches).
+			const now = Date.now();
+			const last = lastSendRef.current;
+			if (
+				realtimeSending ||
+				(last && last.roomId === roomId && last.text === trimmed && now - last.at < 800)
+			) {
+				return;
+			}
+			lastSendRef.current = { at: now, roomId, text: trimmed };
+			setRealtimeSending(true);
+
+			const localId = `local-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+			const optimistic: Message = {
+				id: localId,
+				conversationId: roomId,
+				senderId: userId,
+				senderName: authState.user.name,
+				senderAvatar: authState.user.avatar,
+				content: trimmed,
+				isPaid: false,
+				isUnlocked: true,
+				createdAt: new Date().toISOString(),
+				isSeen: false,
+				sendStatus: 'sending',
+			};
+			sendMessage(optimistic);
+			setText('');
+
+			void sendRealtime(trimmed)
+				.then(dto => {
+					if (!dto) {
+						// fire-and-forget mode; delivery is via `chat|newmessage`
+						updateMessage(roomId, localId, { sendStatus: 'sent' });
+						return;
+					}
+					const serverMsg: Message = {
+						id: dto.id,
+						conversationId: dto.room_id,
+						senderId: dto.user_id,
+						senderName: authState.user?.name ?? 'You',
+						senderAvatar: authState.user?.avatar ?? '',
+						content: dto.body,
+						isPaid: false,
+						isUnlocked: true,
+						createdAt: dto.created_at,
+						isSeen: false,
+						sendStatus: 'sent',
+					};
+					replaceMessage(roomId, localId, serverMsg);
+				})
+				.catch(err => {
+					updateMessage(roomId, localId, { sendStatus: 'failed' });
+					showToast(err instanceof Error ? err.message : 'Send failed', 'error');
+				})
+				.finally(() => {
+					setRealtimeSending(false);
+				});
 			return;
 		}
 
@@ -176,6 +257,15 @@ export function ChatRoom() {
 			'Online now' :
 			'Offline';
 
+	const timerForRoom =
+		sessionsState.timer?.room_id === roomId ?
+			sessionsState.timer :
+			null;
+	const timerLine =
+		activeChatBooking && timerForRoom ?
+			`${formatRemaining(timerForRoom.remaining_sec)} left` :
+			null;
+
 	return (
 		<div className="min-h-screen bg-background text-foreground flex flex-col">
 			<Navbar />
@@ -183,21 +273,32 @@ export function ChatRoom() {
 
 			<div className="fixed top-14 left-0 right-0 z-30 bg-background/90 backdrop-blur-xl border-b border-border/10">
 				<div className="max-w-2xl mx-auto px-4 h-14 flex items-center gap-3">
-					<button type="button" onClick={() => { void navigate('/messages'); }} className="p-1.5 rounded-lg hover:bg-foreground/10 transition-colors">
+					<button
+						type="button"
+						onClick={() => {
+							const role = authState.user?.role;
+							const home =
+								role === 'admin' ? '/admin' :
+									role === 'creator' ? '/creator-dashboard' :
+										'/feed';
+							void navigate(home);
+						}}
+						className="p-1.5 rounded-lg hover:bg-foreground/10 transition-colors"
+					>
 						<ArrowLeft className="w-5 h-5 text-muted" />
 					</button>
 					<Avatar src={otherAvatar} alt={otherName} size="md" isOnline={conv.isOnline} />
 					<div>
 						<p className="text-sm font-semibold text-foreground">{otherName}</p>
-						<p className="text-xs text-muted">{statusLine}</p>
+						<p className="text-xs text-muted">{timerLine ?? statusLine}</p>
 					</div>
 					<div className="ml-auto flex items-center gap-2">
-						{activeChatBooking && (
+						{activeChatBooking && !endedChatBooking && (
 							<button
 								type="button"
 								onClick={() => {
-									void endBookedSession(activeChatBooking.request_id)
-										.then(() => showToast('Session ended'))
+									void completeBookedSession(activeChatBooking.request_id)
+										.then(() => showToast('Ending session…'))
 										.catch(err => showToast(err instanceof Error ? err.message : 'Failed to end session', 'error'));
 								}}
 								className="text-xs font-semibold px-3 py-1.5 rounded-xl border border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/15 transition-colors"
@@ -232,6 +333,14 @@ export function ChatRoom() {
 
 			<div className="flex-1 pt-28 pb-20 overflow-y-auto">
 				<div className="max-w-2xl mx-auto px-4 space-y-3 py-4">
+					{endedChatBooking && (
+						<div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3">
+							<p className="text-sm font-semibold text-rose-200">Session ended</p>
+							<p className="text-xs text-rose-200/80 mt-0.5">
+								You can still view messages, but sending is disabled.
+							</p>
+						</div>
+					)}
 					{messages.map(msg => {
 						const isMe = msg.senderId === userId;
 						return (
@@ -275,9 +384,13 @@ export function ChatRoom() {
 									<div className={`flex items-center gap-1 ${isMe ? 'flex-row-reverse' : ''}`}>
 										<p className="text-[10px] text-muted/70">{formatDistanceToNow(msg.createdAt)}</p>
 										{isMe && (
-											msg.isSeen ?
-												<CheckCheck className="w-3 h-3 text-rose-400" /> :
-												<Check className="w-3 h-3 text-muted/70" />
+											msg.sendStatus === 'failed' ?
+												<span className="text-[10px] text-rose-300">Failed</span> :
+												msg.sendStatus === 'sending' ?
+													<span className="text-[10px] text-muted/70">Sending…</span> :
+													(msg.isSeen ?
+														<CheckCheck className="w-3 h-3 text-rose-400" /> :
+														<Check className="w-3 h-3 text-muted/70" />)
 										)}
 									</div>
 								</div>
@@ -290,6 +403,16 @@ export function ChatRoom() {
 
 			<div className="fixed bottom-0 left-0 right-0 bg-background/95 backdrop-blur-xl border-t border-border/10">
 				<div className="max-w-2xl mx-auto px-4 py-3">
+					{endedChatBooking && (
+						<div className="mb-2 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-2.5">
+							<p className="text-xs font-semibold text-rose-200">
+								{endedChatBooking.reason === 'timeout' ? 'Time over — session ended' : 'Session disconnected'}
+							</p>
+							<p className="text-[11px] text-rose-200/80 mt-0.5">
+								You can’t send messages after the session ends.
+							</p>
+						</div>
+					)}
 					<form onSubmit={handleSend} className="flex gap-2">
 						<button type="button" className="p-2.5 rounded-xl hover:bg-foreground/10 transition-colors text-muted hover:text-foreground">
 							<ImageIcon className="w-5 h-5" />
@@ -299,17 +422,18 @@ export function ChatRoom() {
 							onChange={e => {
 								const v = e.target.value;
 								setText(v);
-								if (realtimeActive && v.trim()) notifyTyping(true);
+								if (realtimeActive && canSendBookedChat && v.trim()) notifyTyping(true);
 							}}
 							onBlur={() => {
 								if (realtimeActive) notifyTyping(false);
 							}}
-							placeholder="Type a message..."
+							disabled={!canSendBookedChat}
+							placeholder={!canSendBookedChat ? 'Session ended' : 'Type a message...'}
 							className="flex-1 bg-input border border-border/20 rounded-2xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
 						/>
 						<button
 							type="submit"
-							disabled={!text.trim()}
+							disabled={!text.trim() || !canSendBookedChat || (realtimeActive && realtimeSending)}
 							className="w-10 h-10 bg-rose-500 hover:bg-rose-600 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl flex items-center justify-center transition-all active:scale-95"
 						>
 							<Send className="w-4 h-4 text-white" />

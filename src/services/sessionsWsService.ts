@@ -29,6 +29,13 @@ function assertKind(kind: string): SessionKind {
 	return kind;
 }
 
+function assertMinutes(minutes: number): number {
+	if (!Number.isInteger(minutes) || minutes < 1 || minutes > 24 * 60) {
+		throw new Error('minutes must be an integer 1–1440');
+	}
+	return minutes;
+}
+
 function assertRating(rating: number): number {
 	if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
 		throw new Error('rating must be an integer 1–5');
@@ -38,12 +45,13 @@ function assertRating(rating: number): number {
 
 export function sessionsRequest(
 	ws: WsClient,
-	opts: { creatorUserId: string, kind: SessionKind, requestId?: string }
+	opts: { creatorUserId: string, kind: SessionKind, minutes: number, requestId?: string }
 ): Promise<SessionsRequestResponse> {
 	const creatorUserId = assertDigitsOnly('creatorUserId', opts.creatorUserId);
 	const kind = assertKind(opts.kind);
+	const minutes = assertMinutes(opts.minutes);
 	const rid = assertRequestIdTag(opts.requestId);
-	return ws.request('sessions', 'request', [creatorUserId, kind], rid).then(r => r as SessionsRequestResponse);
+	return ws.request('sessions', 'request', [creatorUserId, kind, String(minutes)], rid).then(r => r as SessionsRequestResponse);
 }
 
 export function sessionsAccept(

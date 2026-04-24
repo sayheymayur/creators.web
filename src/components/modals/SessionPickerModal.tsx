@@ -49,13 +49,14 @@ export function SessionPickerModal({
 	const canAfford = payMode === 'external' || compareMinor(walletBalanceMinor, '>=', totalMinor);
 	const canStart =
 		protocol === 'sessions' ?
-			!!selectedType :
+			!!selectedType && !!selectedDuration :
 			!!selectedType && !!selectedDuration && canAfford;
 
 	function handleConfirm() {
 		if (!selectedType) return;
 		if (protocol === 'sessions') {
-			onConfirm(selectedType, 0, 0, 'wallet');
+			if (!selectedDuration) return;
+			onConfirm(selectedType, selectedDuration, 0, 'wallet');
 			onClose();
 			return;
 		}
@@ -110,44 +111,49 @@ export function SessionPickerModal({
 						</div>
 					)}
 
-					{protocol !== 'sessions' && (
-						<div>
-							<div className="flex items-center justify-between mb-3">
-								<p className="text-xs font-semibold text-muted uppercase tracking-widest">Duration</p>
+					<div>
+						<div className="flex items-center justify-between mb-3">
+							<p className="text-xs font-semibold text-muted uppercase tracking-widest">Duration</p>
+							{protocol !== 'sessions' && (
 								<div className="flex items-center gap-1 text-xs text-amber-400">
 									<Zap className="w-3 h-3 fill-amber-400" />
 									<span>{formatINR(ratePerMinute)}/min</span>
 								</div>
-							</div>
-							<div className="grid grid-cols-3 gap-2">
-								{DURATION_OPTIONS.map(min => {
-									const cost = parseFloat((min * ratePerMinute).toFixed(2));
-									const costMinor = inrRupeesToMinor(cost);
-									const affordable = payMode === 'external' || compareMinor(walletBalanceMinor, '>=', costMinor);
-									return (
-										<button
-											key={min}
-											onClick={() => setSelectedDuration(min)}
-											disabled={!affordable}
-											className={`flex flex-col items-center gap-1 p-3 rounded-2xl border transition-all ${
-												!affordable ?
-													'bg-foreground/5 border-border/20 text-muted/50 cursor-not-allowed opacity-50' :
-													selectedDuration === min ?
-														'bg-amber-500/15 border-amber-500/30 text-amber-400' :
-														'bg-foreground/5 border-border/20 text-foreground/80 hover:bg-foreground/10'
-											}`}
-										>
-											<div className="flex items-center gap-1">
-												<Clock className="w-3 h-3" />
-												<span className="text-sm font-bold">{min}m</span>
-											</div>
-											<span className="text-[10px]">{formatINR(cost)}</span>
-										</button>
-									);
-								})}
-							</div>
+							)}
 						</div>
-					)}
+						<div className="grid grid-cols-3 gap-2">
+							{DURATION_OPTIONS.map(min => {
+								const cost = parseFloat((min * ratePerMinute).toFixed(2));
+								const costMinor = inrRupeesToMinor(cost);
+								const affordable =
+									protocol === 'sessions' ?
+										true :
+										(payMode === 'external' || compareMinor(walletBalanceMinor, '>=', costMinor));
+								return (
+									<button
+										key={min}
+										onClick={() => setSelectedDuration(min)}
+										disabled={!affordable}
+										className={`flex flex-col items-center gap-1 p-3 rounded-2xl border transition-all ${
+											!affordable ?
+												'bg-foreground/5 border-border/20 text-muted/50 cursor-not-allowed opacity-50' :
+												selectedDuration === min ?
+													'bg-amber-500/15 border-amber-500/30 text-amber-400' :
+													'bg-foreground/5 border-border/20 text-foreground/80 hover:bg-foreground/10'
+										}`}
+									>
+										<div className="flex items-center gap-1">
+											<Clock className="w-3 h-3" />
+											<span className="text-sm font-bold">{min}m</span>
+										</div>
+										{protocol !== 'sessions' && (
+											<span className="text-[10px]">{formatINR(cost)}</span>
+										)}
+									</button>
+								);
+							})}
+						</div>
+					</div>
 
 					{protocol !== 'sessions' && (
 						<div>
@@ -205,7 +211,7 @@ export function SessionPickerModal({
 					>
 						{!selectedType ?
 							'Select a session type' :
-							protocol !== 'sessions' && !selectedDuration ?
+							!selectedDuration ?
 								'Select duration' :
 								protocol !== 'sessions' && !canAfford ?
 									'Insufficient balance' :

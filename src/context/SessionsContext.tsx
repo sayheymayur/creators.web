@@ -17,11 +17,13 @@ import type {
 	SessionsAcceptedPayload,
 	SessionsCompleteResponse,
 	SessionsEndSessionResponse,
+	SessionsEndedEvent,
 	SessionsFeedbackPromptEvent,
 	SessionsFeedbackReceivedEvent,
 	SessionsRejectedPayload,
 	SessionsRequestEvent,
 	SessionsRequestResponse,
+	SessionsTimerEvent,
 } from '../services/sessionsWsTypes';
 
 export type SessionsUiCallType = 'audio' | 'video';
@@ -55,6 +57,8 @@ type SessionsState = {
 	outgoing: OutgoingRequestState,
 	incoming: IncomingRequestState[],
 	active: ActiveBookingState | null,
+	timer: SessionsTimerEvent | null,
+	ended: SessionsEndedEvent | null,
 	feedbackPrompt: FeedbackPromptState | null,
 	feedbackReceived: SessionsFeedbackReceivedEvent | null,
 };
@@ -69,6 +73,9 @@ type Action =
 	{ type: 'INCOMING_REMOVE', payload: { request_id: string } } |
 	{ type: 'ACTIVE_SET', payload: ActiveBookingState } |
 	{ type: 'ACTIVE_CLEAR' } |
+	{ type: 'TIMER_UPDATE', payload: SessionsTimerEvent } |
+	{ type: 'ENDED_SET', payload: SessionsEndedEvent } |
+	{ type: 'ENDED_CLEAR' } |
 	{ type: 'FEEDBACK_PROMPT', payload: SessionsFeedbackPromptEvent } |
 	{ type: 'FEEDBACK_RECEIVED', payload: SessionsFeedbackReceivedEvent } |
 	{ type: 'FEEDBACK_CLEAR' };
@@ -77,6 +84,8 @@ const initialState: SessionsState = {
 	outgoing: { state: 'idle' },
 	incoming: [],
 	active: null,
+	timer: null,
+	ended: null,
 	feedbackPrompt: null,
 	feedbackReceived: null,
 };
@@ -101,9 +110,15 @@ function sessionsReducer(state: SessionsState, action: Action): SessionsState {
 		case 'INCOMING_REMOVE':
 			return { ...state, incoming: state.incoming.filter(r => r.request.request_id !== action.payload.request_id) };
 		case 'ACTIVE_SET':
-			return { ...state, active: action.payload };
+			return { ...state, active: action.payload, ended: null };
 		case 'ACTIVE_CLEAR':
-			return { ...state, active: null };
+			return { ...state, active: null, timer: null };
+		case 'TIMER_UPDATE':
+			return { ...state, timer: action.payload };
+		case 'ENDED_SET':
+			return { ...state, ended: action.payload };
+		case 'ENDED_CLEAR':
+			return { ...state, ended: null };
 		case 'FEEDBACK_PROMPT':
 			return { ...state, feedbackPrompt: { request_id: action.payload.request_id } };
 		case 'FEEDBACK_RECEIVED':
@@ -120,6 +135,7 @@ type SessionsContextValue = {
 	requestSession: (opts: {
 		creatorUserId: string,
 		kind: SessionKind,
+		minutes: number,
 		uiCallType?: SessionsUiCallType,
 		creatorDisplay?: { name: string, avatar: string },
 	}) => Promise<SessionsRequestResponse>,
@@ -149,11 +165,12 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 		(opts: {
 			creatorUserId: string,
 			kind: SessionKind,
+			minutes: number,
 			uiCallType?: SessionsUiCallType,
 			creatorDisplay?: { name: string, avatar: string },
 		}) => {
 			dispatch({ type: 'OUTGOING_REQUESTING', payload: { creatorUserId: opts.creatorUserId, kind: opts.kind } });
-			return sessionsRequest(ws, { creatorUserId: opts.creatorUserId, kind: opts.kind })
+			return sessionsRequest(ws, { creatorUserId: opts.creatorUserId, kind: opts.kind, minutes: opts.minutes })
 				.then(res => {
 					if (opts.kind === 'call' && opts.uiCallType) {
 						uiCallTypeByRequestIdRef.current[res.request_id] = opts.uiCallType;
@@ -214,8 +231,19 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 
 	const completeSession = useCallback(
 		(requestId: string) =>
-			sessionsComplete(ws, requestId),
-		[ws]
+			sessionsComplete(ws, requestId).then(res => {
+				const active = state.active?.accepted;
+				if (active && active.request_id === requestId) {
+					// Optimistically reflect end immediately; backend will also push `sessions|ended`.
+					dispatch({
+						type: 'ENDED_SET',
+						payload: { request_id: requestId, room_id: active.room_id, reason: 'manual' },
+					});
+					dispatch({ type: 'ACTIVE_CLEAR' });
+				}
+				return res;
+			}),
+		[ws, state.active?.accepted]
 	);
 
 	const endSession = useCallback(
@@ -274,6 +302,23 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 			const payload = data as SessionsFeedbackReceivedEvent;
 			dispatch({ type: 'FEEDBACK_RECEIVED', payload });
 		});
+		const offTimer = ws.on('sessions', 'timer', data => {
+			const payload = data as SessionsTimerEvent;
+			const active = state.active?.accepted;
+			if (!active) return;
+			if (active.request_id !== payload.request_id) return;
+			dispatch({ type: 'TIMER_UPDATE', payload });
+		});
+		const offEnded = ws.on('sessions', 'ended', data => {
+			const payload = data as SessionsEndedEvent;
+			const active = state.active?.accepted;
+			// Always record the ended booking so chat UI can reflect it by `room_id`,
+			// even if the local `active` booking is different or already cleared.
+			dispatch({ type: 'ENDED_SET', payload });
+			if (active && active.room_id === payload.room_id) {
+				dispatch({ type: 'ACTIVE_CLEAR' });
+			}
+		});
 
 		return () => {
 			offReq();
@@ -281,8 +326,10 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 			offRejected();
 			offPrompt();
 			offReceived();
+			offTimer();
+			offEnded();
 		};
-	}, [ws, authState.user]);
+	}, [ws, authState.user, state.active?.accepted?.request_id]);
 
 	// Cross-service: `/endsession` on `sessions` may also emit `|call|ended|{...}`.
 	useEffect(() => {

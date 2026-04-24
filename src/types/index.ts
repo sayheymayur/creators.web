@@ -188,6 +188,13 @@ export interface Message {
 	isUnlocked: boolean;
 	createdAt: string;
 	isSeen: boolean;
+	/**
+	 * Local send status for chat UX (WhatsApp-style ticks).
+	 * - `sending`: optimistic local message before ack
+	 * - `sent`: backend acknowledged (or persisted/history)
+	 * - `failed`: send attempt failed (user can retry/copy)
+	 */
+	sendStatus?: 'sending' | 'sent' | 'failed';
 }
 
 export interface Conversation {

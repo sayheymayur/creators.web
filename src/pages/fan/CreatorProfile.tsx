@@ -157,7 +157,7 @@ export function CreatorProfile() {
 			return true;
 		});
 
-	function handleStartSession(type: SessionType, _durationMinutes: number, _totalCost: number, _payMode: SessionPayMode) {
+	function handleStartSession(type: SessionType, durationMinutes: number, _totalCost: number, _payMode: SessionPayMode) {
 		if (!authState.user) return;
 
 		// Sessions WS protocol: pricing & wallet rules are enforced server-side (SESSION_PRICE_CENTS).
@@ -169,6 +169,7 @@ export function CreatorProfile() {
 		void requestSession({
 			creatorUserId: creatorForDisplay.id,
 			kind,
+			minutes: durationMinutes,
 			uiCallType,
 			creatorDisplay: { name: creatorForDisplay.name, avatar: creatorForDisplay.avatar },
 		}).then(() => {

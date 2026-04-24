@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useWsConnected, useWs } from '../context/WsContext';
 import { getCreatorsMultiplexSingleton } from '../services/creatorsMultiplexWs';
 import {
 	chatGetMessages,
@@ -48,6 +49,15 @@ export interface UseRoomChatParams {
 	upsertRoomMessages: (conversationId: string, messages: Message[]) => void;
 	addRoomMessage: (message: Message) => void;
 	onProtocolError?: (message: string) => void;
+	/** If true, uses `/sendmsg` ack response to immediately add the sender's message to UI. */
+	sendWithAck?: boolean;
+	/**
+	 * Transport selection.
+	 * - `multiplex`: uses CreatorsMultiplexWs (posts socket)
+	 * - `ws`: uses WsClient (primary socket, same as sessions)
+	 * - `auto`: uses `ws` when `sendWithAck` is true (booking chats), else multiplex
+	 */
+	transport?: 'auto' | 'multiplex' | 'ws';
 }
 
 export interface UseRoomChatResult {
@@ -57,8 +67,12 @@ export interface UseRoomChatResult {
 	realtimeActive: boolean;
 	/** Call on input change (debounced typing indicator). */
 	notifyTyping: (active: boolean) => void;
-	/** Send text over WS (`/sendmsg`, fire-and-forget ack). */
-	sendRealtime: (text: string) => Promise<void>;
+	/**
+	 * Send text over WS (`/sendmsg`).
+	 * - When `sendWithAck` is true, returns the acknowledged `ChatMessageDTO`.
+	 * - When `sendWithAck` is false, returns `undefined` (delivery via `chat|newmessage`).
+	 */
+	sendRealtime: (text: string) => Promise<ChatMessageDTO | undefined>;
 }
 
 const TYPING_DEBOUNCE_MS = 400;
@@ -72,7 +86,12 @@ export function useRoomChat(params: UseRoomChatParams): UseRoomChatResult {
 		upsertRoomMessages,
 		addRoomMessage,
 		onProtocolError,
+		sendWithAck = false,
+		transport = 'auto',
 	} = params;
+
+	const ws = useWs();
+	const wsConnected = useWsConnected();
 
 	const [otherTyping, setOtherTyping] = useState(false);
 	const typingClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -81,10 +100,13 @@ export function useRoomChat(params: UseRoomChatParams): UseRoomChatResult {
 	const roomRef = useRef(roomUuid);
 	roomRef.current = roomUuid;
 
+	const effectiveTransport: 'multiplex' | 'ws' =
+		transport === 'auto' ? (sendWithAck ? 'ws' : 'multiplex') : transport;
+
 	const realtimeActive =
-		postsWsStatus === 'ready' &&
 		!!roomUuid &&
-		isUuid(roomUuid);
+		isUuid(roomUuid) &&
+		(effectiveTransport === 'ws' ? wsConnected : postsWsStatus === 'ready');
 
 	const upsertRef = useRef(upsertRoomMessages);
 	const addRef = useRef(addRoomMessage);
@@ -97,10 +119,58 @@ export function useRoomChat(params: UseRoomChatParams): UseRoomChatResult {
 
 	useEffect(() => {
 		if (!realtimeActive || !roomUuid) return;
-		const client = getCreatorsMultiplexSingleton();
-		if (!client?.isOpen()) return;
 
 		let cancelled = false;
+
+		if (effectiveTransport === 'ws') {
+			const offEv = ws.on('chat', 'newmessage', data => {
+				if (cancelled || roomRef.current !== roomUuid) return;
+				const dto = data as ChatMessageDTO;
+				if (dto.room_id !== roomUuid) return;
+				addRef.current(dtoToMessage(dto, metaRef.current));
+			});
+			const offTyping = ws.on('chat', 'typing', data => {
+				if (cancelled || roomRef.current !== roomUuid) return;
+				const pl = data as ChatTypingEventPayload;
+				if (pl.room_id !== roomUuid || pl.user_id === userRef.current) return;
+				setOtherTyping(pl.active);
+				if (typingClearTimerRef.current) clearTimeout(typingClearTimerRef.current);
+				if (pl.active) {
+					typingClearTimerRef.current = setTimeout(() => {
+						setOtherTyping(false);
+					}, 3000);
+				}
+			});
+
+			void ws.request('chat', 'joinroom', [roomUuid])
+				.then(() => ws.request('chat', 'getmessages', [roomUuid, '30']))
+				.then(body => {
+					if (cancelled || body == null) return;
+					const b = body as { recentCache?: ChatMessageDTO[], page?: ChatMessageDTO[] };
+					const merged = mergeChatDTOs(b.recentCache ?? [], b.page ?? []);
+					const messages = merged.map(d => dtoToMessage(d, metaRef.current));
+					upsertRef.current(roomUuid, messages);
+				})
+				.catch(e => {
+					if (!cancelled) onProtocolError?.(e instanceof Error ? e.message : String(e));
+				});
+
+			return () => {
+				cancelled = true;
+				offEv();
+				offTyping();
+				if (typingClearTimerRef.current) clearTimeout(typingClearTimerRef.current);
+				if (typingDebounceRef.current) clearTimeout(typingDebounceRef.current);
+				if (wsConnected) {
+					void ws.request('chat', 'leaveroom', [roomUuid]).catch(() => {});
+				}
+				lastTypingSentRef.current = null;
+				setOtherTyping(false);
+			};
+		}
+
+		const client = getCreatorsMultiplexSingleton();
+		if (!client?.isOpen()) return;
 
 		const unsubEv = client.subscribeChatEvents((event, payload) => {
 			if (cancelled || roomRef.current !== roomUuid) return;
@@ -158,11 +228,16 @@ export function useRoomChat(params: UseRoomChatParams): UseRoomChatResult {
 			lastTypingSentRef.current = null;
 			setOtherTyping(false);
 		};
-	}, [realtimeActive, roomUuid, onProtocolError]);
+	}, [realtimeActive, roomUuid, onProtocolError, effectiveTransport, ws, wsConnected]);
 
 	const notifyTyping = useCallback(
 		(active: boolean) => {
 			if (!realtimeActive || !roomUuid) return;
+			if (effectiveTransport === 'ws') {
+				// fire-and-forget typing
+				ws.send(`> chat\n/typing ${roomUuid}${active ? '' : ' 0'}\n`);
+				return;
+			}
 			const client = getCreatorsMultiplexSingleton();
 			if (!client?.isOpen()) return;
 
@@ -185,20 +260,30 @@ export function useRoomChat(params: UseRoomChatParams): UseRoomChatResult {
 				}
 			}
 		},
-		[realtimeActive, roomUuid]
+		[realtimeActive, roomUuid, effectiveTransport, ws]
 	);
 
 	const sendRealtime = useCallback(
-		(text: string): Promise<void> => {
-			if (!realtimeActive || !roomUuid) return Promise.resolve();
+		(text: string): Promise<ChatMessageDTO | undefined> => {
+			if (!realtimeActive || !roomUuid) return Promise.resolve(undefined);
+			notifyTyping(false);
+			if (effectiveTransport === 'ws') {
+				// Spec expects an ack response for sendmsg.
+				return ws.request('chat', 'sendmsg', [roomUuid, text]).then(json => {
+					const body = json as { ok?: boolean, message?: ChatMessageDTO };
+					return body?.message;
+				});
+			}
 			const client = getCreatorsMultiplexSingleton();
 			if (!client?.isOpen()) {
 				return Promise.reject(new Error('Chat connection is not ready'));
 			}
-			notifyTyping(false);
-			return chatSendMsg(client, roomUuid, text, false).then(() => {});
+			if (sendWithAck) {
+				return chatSendMsg(client, roomUuid, text, true).then(res => res?.message);
+			}
+			return chatSendMsg(client, roomUuid, text, false).then(() => undefined);
 		},
-		[realtimeActive, roomUuid, notifyTyping]
+		[realtimeActive, roomUuid, notifyTyping, sendWithAck, effectiveTransport, ws]
 	);
 
 	return { otherTyping, realtimeActive, notifyTyping, sendRealtime };

@@ -101,3 +101,17 @@ export type SessionsFeedbackReceivedEvent = {
 	from_user_id: string,
 	rating: number,
 };
+
+export type SessionsTimerEvent = {
+	request_id: string,
+	room_id: string,
+	started_at?: string,
+	ends_at: string,
+	remaining_sec: number,
+};
+
+export type SessionsEndedEvent = {
+	request_id: string,
+	room_id: string,
+	reason?: 'timeout' | 'manual',
+};

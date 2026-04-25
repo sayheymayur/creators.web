@@ -25,7 +25,6 @@ export function ContentManager() {
 	const [newPostLocked, setNewPostLocked] = useState(false);
 	const [newPostPPV, setNewPostPPV] = useState(false);
 	const [newPostPrice, setNewPostPrice] = useState('4.99');
-	const [newPostImageUrl, setNewPostImageUrl] = useState('');
 	const [remoteMediaFile, setRemoteMediaFile] = useState<File | null>(null);
 	const [isPosting, setIsPosting] = useState(false);
 	const [uploadError, setUploadError] = useState<string>('');
@@ -52,7 +51,7 @@ export function ContentManager() {
 		const id = authedCreatorId || creatorData.id;
 		if (!id) return;
 		void loadCreatorPosts(id, true);
-	}, [useMockPosts, authedCreatorId, creatorData.id, loadCreatorPosts, contentState.postsWsStatus]);
+	}, [authedCreatorId, creatorData.id, loadCreatorPosts, contentState.postsWsStatus]);
 
 	function handleCreatePost() {
 		const text = newPostText.trim();
@@ -87,7 +86,6 @@ export function ContentManager() {
 				showToast('Post published!');
 				setShowNewPost(false);
 				setNewPostText('');
-				setNewPostImageUrl('');
 				setRemoteMediaFile(null);
 				setNewPostLocked(false);
 				setNewPostPPV(false);
@@ -245,15 +243,7 @@ export function ContentManager() {
 						className="w-full bg-input border border-border/20 rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40 resize-none"
 					/>
 
-					{newPostType === 'image' && useMockPosts && (
-						<input
-							value={newPostImageUrl}
-							onChange={e => setNewPostImageUrl(e.target.value)}
-							placeholder="Image URL (or leave blank for default)"
-							className="w-full bg-input border border-border/20 rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
-						/>
-					)}
-					{newPostType === 'image' && !useMockPosts && (
+					{newPostType === 'image' && (
 						<div>
 							<label className="block text-xs text-muted mb-1">Image or video file</label>
 							<input

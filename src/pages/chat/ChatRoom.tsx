@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Send, Image as ImageIcon, Zap, Lock, Unlock, CheckCheck, Check, Phone, Video } from '../../components/icons';
+import { ArrowLeft, Send, Image as ImageIcon, Zap, Lock, Unlock, Phone, Video } from '../../components/icons';
 import { useAuth } from '../../context/AuthContext';
 import { useChat } from '../../context/ChatContext';
 import { useContent } from '../../context/ContentContext';
@@ -24,6 +24,52 @@ function formatRemaining(sec: number): string {
 	const m = Math.floor(s / 60);
 	const r = s % 60;
 	return `${m}:${String(r).padStart(2, '0')}`;
+}
+
+function WhatsAppSingleTick({ className }: { className?: string }) {
+	return (
+		<svg
+			viewBox="0 0 16 16"
+			fill="none"
+			className={className}
+			aria-hidden="true"
+		>
+			<path
+				d="M3 8.5l2.2 2.2L13 3.8"
+				stroke="currentColor"
+				strokeWidth="1.8"
+				strokeLinecap="round"
+				strokeLinejoin="round"
+			/>
+		</svg>
+	);
+}
+
+function WhatsAppDoubleTick({ className }: { className?: string }) {
+	return (
+		<svg
+			viewBox="0 0 18 16"
+			fill="none"
+			className={className}
+			aria-hidden="true"
+		>
+			<path
+				d="M1.2 8.6l2.1 2.1L10.1 3.9"
+				stroke="currentColor"
+				strokeWidth="1.8"
+				strokeLinecap="round"
+				strokeLinejoin="round"
+				opacity="0.85"
+			/>
+			<path
+				d="M7.3 10.7l2-2L16.8 1.2"
+				stroke="currentColor"
+				strokeWidth="1.8"
+				strokeLinecap="round"
+				strokeLinejoin="round"
+			/>
+		</svg>
+	);
 }
 
 export function ChatRoom() {
@@ -80,6 +126,13 @@ export function ChatRoom() {
 
 	const onPresenceEvent = useCallback(
 		(ev: { type: 'join' | 'leave', user_id?: string }) => {
+			// De-spam join/leave toasts (some backends emit on reconnect; StrictMode dev can also re-run effects).
+			const key = `${ev.type}:${ev.user_id ?? ''}`;
+			const now = Date.now();
+			const last = (globalThis as unknown as { __cw_presence_toast?: { key: string, at: number } })?.__cw_presence_toast;
+			if (last?.key === key && now - (last.at ?? 0) < 1500) return;
+			(globalThis as unknown as { __cw_presence_toast?: { key: string, at: number } }).__cw_presence_toast = { key, at: now };
+
 			// Track other participant presence for WhatsApp-style delivery ticks.
 			const otherIdxLocal = conv?.participantIds?.indexOf(userId) === 0 ? 1 : 0;
 			const otherIdLocal = conv?.participantIds?.[otherIdxLocal] ?? '';
@@ -299,19 +352,18 @@ export function ChatRoom() {
 		}
 	}
 
-	const statusLine = otherTyping ?
-		'Typing…' :
-		conv.isOnline ?
-			'Online now' :
-			'Offline';
+	const statusLine =
+		otherTyping ?
+			'typing…' :
+			(otherInRoom ? 'Active now' : (conv.isOnline ? 'Online now' : 'Offline'));
 
 	const timerForRoom =
 		sessionsState.timer?.room_id === roomId ?
 			sessionsState.timer :
 			null;
-	const timerLine =
+	const remainingLabel =
 		activeChatBooking && timerForRoom ?
-			`${formatRemaining(timerForRoom.remaining_sec)} left` :
+			`${formatRemaining(timerForRoom.remaining_sec)}` :
 			null;
 
 	return (
@@ -337,9 +389,14 @@ export function ChatRoom() {
 					<Avatar src={otherAvatar} alt={otherName} size="md" isOnline={conv.isOnline} />
 					<div>
 						<p className="text-sm font-semibold text-foreground">{otherName}</p>
-						<p className="text-xs text-muted">{timerLine ?? statusLine}</p>
+						<p className="text-xs text-muted">{statusLine}</p>
 					</div>
 					<div className="ml-auto flex items-center gap-2">
+						{remainingLabel && (
+							<div className="px-2.5 py-1 rounded-xl border border-border/20 bg-foreground/5 text-xs font-semibold text-foreground/80 tabular-nums">
+								{remainingLabel}
+							</div>
+						)}
 						{activeChatBooking && !endedChatBooking && (
 							<button
 								type="button"
@@ -367,13 +424,15 @@ export function ChatRoom() {
 						>
 							<Video className="w-4 h-4" />
 						</button>
-						<button
-							onClick={() => setShowTipModal(true)}
-							className="flex items-center gap-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 text-xs font-semibold px-3 py-1.5 rounded-xl transition-all"
-						>
-							<Zap className="w-3.5 h-3.5 fill-amber-400" />
-							Tip
-						</button>
+						{authState.user?.role === 'fan' ? (
+							<button
+								onClick={() => setShowTipModal(true)}
+								className="flex items-center gap-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 text-xs font-semibold px-3 py-1.5 rounded-xl transition-all"
+							>
+								<Zap className="w-3.5 h-3.5 fill-amber-400" />
+								Tip
+							</button>
+						) : null}
 					</div>
 				</div>
 			</div>
@@ -428,10 +487,10 @@ export function ChatRoom() {
 												msg.sendStatus === 'sending' ?
 													<span className="text-[10px] text-muted/70">Sending…</span> :
 													(msg.isSeen ?
-														<CheckCheck className="w-3 h-3 text-sky-400" /> :
+														<WhatsAppDoubleTick className="w-4 h-4 text-rose-400" /> :
 														(otherInRoom ?
-															<CheckCheck className="w-3 h-3 text-muted/70" /> :
-															<Check className="w-3 h-3 text-muted/70" />))
+															<WhatsAppDoubleTick className="w-4 h-4 text-muted/70" /> :
+															<WhatsAppSingleTick className="w-3.5 h-3.5 text-muted/70" />))
 										)}
 									</div>
 								</div>

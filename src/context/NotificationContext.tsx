@@ -235,7 +235,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 	}, []);
 
 	const refresh = useCallback((opts?: { unreadOnly?: boolean }): Promise<void> => {
-		if (!wsConnected || !userId) return;
+		if (!wsConnected || !userId) return Promise.resolve();
 		fetchSeqRef.current += 1;
 		const seq = fetchSeqRef.current;
 		dispatch({ type: 'SET_STATUS', payload: { status: 'loading' } });
@@ -258,9 +258,9 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 	}, [applyListResponse, userId, ws, wsConnected]);
 
 	const loadMore = useCallback((): Promise<void> => {
-		if (!wsConnected || !userId) return;
+		if (!wsConnected || !userId) return Promise.resolve();
 		const cursor = state.nextCursor;
-		if (!cursor) return;
+		if (!cursor) return Promise.resolve();
 		return notificationList(ws, { limit: 30, beforeCursor: cursor }).then(
 			res => {
 				applyListResponse(res, false);

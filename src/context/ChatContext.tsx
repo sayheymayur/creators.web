@@ -122,9 +122,16 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
 			const next = existing.map(m => (m.id === localId ? message : m));
 			const hasLocal = existing.some(m => m.id === localId);
 			const finalList = hasLocal ? next : [...existing, message];
+			// If a realtime broadcast already inserted the server message id before the ack,
+			// de-duplicate by id after replacement.
+			const dedupById: Record<string, Message> = {};
+			for (const m of finalList) dedupById[m.id] = m;
+			const merged = Object.values(dedupById).sort(
+				(a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+			);
 			return {
 				...state,
-				messages: { ...state.messages, [conversationId]: finalList },
+				messages: { ...state.messages, [conversationId]: merged },
 				conversations: state.conversations.map(c =>
 					c.id === conversationId ?
 						{ ...c, lastMessage: message.content, lastMessageTime: message.createdAt } :

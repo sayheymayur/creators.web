@@ -98,6 +98,7 @@ export function useRoomChat(params: UseRoomChatParams): UseRoomChatResult {
 
 	const ws = useWs();
 	const wsConnected = useWsConnected();
+	const devSkipLeaveOnceRef = useRef<boolean>(import.meta.env.DEV);
 
 	const [otherTyping, setOtherTyping] = useState(false);
 	const typingClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -192,7 +193,11 @@ export function useRoomChat(params: UseRoomChatParams): UseRoomChatResult {
 				offTyping();
 				if (typingClearTimerRef.current) clearTimeout(typingClearTimerRef.current);
 				if (typingDebounceRef.current) clearTimeout(typingDebounceRef.current);
-				if (wsConnected) {
+				// In React StrictMode (dev), effects mount/unmount once for verification.
+				// Avoid emitting a real `/leaveroom` during the dev-only test cleanup.
+				if (devSkipLeaveOnceRef.current) {
+					devSkipLeaveOnceRef.current = false;
+				} else if (wsConnected) {
 					void ws.request('chat', 'leaveroom', [roomUuid]).catch(() => {});
 				}
 				lastTypingSentRef.current = null;
@@ -271,7 +276,9 @@ export function useRoomChat(params: UseRoomChatParams): UseRoomChatResult {
 			if (typingClearTimerRef.current) clearTimeout(typingClearTimerRef.current);
 			if (typingDebounceRef.current) clearTimeout(typingDebounceRef.current);
 			const c = getCreatorsMultiplexSingleton();
-			if (c?.isOpen()) {
+			if (devSkipLeaveOnceRef.current) {
+				devSkipLeaveOnceRef.current = false;
+			} else if (c?.isOpen()) {
 				void chatLeaveRoom(c, roomUuid).catch(() => {});
 			}
 			lastTypingSentRef.current = null;

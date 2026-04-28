@@ -501,11 +501,14 @@ export function ChatRoom() {
 												<span className="text-[10px] text-rose-300">Failed</span> :
 												msg.sendStatus === 'sending' ?
 													<span className="text-[10px] text-muted/70">Sending…</span> :
-													(msg.isSeen ?
-														<WhatsAppDoubleTick className="w-4 h-4 text-rose-400" /> :
-														(otherInRoom ?
-															<WhatsAppDoubleTick className="w-4 h-4 text-muted/70" /> :
-															<WhatsAppSingleTick className="w-3.5 h-3.5 text-muted/70" />))
+													(() => {
+														// Presence (`chat|j`) is not reliable after reload; use server ack as "delivered".
+														const isServerAcked = /^\d+$/.test(msg.id) || msg.sendStatus === 'sent';
+														if (msg.isSeen) return <WhatsAppDoubleTick className="w-4 h-4 text-rose-400" />;
+														if (isServerAcked) return <WhatsAppDoubleTick className="w-4 h-4 text-muted/70" />;
+														if (otherInRoom) return <WhatsAppDoubleTick className="w-4 h-4 text-muted/70" />;
+														return <WhatsAppSingleTick className="w-3.5 h-3.5 text-muted/70" />;
+													})()
 										)}
 									</div>
 								</div>

@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useReducer, useCallback, useEffect, useMemo } from 'react';
 import type { Conversation, Message } from '../types';
-import { mockConversations, mockMessages } from '../data/messages';
 import { getStoredUser } from '../services/sessionUser';
 
 interface ChatState {
@@ -35,11 +34,11 @@ function safeParseJson<T>(raw: string | null): T | null {
 
 function loadInitialChatState(): ChatState {
 	if (typeof window === 'undefined') {
-		return { conversations: mockConversations, messages: mockMessages, activeConversationId: null };
+		return { conversations: [], messages: {}, activeConversationId: null };
 	}
 	const stored = safeParseJson<ChatState>(window.localStorage.getItem(STORAGE_KEY));
 	if (!stored || !Array.isArray(stored.conversations) || typeof stored.messages !== 'object') {
-		return { conversations: mockConversations, messages: mockMessages, activeConversationId: null };
+		return { conversations: [], messages: {}, activeConversationId: null };
 	}
 	// Dedupe conversations by id to avoid repeated "Resume session" inserts across reloads.
 	const byId: Record<string, Conversation> = {};
@@ -94,24 +93,26 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
 				conversations: state.conversations.map(c =>
 					c.id === action.payload ? { ...c, unreadCount: 0 } : c
 				),
-				messages: {
-					...state.messages,
-					[action.payload]: (state.messages[action.payload] ?? []).map(m => ({ ...m, isSeen: true })),
-				},
 			};
 		}
 		case 'MARK_SEEN_UP_TO': {
 			const { conversationId, lastMessageId } = action.payload;
 			const existing = state.messages[conversationId] ?? [];
-			if (!/^\d+$/.test(lastMessageId)) return state;
-			const cutoff = Number(lastMessageId);
-			const next = existing.map(m => {
-				// only server ids can be compared numerically; skip local optimistic ids
-				if (!/^\d+$/.test(m.id)) return m;
-				const mid = Number(m.id);
-				if (mid <= cutoff) return { ...m, isSeen: true };
-				return m;
-			});
+			const isNumeric = (v: string) => /^\d+$/.test(v);
+			const next =
+				isNumeric(lastMessageId) ?
+					(() => {
+						const cutoff = Number(lastMessageId);
+						return existing.map(m => {
+							if (!isNumeric(m.id)) return m;
+							return Number(m.id) <= cutoff ? { ...m, isSeen: true } : m;
+						});
+					})() :
+					(() => {
+						const idx = existing.findIndex(m => m.id === lastMessageId);
+						if (idx === -1) return existing;
+						return existing.map((m, i) => (i <= idx ? { ...m, isSeen: true } : m));
+					})();
 			return { ...state, messages: { ...state.messages, [conversationId]: next } };
 		}
 		case 'SET_ACTIVE':
@@ -134,7 +135,10 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
 			const existing = state.messages[conversationId] ?? [];
 			const byId: Record<string, Message> = {};
 			for (const m of existing) byId[m.id] = m;
-			for (const m of incoming) byId[m.id] = m;
+			for (const m of incoming) {
+				const prev = byId[m.id];
+				byId[m.id] = prev ? { ...m, isSeen: prev.isSeen } : m;
+			}
 			const merged = Object.values(byId).sort(
 				(a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
 			);

@@ -220,7 +220,7 @@ export function Explore() {
 					<div className="flex items-center gap-1.5 text-muted text-sm">
 						<Users className="w-4 h-4" />
 						<span>
-							{wsDirLoading && !postsMock ? '…' : filtered.length} creator{filtered.length !== 1 ? 's' : ''}
+							{wsDirLoading ? '…' : filtered.length} creator{filtered.length !== 1 ? 's' : ''}
 						</span>
 					</div>
 					<div className="flex items-center gap-2">

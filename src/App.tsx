@@ -51,32 +51,56 @@ import { PrivacyPolicy } from './pages/PrivacyPolicy';
 import { DeleteAccountRequest } from './pages/DeleteAccountRequest';
 import { DeleteAccountRequestSuccess } from './pages/DeleteAccountRequestSuccess.tsx';
 
-class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
+type ErrorBoundaryState = {
+	hasError: boolean,
+	error?: unknown,
+};
+
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, ErrorBoundaryState> {
 	constructor(props: { children: React.ReactNode }) {
 		super(props);
-		this.state = { hasError: false };
+		this.state = { hasError: false, error: undefined };
 	}
 
-	static getDerivedStateFromError() {
-		return { hasError: true };
+	static getDerivedStateFromError(error: unknown): ErrorBoundaryState {
+		return { hasError: true, error };
 	}
 
-	componentDidCatch(error: unknown) {
-		console.error('App crashed:', error);
+	componentDidCatch(error: unknown, info: unknown) {
+		console.error('App crashed:', error, info);
 	}
 
 	render() {
 		if (this.state.hasError) {
+			const error = this.state.error;
+			const isDev = import.meta.env.DEV;
+			const message =
+				error instanceof Error ?
+					error.message :
+					typeof error === 'string' ?
+						error :
+						'';
+
 			return (
 				<div className="min-h-screen flex items-center justify-center bg-background text-foreground p-6">
 					<div className="max-w-[480px] text-center">
-						<h1 className="text-2xl font-bold mb-2">Something blocked the app</h1>
+						<h1 className="text-2xl font-bold mb-2">The app crashed</h1>
 						<p className="text-sm text-muted mb-4">
-							A browser extension or network filter likely blocked a script the app needs.
-							Try opening this site in an incognito window or disabling ad/privacy blockers for this domain.
+							Something went wrong while rendering this page. Please retry. If it keeps happening,
+							check the console for the exact error.
 						</p>
+						{isDev && message && (
+							<details className="text-left bg-surface2 border border-border/20 rounded-2xl p-3 mb-4">
+								<summary className="cursor-pointer text-xs font-semibold text-muted">
+									Error details (dev)
+								</summary>
+								<pre className="mt-2 text-[11px] leading-relaxed whitespace-pre-wrap break-words text-rose-300">
+									{message}
+								</pre>
+							</details>
+						)}
 						<button
-							onClick={() => this.setState({ hasError: false })}
+							onClick={() => this.setState({ hasError: false, error: undefined })}
 							className="px-4 py-2 rounded-full border border-border/30 bg-transparent text-foreground hover:bg-foreground/5 transition-colors"
 						>
 							Retry

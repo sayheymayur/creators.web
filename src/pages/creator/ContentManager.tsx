@@ -7,7 +7,6 @@ import { useAuth, useCurrentCreator } from '../../context/AuthContext';
 import { useContent } from '../../context/ContentContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { mockCreators } from '../../data/users';
-import { isPostsMockMode } from '../../services/postsMode';
 import { uploadPostMediaFile } from '../../services/uploadPostMedia';
 import { formatINR } from '../../services/razorpay';
 import { PostCard } from '../../components/ui/PostCard';
@@ -18,7 +17,6 @@ export function ContentManager() {
 	const { state: contentState, createPost, deletePost, loadCreatorPosts } = useContent();
 	const { showToast } = useNotifications();
 	const { state: authState } = useAuth();
-	const useMockPosts = isPostsMockMode();
 	const [showNewPost, setShowNewPost] = useState(false);
 	const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 

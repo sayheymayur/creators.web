@@ -1,30 +1,64 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, MessageCircle, Plus } from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';
 import { Avatar } from '../../components/ui/Avatar';
 import { useAuth } from '../../context/AuthContext';
 import { useChat } from '../../context/ChatContext';
+import { useSessions } from '../../context/SessionsContext';
+import { useWs, useWsConnected } from '../../context/WsContext';
 import { formatDistanceToNow } from '../../utils/date';
 import { mockCreators } from '../../data/users';
 import { useContent } from '../../context/ContentContext';
-import { randomUuid } from '../../utils/isUuid';
+import { isUuid, randomUuid } from '../../utils/isUuid';
 
 export function MessagesList() {
 	const { state: authState } = useAuth();
 	const { state: chatState, addConversation } = useChat();
+	const { state: sessionsState } = useSessions();
 	const { isSubscribed } = useContent();
+	const ws = useWs();
+	const wsConnected = useWsConnected();
 	const navigate = useNavigate();
 	const [search, setSearch] = useState('');
 	const [showNewChat, setShowNewChat] = useState(false);
 
 	const userId = authState.user?.id ?? '';
 
+	// If there's an active booked chat session, show a pinned "Resume session" row
+	// even if subscription state resets on reload.
+	const activeChatRoomId =
+		sessionsState.active?.accepted.kind === 'chat' ?
+			sessionsState.active.accepted.room_id :
+			(sessionsState.timer?.room_id ?? null);
+	const hasChatRowAlready =
+		!!activeChatRoomId &&
+		chatState.conversations.some(c => c.id === activeChatRoomId && c.participantIds.includes(userId));
+
+	function resumeActiveSession() {
+		if (!activeChatRoomId) return;
+		navigate(`/messages/${activeChatRoomId}`);
+	}
+
 	const conversations = chatState.conversations.filter(c => {
 		if (!c.participantIds.includes(userId)) return false;
 		if (!search) return true;
 		return c.participantNames.some(n => n.toLowerCase().includes(search.toLowerCase()));
 	});
+
+	// WhatsApp-like behavior: keep rooms joined in background so `chat|c` arrives
+	// and unread badge can update while user stays on the Messages list.
+	const joinedRoomsRef = useRef<Record<string, true>>({});
+	useEffect(() => {
+		if (!wsConnected) return;
+		const rooms = conversations.map(c => c.id).filter(id => isUuid(id));
+		for (const rid of rooms) {
+			if (sessionsState.endedRooms?.[rid]) continue;
+			if (joinedRoomsRef.current[rid]) continue;
+			joinedRoomsRef.current[rid] = true;
+			void ws.request('chat', 'joinroom', [rid]).catch(() => {});
+		}
+	}, [conversations, sessionsState.endedRooms, ws, wsConnected]);
 
 	function getOtherParticipant(conv: typeof conversations[0]) {
 		const idx = conv.participantIds.indexOf(userId);
@@ -110,6 +144,25 @@ export function MessagesList() {
 						className="w-full bg-input border border-border/20 rounded-xl pl-10 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
 					/>
 				</div>
+
+				{activeChatRoomId && !hasChatRowAlready && sessionsState.ended?.room_id !== activeChatRoomId && (
+					<button
+						type="button"
+						onClick={() => resumeActiveSession()}
+						className="w-full mb-3 flex items-center gap-3 p-3 rounded-2xl border border-rose-500/25 bg-rose-500/10 hover:bg-rose-500/15 transition-colors text-left"
+					>
+						<div className="w-11 h-11 rounded-2xl bg-rose-500/20 flex items-center justify-center shrink-0">
+							<MessageCircle className="w-5 h-5 text-rose-300" />
+						</div>
+						<div className="flex-1 min-w-0">
+							<p className="text-sm font-semibold text-foreground truncate">Resume chat session</p>
+							<p className="text-xs text-muted/80 truncate">
+								Your booked session is active. Tap to re-join the room.
+							</p>
+						</div>
+						<span className="text-xs font-semibold text-rose-300 shrink-0">Open</span>
+					</button>
+				)}
 
 				{conversations.length === 0 ? (
 					<div className="text-center py-16">

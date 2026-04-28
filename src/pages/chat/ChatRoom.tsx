@@ -17,6 +17,7 @@ import { Navbar } from '../../components/layout/Navbar';
 import { useRoomChat } from '../../hooks/useRoomChat';
 import { formatINR } from '../../services/razorpay';
 import { SessionFeedbackModal } from '../../components/session/SessionFeedbackModal';
+import { isUuid } from '../../utils/isUuid';
 
 function formatRemaining(sec: number): string {
 	if (!Number.isFinite(sec)) return '—';
@@ -81,6 +82,7 @@ export function ChatRoom() {
 		sendMessage,
 		markRead,
 		markSeenUpTo,
+		setActive,
 		unlockMessage,
 		upsertRoomMessages,
 		addRoomMessage,
@@ -161,12 +163,22 @@ export function ChatRoom() {
 	const endedChatBooking =
 		sessionsState.ended?.room_id === roomId ?
 			sessionsState.ended :
+			(sessionsState.endedRooms?.[roomId] ?? null);
+	const timerForRoom =
+		sessionsState.timer?.room_id === roomId ?
+			sessionsState.timer :
 			null;
-	const isBookedChatRoom = !!activeChatBooking || !!endedChatBooking;
-	const canSendBookedChat = !isBookedChatRoom || !!activeChatBooking;
+	// If we have a timer tick for this room, it implies an accepted active booking even if `/state`
+	// didn't hydrate `active` yet (common right after reload).
+	const isBookedActive = (!!activeChatBooking || !!timerForRoom) && !endedChatBooking;
+	const activeRequestId = activeChatBooking?.request_id ?? timerForRoom?.request_id ?? null;
+	const isBookedChatRoom = isBookedActive || !!endedChatBooking;
+	const canSendBookedChat = !isBookedChatRoom || isBookedActive;
 
 	const { otherTyping, realtimeActive, notifyTyping, sendRealtime, sendSeen } = useRoomChat({
-		roomUuid: conv && convId ? convId : undefined,
+		// For booked chats, the route param is the sessions room_id. After reload the conversation
+		// may not be hydrated yet; still join the room using the UUID route param.
+		roomUuid: convId && isUuid(convId) ? convId : undefined,
 		currentUserId: userId,
 		postsWsStatus: contentState.postsWsStatus,
 		getParticipantMeta,
@@ -175,13 +187,21 @@ export function ChatRoom() {
 		onPresenceEvent,
 		onSeenEvent,
 		onProtocolError,
-		sendWithAck: !!activeChatBooking,
-		transport: activeChatBooking ? 'ws' : 'multiplex',
+		sendWithAck: isBookedActive,
+		transport: isBookedActive ? 'ws' : 'multiplex',
 	});
 
 	useEffect(() => {
 		if (convId) markRead(convId);
 	}, [convId, markRead]);
+
+	useEffect(() => {
+		if (!convId) return;
+		setActive(convId);
+		return () => {
+			setActive(null);
+		};
+	}, [convId, setActive]);
 
 	const lastSeenSentAtRef = useRef(0);
 	const lastSeenMsgIdRef = useRef<string | null>(null);
@@ -207,7 +227,7 @@ export function ChatRoom() {
 		messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
 	}, [messages]);
 
-	if (!conv || !convId) {
+	if (!convId) {
 		return (
 			<div className="min-h-screen bg-background text-foreground flex items-center justify-center">
 				<p className="text-muted">Conversation not found</p>
@@ -218,10 +238,11 @@ export function ChatRoom() {
 	// Booking-derived chat rooms: disable sending after `sessions|ended`.
 	// `roomId` and booking state are computed above so the hook call remains unconditional.
 
-	const otherIdx = conv.participantIds.indexOf(userId) === 0 ? 1 : 0;
-	const otherName = conv.participantNames[otherIdx];
-	const otherAvatar = conv.participantAvatars[otherIdx];
-	const otherId = conv.participantIds[otherIdx];
+	const otherIdx = conv?.participantIds?.indexOf(userId) === 0 ? 1 : 0;
+	const otherName = conv?.participantNames?.[otherIdx] ?? sessionsState.active?.otherDisplay?.name ?? 'User';
+	const otherAvatar = conv?.participantAvatars?.[otherIdx] ?? sessionsState.active?.otherDisplay?.avatar ?? '';
+	const otherId = conv?.participantIds?.[otherIdx] ?? '';
+	const otherIsOnline = conv?.isOnline ?? false;
 
 	const replies = [
 		'Thank you for the message.',
@@ -241,7 +262,7 @@ export function ChatRoom() {
 		if (!text.trim() || !authState.user) return;
 		const trimmed = text.trim();
 
-		if (isBookedChatRoom && !activeChatBooking) {
+		if (isBookedChatRoom && !isBookedActive) {
 			showToast('Session ended. You can’t send more messages.', 'error');
 			return;
 		}
@@ -280,7 +301,7 @@ export function ChatRoom() {
 			void sendRealtime(trimmed)
 				.then(dto => {
 					if (!dto) {
-						// fire-and-forget mode; delivery is via `chat|newmessage`
+						// fire-and-forget mode; delivery is via `chat|c`
 						updateMessage(roomId, localId, { sendStatus: 'sent' });
 						return;
 					}
@@ -355,14 +376,10 @@ export function ChatRoom() {
 	const statusLine =
 		otherTyping ?
 			'typing…' :
-			(otherInRoom ? 'Active now' : (conv.isOnline ? 'Online now' : 'Offline'));
+			(otherInRoom ? 'Active now' : (otherIsOnline ? 'Online now' : 'Offline'));
 
-	const timerForRoom =
-		sessionsState.timer?.room_id === roomId ?
-			sessionsState.timer :
-			null;
 	const remainingLabel =
-		activeChatBooking && timerForRoom ?
+		isBookedActive && timerForRoom ?
 			`${formatRemaining(timerForRoom.remaining_sec)}` :
 			null;
 
@@ -376,17 +393,13 @@ export function ChatRoom() {
 					<button
 						type="button"
 						onClick={() => {
-							const role = authState.user?.role;
-							let home = '/feed';
-							if (role === 'admin') home = '/admin';
-							else if (role === 'creator') home = '/creator-dashboard';
-							void navigate(home);
+							void navigate(-1);
 						}}
 						className="p-1.5 rounded-lg hover:bg-foreground/10 transition-colors"
 					>
 						<ArrowLeft className="w-5 h-5 text-muted" />
 					</button>
-					<Avatar src={otherAvatar} alt={otherName} size="md" isOnline={conv.isOnline} />
+					<Avatar src={otherAvatar} alt={otherName} size="md" isOnline={otherIsOnline} />
 					<div>
 						<p className="text-sm font-semibold text-foreground">{otherName}</p>
 						<p className="text-xs text-muted">{statusLine}</p>
@@ -397,11 +410,11 @@ export function ChatRoom() {
 								{remainingLabel}
 							</div>
 						)}
-						{activeChatBooking && !endedChatBooking && (
+						{activeRequestId && isBookedActive && !endedChatBooking && (
 							<button
 								type="button"
 								onClick={() => {
-									void completeBookedSession(activeChatBooking.request_id)
+									void completeBookedSession(activeRequestId)
 										.then(() => showToast('Ending session…'))
 										.catch(err => showToast(err instanceof Error ? err.message : 'Failed to end session', 'error'));
 								}}
@@ -412,14 +425,16 @@ export function ChatRoom() {
 						)}
 						<button
 							type="button"
-							onClick={() => { startCall(otherId, otherName, otherAvatar, 'audio'); void navigate('/call'); }}
+							onClick={() => { if (!otherId) return; startCall(otherId, otherName, otherAvatar, 'audio'); void navigate('/call'); }}
+							disabled={!otherId}
 							className="w-8 h-8 rounded-xl bg-foreground/10 hover:bg-emerald-500/20 hover:text-emerald-400 text-muted flex items-center justify-center transition-all"
 						>
 							<Phone className="w-4 h-4" />
 						</button>
 						<button
 							type="button"
-							onClick={() => { startCall(otherId, otherName, otherAvatar, 'video'); void navigate('/call'); }}
+							onClick={() => { if (!otherId) return; startCall(otherId, otherName, otherAvatar, 'video'); void navigate('/call'); }}
+							disabled={!otherId}
 							className="w-8 h-8 rounded-xl bg-foreground/10 hover:bg-sky-500/20 hover:text-sky-400 text-muted flex items-center justify-center transition-all"
 						>
 							<Video className="w-4 h-4" />

@@ -72,7 +72,7 @@ export interface UseRoomChatResult {
 	/**
 	 * Send text over WS (`/sendmsg`).
 	 * - When `sendWithAck` is true, returns the acknowledged `ChatMessageDTO`.
-	 * - When `sendWithAck` is false, returns `undefined` (delivery via `chat|newmessage`).
+	 * - When `sendWithAck` is false, returns `undefined` (delivery via `chat|c`).
 	 */
 	sendRealtime: (text: string) => Promise<ChatMessageDTO | undefined>;
 	/** Send a seen receipt for the given message id (best-effort). */
@@ -99,6 +99,55 @@ export function useRoomChat(params: UseRoomChatParams): UseRoomChatResult {
 	const ws = useWs();
 	const wsConnected = useWsConnected();
 	const devSkipLeaveOnceRef = useRef<boolean>(import.meta.env.DEV);
+	const applySeenState = useCallback(
+		(roomId: string, body: unknown) => {
+			if (!body) return;
+			const now = new Date().toISOString();
+			const curUid = userRef.current;
+			const toId = (v: unknown): string => {
+				if (typeof v === 'string') return v;
+				if (typeof v === 'number') return String(v);
+				return '';
+			};
+			const emit = (userId: string, lastMessageId: string) => {
+				if (!userId || !lastMessageId) return;
+				if (userId === curUid) return;
+				seenRef.current?.({
+					room_id: roomId,
+					user_id: userId,
+					last_message_id: lastMessageId,
+					seen_at: now,
+				});
+			};
+
+			if (typeof body !== 'object') return;
+			const obj = body as Record<string, unknown>;
+			const rid = toId(obj.room_id);
+			if (rid && rid !== roomId) return;
+
+			// { room_id, seen: { [userId]: last_message_id } }
+			if (obj.seen && typeof obj.seen === 'object') {
+				for (const [uid, mid] of Object.entries(obj.seen as Record<string, unknown>)) {
+					emit(toId(uid), toId(mid));
+				}
+				return;
+			}
+			// { room_id, user_id, last_message_id }
+			if (obj.user_id && obj.last_message_id) {
+				emit(toId(obj.user_id), toId(obj.last_message_id));
+				return;
+			}
+			// { room_id, pointers: [{ user_id, last_message_id }, ...] }
+			if (Array.isArray(obj.pointers)) {
+				for (const p of obj.pointers) {
+					if (!p || typeof p !== 'object') continue;
+					const po = p as Record<string, unknown>;
+					emit(toId(po.user_id), toId(po.last_message_id));
+				}
+			}
+		},
+		[]
+	);
 
 	const [otherTyping, setOtherTyping] = useState(false);
 	const typingClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -179,6 +228,14 @@ export function useRoomChat(params: UseRoomChatParams): UseRoomChatResult {
 					const merged = mergeChatDTOs(b.recentCache ?? [], b.page ?? []);
 					const messages = merged.map(d => dtoToMessage(d, metaRef.current));
 					upsertRef.current(roomUuid, messages);
+					// Restore seen pointers after (re)join so ticks are correct immediately.
+					return ws.request('chat', 'seenstate', [roomUuid]).then(
+						seenBody => {
+							if (cancelled) return;
+							applySeenState(roomUuid, seenBody);
+						},
+						() => {}
+					);
 				})
 				.catch(e => {
 					if (!cancelled) onProtocolError?.(e instanceof Error ? e.message : String(e));

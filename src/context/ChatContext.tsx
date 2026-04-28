@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useReducer, useCallback } from 'react';
+import React, { createContext, useContext, useReducer, useCallback, useEffect, useMemo } from 'react';
 import type { Conversation, Message } from '../types';
 import { mockConversations, mockMessages } from '../data/messages';
+import { getStoredUser } from '../services/sessionUser';
 
 interface ChatState {
 	conversations: Conversation[];
@@ -16,18 +17,52 @@ type ChatAction =
 	{ type: 'SET_ACTIVE', payload: string | null } |
 	{ type: 'ADD_CONVERSATION', payload: Conversation } |
 	{ type: 'UPSERT_ROOM_MESSAGES', payload: { conversationId: string, messages: Message[] } } |
-	{ type: 'ADD_ROOM_MESSAGE', payload: Message } |
+	{ type: 'ADD_ROOM_MESSAGE', payload: { message: Message, selfUserId: string } } |
 	{ type: 'REPLACE_MESSAGE', payload: { conversationId: string, localId: string, message: Message } } |
-	{ type: 'UPDATE_MESSAGE', payload: { conversationId: string, id: string, patch: Partial<Message> } };
+	{ type: 'UPDATE_MESSAGE', payload: { conversationId: string, id: string, patch: Partial<Message> } } |
+	{ type: 'HYDRATE', payload: ChatState };
 
-const initialState: ChatState = {
-	conversations: mockConversations,
-	messages: mockMessages,
-	activeConversationId: null,
-};
+const STORAGE_KEY = 'cw.chat.v1';
+
+function safeParseJson<T>(raw: string | null): T | null {
+	if (!raw) return null;
+	try {
+		return JSON.parse(raw) as T;
+	} catch {
+		return null;
+	}
+}
+
+function loadInitialChatState(): ChatState {
+	if (typeof window === 'undefined') {
+		return { conversations: mockConversations, messages: mockMessages, activeConversationId: null };
+	}
+	const stored = safeParseJson<ChatState>(window.localStorage.getItem(STORAGE_KEY));
+	if (!stored || !Array.isArray(stored.conversations) || typeof stored.messages !== 'object') {
+		return { conversations: mockConversations, messages: mockMessages, activeConversationId: null };
+	}
+	// Dedupe conversations by id to avoid repeated "Resume session" inserts across reloads.
+	const byId: Record<string, Conversation> = {};
+	for (const c of stored.conversations) {
+		if (!c?.id) continue;
+		byId[c.id] = c;
+	}
+	const conversations = Object.values(byId).sort(
+		(a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
+	);
+	return {
+		conversations,
+		messages: stored.messages,
+		activeConversationId: stored.activeConversationId ?? null,
+	};
+}
+
+const initialState: ChatState = loadInitialChatState();
 
 function chatReducer(state: ChatState, action: ChatAction): ChatState {
 	switch (action.type) {
+		case 'HYDRATE':
+			return action.payload;
 		case 'SEND_MESSAGE': {
 			const convId = action.payload.conversationId;
 			const existing = state.messages[convId] ?? [];
@@ -82,10 +117,17 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
 		case 'SET_ACTIVE':
 			return { ...state, activeConversationId: action.payload };
 		case 'ADD_CONVERSATION':
+			// Upsert by id (avoid duplicates on reconnect / restore).
+			if (state.conversations.some(c => c.id === action.payload.id)) {
+				return {
+					...state,
+					conversations: state.conversations.map(c => (c.id === action.payload.id ? { ...c, ...action.payload } : c)),
+				};
+			}
 			return {
 				...state,
 				conversations: [action.payload, ...state.conversations],
-				messages: { ...state.messages, [action.payload.id]: [] },
+				messages: { ...state.messages, [action.payload.id]: state.messages[action.payload.id] ?? [] },
 			};
 		case 'UPSERT_ROOM_MESSAGES': {
 			const { conversationId, messages: incoming } = action.payload;
@@ -102,16 +144,24 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
 			};
 		}
 		case 'ADD_ROOM_MESSAGE': {
-			const m = action.payload;
+			const m = action.payload.message;
 			const convId = m.conversationId;
 			const existing = state.messages[convId] ?? [];
 			if (existing.some(x => x.id === m.id)) return state;
+			const shouldIncrementUnread =
+				state.activeConversationId !== convId &&
+				m.senderId !== action.payload.selfUserId;
 			return {
 				...state,
 				messages: { ...state.messages, [convId]: [...existing, m] },
 				conversations: state.conversations.map(c =>
 					c.id === convId ?
-						{ ...c, lastMessage: m.content, lastMessageTime: m.createdAt } :
+						{
+							...c,
+							lastMessage: m.content,
+							lastMessageTime: m.createdAt,
+							unreadCount: shouldIncrementUnread ? (c.unreadCount ?? 0) + 1 : c.unreadCount,
+						} :
 						c
 				),
 			};
@@ -176,6 +226,15 @@ const ChatContext = createContext<ChatContextValue | null>(null);
 export function ChatProvider({ children }: { children: React.ReactNode }) {
 	const [state, dispatch] = useReducer(chatReducer, initialState);
 
+	// Persist chat state across reloads (keeps recent chats + messages).
+	useEffect(() => {
+		try {
+			window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+		} catch {
+			// ignore storage failures (quota/private mode)
+		}
+	}, [state]);
+
 	const sendMessage = useCallback((message: Message) => {
 		dispatch({ type: 'SEND_MESSAGE', payload: message });
 	}, []);
@@ -205,7 +264,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 	}, []);
 
 	const addRoomMessage = useCallback((message: Message) => {
-		dispatch({ type: 'ADD_ROOM_MESSAGE', payload: message });
+		const selfUserId = getStoredUser()?.id ?? '';
+		dispatch({ type: 'ADD_ROOM_MESSAGE', payload: { message, selfUserId } });
 	}, []);
 
 	const replaceMessage = useCallback((conversationId: string, localId: string, message: Message) => {
@@ -222,13 +282,28 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
 	const totalUnread = state.conversations.reduce((sum, c) => sum + c.unreadCount, 0);
 
+	const value = useMemo(() => ({
+		state, sendMessage, unlockMessage, markRead,
+		markSeenUpTo, setActive, addConversation, upsertRoomMessages, addRoomMessage,
+		replaceMessage, updateMessage, getConversationForUser, totalUnread,
+	}), [
+		state,
+		sendMessage,
+		unlockMessage,
+		markRead,
+		markSeenUpTo,
+		setActive,
+		addConversation,
+		upsertRoomMessages,
+		addRoomMessage,
+		replaceMessage,
+		updateMessage,
+		getConversationForUser,
+		totalUnread,
+	]);
+
 	return (
-		<ChatContext.Provider value={{
-			state, sendMessage, unlockMessage, markRead,
-			markSeenUpTo, setActive, addConversation, upsertRoomMessages, addRoomMessage,
-			replaceMessage, updateMessage, getConversationForUser, totalUnread,
-		}}
-		>
+		<ChatContext.Provider value={value}>
 			{children}
 		</ChatContext.Provider>
 	);

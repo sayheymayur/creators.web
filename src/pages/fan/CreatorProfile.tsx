@@ -290,12 +290,6 @@ export function CreatorProfile() {
 											<Zap className="w-4 h-4 fill-amber-400" />
 											Tip
 										</button>
-										<button
-											onClick={() => setShowSessionModal(true)}
-											className="flex items-center gap-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 text-sm font-semibold px-3 py-2 rounded-xl transition-all border border-rose-500/20"
-										>
-											Book Session
-										</button>
 									</>
 								) : (
 									<button
@@ -305,6 +299,14 @@ export function CreatorProfile() {
 										Subscribe {formatINR(creatorForDisplay.subscriptionPrice)}/mo
 									</button>
 								)}
+
+								{/* Booking sessions is not subscription-gated (v3 sessions spec). */}
+								<button
+									onClick={() => setShowSessionModal(true)}
+									className="flex items-center gap-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 text-sm font-semibold px-3 py-2 rounded-xl transition-all border border-rose-500/20"
+								>
+									Book Session
+								</button>
 							</div>
 						)}
 

@@ -169,7 +169,9 @@ function contentReducer(state: ContentState, action: ContentAction): ContentStat
 			};
 		}
 		case 'ADD_POST': {
-			return { ...state, posts: [action.payload, ...state.posts] };
+			const incoming = action.payload;
+			if (state.posts.some(p => p.id === incoming.id)) return state;
+			return { ...state, posts: [incoming, ...state.posts] };
 		}
 		case 'UPSERT_POST': {
 			const incoming = action.payload;

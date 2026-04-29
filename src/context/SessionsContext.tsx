@@ -249,6 +249,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 	const didHydrateLocalRef = useRef(false);
 	const hydratedLocalAtMsRef = useRef<number | null>(null);
 	const localTimerRef = useRef<{ requestId: string, roomId: string, endsAtMs: number, t: number | null } | null>(null);
+	const stateSyncRef = useRef<{ atMs: number, reason: string } | null>(null);
 
 	const clearLocalTimer = useCallback(() => {
 		const cur = localTimerRef.current;
@@ -446,11 +447,14 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 		return payload;
 	};
 
-	// Spec: after reconnect/login, pull `/state` to restore outgoing/incoming/active bookings.
-	useEffect(() => {
+	const syncState = useCallback((reason: string) => {
 		if (!wsConnected) return;
 		if (!authState.user) return;
-		void sessionsState(ws, 'rs-state')
+		const now = Date.now();
+		const prev = stateSyncRef.current;
+		if (prev && now - prev.atMs < 1500) return;
+		stateSyncRef.current = { atMs: now, reason };
+		void sessionsState(ws, `rs-${reason}`)
 			.then((remote: SessionsStateResponse) => {
 				const outgoing = (remote.outgoing ?? []);
 				const incomingRows = (remote.incoming ?? []);
@@ -468,7 +472,6 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 						request: {
 							request_id: r.id,
 							fan_user_id: r.fan_user_id,
-							// `/state` rows don't include display strings; keep a stable fallback label.
 							fan_display: `User ${r.fan_user_id}`,
 							kind: r.kind,
 							price_cents: r.price_cents,
@@ -506,7 +509,45 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 				});
 			})
 			.catch(() => {});
+	}, [ws, wsConnected, authState.user, state.ended, state.endedRooms, state.feedbackPrompt, state.feedbackReceived]);
+
+	// Spec: after reconnect/login, pull `/state` to restore outgoing/incoming/active bookings.
+	useEffect(() => {
+		syncState('state');
 	}, [ws, wsConnected, authState.user?.id]);
+
+	// Spec: if timer expires, server should push `sessions|ended` + `sessions|feedbackprompt`.
+	// If a user reloads at the boundary and misses push frames, resync `/state` at ends_at and retry.
+	useEffect(() => {
+		if (!wsConnected) return;
+		const active = state.active?.accepted;
+		if (!active) return;
+		if (active.kind !== 'chat') return;
+		const roomId = active.room_id;
+		if (!roomId) return;
+		if (state.endedRooms[roomId]) return;
+
+		const endsAt = state.timer?.room_id === roomId ? state.timer.ends_at : (active.ends_at ?? null);
+		if (!endsAt) return;
+		const endsAtMs = new Date(endsAt).getTime();
+		if (!Number.isFinite(endsAtMs)) return;
+
+		const msLeft = endsAtMs - Date.now();
+		const t = window.setTimeout(() => {
+			let tries = 0;
+			syncState('ends');
+			const interval = window.setInterval(() => {
+				tries += 1;
+				if (state.endedRooms[roomId]) {
+					window.clearInterval(interval);
+					return;
+				}
+				syncState('ends');
+				if (tries >= 6) window.clearInterval(interval);
+			}, 5000);
+		}, Math.min(Math.max(0, msLeft + 1200), 2_147_000_000));
+		return () => window.clearTimeout(t);
+	}, [wsConnected, state.active?.accepted?.request_id, state.timer?.ends_at, state.timer?.room_id, state.endedRooms, syncState]);
 
 	// Subscribe to sessions push events
 	useEffect(() => {
@@ -577,26 +618,13 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 			const payload = data as SessionsRejectedPayload;
 			dispatch({ type: 'OUTGOING_REJECTED', payload });
 		});
-		const offPrompt = ws.on('sessions', 'feedbackprompt', data => {
+		const onFeedbackPrompt = (data: unknown) => {
 			const payload = data as SessionsFeedbackPromptEvent;
-			// Ensure "session ended" UI is visible on both sides even if `sessions|ended`
-			// arrives late or was missed; the feedback prompt implies completion.
-			const active = state.active?.accepted;
-			const roomId =
-				active?.request_id === payload.request_id ?
-					active.room_id :
-					roomIdByRequestIdRef.current[payload.request_id];
-			if (roomId) {
-				dispatch({
-					type: 'ENDED_SET',
-					payload: { request_id: payload.request_id, room_id: roomId, reason: 'manual' },
-				});
-				if (active?.room_id === roomId) {
-					dispatch({ type: 'ACTIVE_CLEAR' });
-				}
-			}
+			// Spec: prompt is driven by backend; we don't infer end here.
 			dispatch({ type: 'FEEDBACK_PROMPT', payload });
-		});
+		};
+		const offPrompt = ws.on('sessions', 'feedbackprompt', onFeedbackPrompt);
+		const offPrompt2 = ws.on('session', 'feedbackprompt', onFeedbackPrompt);
 		const offReceived = ws.on('sessions', 'feedbackreceived', data => {
 			const payload = data as SessionsFeedbackReceivedEvent;
 			dispatch({ type: 'FEEDBACK_RECEIVED', payload });
@@ -636,7 +664,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 		const offTick2 = ws.on('session', 'tick', onTimerLike);
 		const offTimerUpdate2 = ws.on('session', 'timerupdate', onTimerLike);
 		const offTimerUpdateSnake2 = ws.on('session', 'timer_update', onTimerLike);
-		const offEnded = ws.on('sessions', 'ended', data => {
+		const onEnded = (data: unknown) => {
 			const payload = data as SessionsEndedEvent;
 			const active = state.active?.accepted;
 			// Always record the ended booking so chat UI can reflect it by `room_id`,
@@ -651,7 +679,10 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 				dispatch({ type: 'ACTIVE_CLEAR' });
 			}
 			clearLocalTimer();
-		});
+
+		};
+		const offEnded = ws.on('sessions', 'ended', onEnded);
+		const offEnded2 = ws.on('session', 'ended', onEnded);
 
 		return () => {
 			offAny?.();
@@ -659,6 +690,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 			offAccepted();
 			offRejected();
 			offPrompt();
+			offPrompt2();
 			offReceived();
 			offTimer();
 			offTick();
@@ -669,6 +701,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 			offTimerUpdate2();
 			offTimerUpdateSnake2();
 			offEnded();
+			offEnded2();
 			clearLocalTimer();
 		};
 	}, [ws, authState.user, state.active?.accepted?.request_id]);

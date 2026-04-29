@@ -2,6 +2,7 @@ import type { WsClient } from './wsClient';
 import type {
 	SessionKind,
 	SessionsAcceptedPayload,
+	SessionsStateResponse,
 	SessionsCancelResponse,
 	SessionsCompleteResponse,
 	SessionsEndSessionResponse,
@@ -52,6 +53,11 @@ export function sessionsRequest(
 	const minutes = assertMinutes(opts.minutes);
 	const rid = assertRequestIdTag(opts.requestId);
 	return ws.request('sessions', 'request', [creatorUserId, kind, String(minutes)], rid).then(r => r as SessionsRequestResponse);
+}
+
+export function sessionsState(ws: WsClient, requestIdTag?: string): Promise<SessionsStateResponse> {
+	const rid = assertRequestIdTag(requestIdTag);
+	return ws.request('sessions', 'state', [], rid).then(r => r as SessionsStateResponse);
 }
 
 export function sessionsAccept(

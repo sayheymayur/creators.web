@@ -12,12 +12,15 @@ import {
 	sessionsFeedback,
 	sessionsReject,
 	sessionsRequest,
+	sessionsState,
 } from '../services/sessionsWsService';
 import type {
 	SessionKind,
 	SessionsAcceptedPayload,
 	SessionsCompleteResponse,
 	SessionsEndSessionResponse,
+	SessionsStateResponse,
+	SessionsBookingRow,
 	SessionsEndedEvent,
 	SessionsFeedbackPromptEvent,
 	SessionsFeedbackReceivedEvent,
@@ -37,11 +40,13 @@ export type OutgoingRequestState =
 	{ state: 'rejected', rejected: SessionsRejectedPayload };
 
 export type IncomingRequestState = {
-	request: SessionsRequestEvent,
+	request: SessionsRequestEvent & { minutes?: number },
 };
 
 export type ActiveBookingState = {
 	accepted: SessionsAcceptedPayload,
+	/** For chat sessions, used to drive a local countdown fallback and persist across reloads. */
+	minutes?: number,
 	/**
 	 * For `kind === "call"`, the UI needs to know whether to show audio vs video.
 	 * The server spec only distinguishes call vs chat, so we keep a local hint.
@@ -105,7 +110,7 @@ type Action =
 	{ type: 'OUTGOING_ACCEPTED', payload: SessionsAcceptedPayload } |
 	{ type: 'OUTGOING_REJECTED', payload: SessionsRejectedPayload } |
 	{ type: 'OUTGOING_CLEAR' } |
-	{ type: 'INCOMING_ADD', payload: SessionsRequestEvent } |
+	{ type: 'INCOMING_ADD', payload: SessionsRequestEvent & { minutes?: number } } |
 	{ type: 'INCOMING_REMOVE', payload: { request_id: string } } |
 	{ type: 'ACTIVE_SET', payload: ActiveBookingState } |
 	{ type: 'ACTIVE_CLEAR' } |
@@ -116,7 +121,8 @@ type Action =
 	{ type: 'FEEDBACK_PROMPT', payload: SessionsFeedbackPromptEvent } |
 	{ type: 'FEEDBACK_RECEIVED', payload: SessionsFeedbackReceivedEvent } |
 	{ type: 'FEEDBACK_CLEAR' } |
-	{ type: 'HYDRATE_LOCAL', payload: LocalSessionsSnapshot };
+	{ type: 'HYDRATE_LOCAL', payload: LocalSessionsSnapshot } |
+	{ type: 'HYDRATE_REMOTE', payload: LocalSessionsSnapshot };
 
 const initialState: SessionsState = {
 	outgoing: { state: 'idle' },
@@ -191,6 +197,14 @@ function sessionsReducer(state: SessionsState, action: Action): SessionsState {
 				endedRooms: { ...state.endedRooms, ...(action.payload.endedRooms ?? {}) },
 			};
 		}
+		case 'HYDRATE_REMOTE': {
+			// Server `/state` is source-of-truth; keep locally persisted ended markers.
+			return {
+				...state,
+				...action.payload,
+				endedRooms: { ...state.endedRooms, ...(action.payload.endedRooms ?? {}) },
+			};
+		}
 		default:
 			return state;
 	}
@@ -226,6 +240,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 	const { showToast } = useNotifications();
 	const [state, dispatch] = useReducer(sessionsReducer, initialState);
 	const uiCallTypeByRequestIdRef = useRef<Record<string, SessionsUiCallType>>({});
+	const minutesByRequestIdRef = useRef<Record<string, number>>({});
 	const creatorMetaByRequestIdRef = useRef<Record<string, { userId: string, name: string, avatar: string }>>({});
 	const fanMetaByRequestIdRef = useRef<Record<string, { userId: string, name: string }>>({});
 	const roomIdByRequestIdRef = useRef<Record<string, string>>({});
@@ -233,6 +248,36 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 	const didPromptActiveRequestIdRef = useRef<string | null>(null);
 	const didHydrateLocalRef = useRef(false);
 	const hydratedLocalAtMsRef = useRef<number | null>(null);
+	const localTimerRef = useRef<{ requestId: string, roomId: string, endsAtMs: number, t: number | null } | null>(null);
+	const stateSyncRef = useRef<{ atMs: number, reason: string } | null>(null);
+
+	const clearLocalTimer = useCallback(() => {
+		const cur = localTimerRef.current;
+		if (!cur) return;
+		if (cur.t != null) window.clearInterval(cur.t);
+		localTimerRef.current = null;
+	}, []);
+
+	const startLocalTimer = useCallback((opts: { requestId: string, roomId: string, minutes: number }) => {
+		clearLocalTimer();
+		const endsAtMs = Date.now() + Math.max(1, Math.floor(opts.minutes)) * 60_000;
+		const tick = () => {
+			const rem = Math.max(0, Math.floor((endsAtMs - Date.now()) / 1000));
+			dispatch({
+				type: 'TIMER_UPDATE',
+				payload: {
+					request_id: opts.requestId,
+					room_id: opts.roomId,
+					ends_at: new Date(endsAtMs).toISOString(),
+					remaining_sec: rem,
+				},
+			});
+			if (rem <= 0) clearLocalTimer();
+		};
+		tick();
+		const t = window.setInterval(tick, 1000);
+		localTimerRef.current = { requestId: opts.requestId, roomId: opts.roomId, endsAtMs, t };
+	}, [clearLocalTimer]);
 
 	function ensureBookedRoomJoined(roomId: string) {
 		if (!wsConnected) return;
@@ -254,6 +299,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 			dispatch({ type: 'OUTGOING_REQUESTING', payload: { creatorUserId: opts.creatorUserId, kind: opts.kind } });
 			return sessionsRequest(ws, { creatorUserId: opts.creatorUserId, kind: opts.kind, minutes: opts.minutes })
 				.then(res => {
+					minutesByRequestIdRef.current[res.request_id] = opts.minutes;
 					if (opts.kind === 'call' && opts.uiCallType) {
 						uiCallTypeByRequestIdRef.current[res.request_id] = opts.uiCallType;
 					}
@@ -349,7 +395,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 	const clearOutgoing = useCallback(() => dispatch({ type: 'OUTGOING_CLEAR' }), []);
 	const clearFeedback = useCallback(() => dispatch({ type: 'FEEDBACK_CLEAR' }), []);
 
-	// Backend does not support `sessions /state`. We rely on push events + local persistence.
+	// Local restore for offline continuity (but the source of truth is `sessions /state`).
 	useEffect(() => {
 		if (didHydrateLocalRef.current) return;
 		didHydrateLocalRef.current = true;
@@ -371,13 +417,171 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 		}
 	}, [authState.user, showToast]);
 
+	const bookingRowToAccepted = (row: SessionsBookingRow): SessionsAcceptedPayload => {
+		return {
+			request_id: row.id,
+			room_id: row.room_id ?? '',
+			kind: row.kind,
+			call_session_id: row.call_session_id,
+			session: null,
+			agora: null,
+			started_at: row.started_at,
+			ends_at: row.ends_at,
+			duration_minutes: row.duration_minutes,
+			price_cents: row.price_cents,
+		};
+	};
+
+	const deriveTimerFromEndsAt = (opts: { requestId: string, roomId: string, endsAt: string | null | undefined }) => {
+		const ends = opts.endsAt ?? '';
+		if (!ends) return null;
+		const endsAtMs = new Date(ends).getTime();
+		if (!Number.isFinite(endsAtMs)) return null;
+		const rem = Math.max(0, Math.floor((endsAtMs - Date.now()) / 1000));
+		const payload: SessionsTimerEvent = {
+			request_id: opts.requestId,
+			room_id: opts.roomId,
+			ends_at: new Date(endsAtMs).toISOString(),
+			remaining_sec: rem,
+		};
+		return payload;
+	};
+
+	const syncState = useCallback((reason: string) => {
+		if (!wsConnected) return;
+		if (!authState.user) return;
+		const now = Date.now();
+		const prev = stateSyncRef.current;
+		if (prev && now - prev.atMs < 1500) return;
+		stateSyncRef.current = { atMs: now, reason };
+		void sessionsState(ws, `rs-${reason}`)
+			.then((remote: SessionsStateResponse) => {
+				const outgoing = (remote.outgoing ?? []);
+				const incomingRows = (remote.incoming ?? []);
+				const activeRows = (remote.active ?? []);
+
+				const pendingOutgoing = outgoing.find(r => r.status === 'pending' || r.status === 'accepted') ?? null;
+				const nextOutgoing: OutgoingRequestState =
+					pendingOutgoing ?
+						{ state: 'pending', request: { request_id: pendingOutgoing.id, status: 'pending', price_cents: pendingOutgoing.price_cents, kind: pendingOutgoing.kind } } :
+						{ state: 'idle' };
+
+				const nextIncoming: IncomingRequestState[] = incomingRows
+					.filter(r => r.status === 'pending')
+					.map(r => ({
+						request: {
+							request_id: r.id,
+							fan_user_id: r.fan_user_id,
+							fan_display: `User ${r.fan_user_id}`,
+							kind: r.kind,
+							price_cents: r.price_cents,
+							created_at: r.created_at,
+							minutes: r.duration_minutes,
+						},
+					}));
+
+				const activeAccepted = activeRows.find(r => r.status === 'accepted' && !!r.room_id) ?? null;
+				const nextActive: ActiveBookingState | null = activeAccepted ?
+					{
+						accepted: bookingRowToAccepted(activeAccepted),
+						minutes: activeAccepted.duration_minutes,
+						uiCallType: uiCallTypeByRequestIdRef.current[activeAccepted.id],
+					} :
+					null;
+
+				const nextTimer =
+					activeAccepted ?
+						deriveTimerFromEndsAt({ requestId: activeAccepted.id, roomId: activeAccepted.room_id ?? '', endsAt: activeAccepted.ends_at }) :
+						null;
+
+				dispatch({
+					type: 'HYDRATE_REMOTE',
+					payload: {
+						outgoing: nextOutgoing,
+						incoming: nextIncoming,
+						active: nextActive,
+						timer: nextTimer,
+						ended: state.ended,
+						endedRooms: state.endedRooms,
+						feedbackPrompt: state.feedbackPrompt,
+						feedbackReceived: state.feedbackReceived,
+					},
+				});
+			})
+			.catch(() => {});
+	}, [ws, wsConnected, authState.user, state.ended, state.endedRooms, state.feedbackPrompt, state.feedbackReceived]);
+
+	// Spec: after reconnect/login, pull `/state` to restore outgoing/incoming/active bookings.
+	useEffect(() => {
+		syncState('state');
+	}, [ws, wsConnected, authState.user?.id]);
+
+	// Spec: if timer expires, server should push `sessions|ended` + `sessions|feedbackprompt`.
+	// If a user reloads at the boundary and misses push frames, resync `/state` at ends_at and retry.
+	useEffect(() => {
+		if (!wsConnected) return;
+		const active = state.active?.accepted;
+		if (!active) return;
+		if (active.kind !== 'chat') return;
+		const roomId = active.room_id;
+		if (!roomId) return;
+		if (state.endedRooms[roomId]) return;
+
+		const endsAt = state.timer?.room_id === roomId ? state.timer.ends_at : (active.ends_at ?? null);
+		if (!endsAt) return;
+		const endsAtMs = new Date(endsAt).getTime();
+		if (!Number.isFinite(endsAtMs)) return;
+
+		const msLeft = endsAtMs - Date.now();
+		const t = window.setTimeout(() => {
+			let tries = 0;
+			syncState('ends');
+			const interval = window.setInterval(() => {
+				tries += 1;
+				if (state.endedRooms[roomId]) {
+					window.clearInterval(interval);
+					return;
+				}
+				syncState('ends');
+				if (tries >= 6) window.clearInterval(interval);
+			}, 5000);
+		}, Math.min(Math.max(0, msLeft + 1200), 2_147_000_000));
+		return () => window.clearTimeout(t);
+	}, [wsConnected, state.active?.accepted?.request_id, state.timer?.ends_at, state.timer?.room_id, state.endedRooms, syncState]);
+
 	// Subscribe to sessions push events
 	useEffect(() => {
+		let offAny: (() => void) | null = null;
+		if (import.meta.env.DEV) {
+			offAny = ws.onAny(frame => {
+				const f = frame;
+				if (f.type !== 'event') return;
+				if (f.service !== 'sessions' && f.service !== 'session') return;
+				const g = globalThis as unknown as Record<string, unknown>;
+				const prev = (g.CW_SESSIONS_FRAMES as unknown[] | undefined) ?? [];
+				g.CW_SESSIONS_FRAMES = [...prev.slice(-24), f];
+			});
+		}
+
 		const offReq = ws.on('sessions', 'request', data => {
-			const payload = data as SessionsRequestEvent;
-			fanMetaByRequestIdRef.current[payload.request_id] = {
-				userId: payload.fan_user_id,
-				name: payload.fan_display,
+			const payloadBase = data as SessionsRequestEvent;
+			// Some backends include requested minutes; capture it if present so we can render a local timer.
+			const raw = (data && typeof data === 'object') ? (data as Record<string, unknown>) : {};
+			const minutesRaw =
+				typeof raw.minutes === 'number' ? raw.minutes :
+				typeof raw.duration_minutes === 'number' ? raw.duration_minutes :
+				typeof raw.durationMinutes === 'number' ? raw.durationMinutes :
+				(typeof raw.minutes === 'string' && /^\d+$/.test(raw.minutes.trim()) ? Number(raw.minutes) : null);
+			const minutes =
+				typeof minutesRaw === 'number' && Number.isFinite(minutesRaw) && minutesRaw > 0 ?
+					Math.floor(minutesRaw) :
+					undefined;
+			if (minutes) minutesByRequestIdRef.current[payloadBase.request_id] = minutes;
+			const payload: SessionsRequestEvent & { minutes?: number } = { ...payloadBase, minutes };
+
+			fanMetaByRequestIdRef.current[payloadBase.request_id] = {
+				userId: payloadBase.fan_user_id,
+				name: payloadBase.fan_display,
 			};
 			dispatch({ type: 'INCOMING_ADD', payload });
 		});
@@ -396,47 +600,71 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 				type: 'ACTIVE_SET',
 				payload: {
 					accepted: payload,
+					minutes: minutesByRequestIdRef.current[payload.request_id],
 					uiCallType: uiCallTypeByRequestIdRef.current[payload.request_id],
 					otherDisplay,
 				},
 			});
+			// If the server isn't pushing `sessions|timer` reliably, we can still show a timer from the known minutes.
+			// This covers the fan role (minutes known from request) and any backend that includes minutes in the request event.
+			if (payload.kind === 'chat') {
+				const mins = minutesByRequestIdRef.current[payload.request_id];
+				if (typeof mins === 'number' && Number.isFinite(mins) && mins > 0) {
+					startLocalTimer({ requestId: payload.request_id, roomId: payload.room_id, minutes: mins });
+				}
+			}
 		});
 		const offRejected = ws.on('sessions', 'rejected', data => {
 			const payload = data as SessionsRejectedPayload;
 			dispatch({ type: 'OUTGOING_REJECTED', payload });
 		});
-		const offPrompt = ws.on('sessions', 'feedbackprompt', data => {
+		const onFeedbackPrompt = (data: unknown) => {
 			const payload = data as SessionsFeedbackPromptEvent;
-			// Ensure "session ended" UI is visible on both sides even if `sessions|ended`
-			// arrives late or was missed; the feedback prompt implies completion.
-			const active = state.active?.accepted;
-			const roomId =
-				active?.request_id === payload.request_id ?
-					active.room_id :
-					roomIdByRequestIdRef.current[payload.request_id];
-			if (roomId) {
-				dispatch({
-					type: 'ENDED_SET',
-					payload: { request_id: payload.request_id, room_id: roomId, reason: 'manual' },
-				});
-				if (active?.room_id === roomId) {
-					dispatch({ type: 'ACTIVE_CLEAR' });
-				}
-			}
+			// Spec: prompt is driven by backend; we don't infer end here.
 			dispatch({ type: 'FEEDBACK_PROMPT', payload });
-		});
+		};
+		const offPrompt = ws.on('sessions', 'feedbackprompt', onFeedbackPrompt);
+		const offPrompt2 = ws.on('session', 'feedbackprompt', onFeedbackPrompt);
 		const offReceived = ws.on('sessions', 'feedbackreceived', data => {
 			const payload = data as SessionsFeedbackReceivedEvent;
 			dispatch({ type: 'FEEDBACK_RECEIVED', payload });
 		});
-		const offTimer = ws.on('sessions', 'timer', data => {
-			const payload = data as SessionsTimerEvent;
-			// Timer ticks are a reliable way to learn the active room after reload/reconnect,
-			// even if local `active` wasn't restored yet.
+		const onTimerLike = (data: unknown) => {
+			const str = (v: unknown): string => {
+				if (typeof v === 'string') return v;
+				if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+				return '';
+			};
+			// Backend variants seen across environments:
+			// - { room_id, request_id, ends_at, remaining_sec }
+			// - { roomId, requestId, endsAt, remainingSec }
+			const raw = (data && typeof data === 'object') ? (data as Record<string, unknown>) : {};
+			const payload: SessionsTimerEvent = {
+				request_id: str(raw.request_id ?? raw.requestId),
+				room_id: str(raw.room_id ?? raw.roomId),
+				started_at: typeof raw.started_at === 'string' ? raw.started_at : (typeof raw.startedAt === 'string' ? raw.startedAt : undefined),
+				ends_at: str(raw.ends_at ?? raw.endsAt),
+				remaining_sec: Number(raw.remaining_sec ?? raw.remainingSec ?? 0),
+			};
+			if (!payload.request_id || !payload.room_id) return;
+			// If backend didn't send `ends_at`, approximate it from remaining seconds so the UI can tick.
+			if (!payload.ends_at && Number.isFinite(payload.remaining_sec) && payload.remaining_sec > 0) {
+				payload.ends_at = new Date(Date.now() + payload.remaining_sec * 1000).toISOString();
+			}
 			dispatch({ type: 'TIMER_UPDATE', payload });
 			ensureBookedRoomJoined(payload.room_id);
-		});
-		const offEnded = ws.on('sessions', 'ended', data => {
+		};
+
+		const offTimer = ws.on('sessions', 'timer', onTimerLike);
+		const offTick = ws.on('sessions', 'tick', onTimerLike);
+		const offTimerUpdate = ws.on('sessions', 'timerupdate', onTimerLike);
+		const offTimerUpdateSnake = ws.on('sessions', 'timer_update', onTimerLike);
+		// Some environments use `session` (singular) as the service name.
+		const offTimer2 = ws.on('session', 'timer', onTimerLike);
+		const offTick2 = ws.on('session', 'tick', onTimerLike);
+		const offTimerUpdate2 = ws.on('session', 'timerupdate', onTimerLike);
+		const offTimerUpdateSnake2 = ws.on('session', 'timer_update', onTimerLike);
+		const onEnded = (data: unknown) => {
 			const payload = data as SessionsEndedEvent;
 			const active = state.active?.accepted;
 			// Always record the ended booking so chat UI can reflect it by `room_id`,
@@ -450,18 +678,49 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 			if (active?.room_id === payload.room_id) {
 				dispatch({ type: 'ACTIVE_CLEAR' });
 			}
-		});
+			clearLocalTimer();
+
+		};
+		const offEnded = ws.on('sessions', 'ended', onEnded);
+		const offEnded2 = ws.on('session', 'ended', onEnded);
 
 		return () => {
+			offAny?.();
 			offReq();
 			offAccepted();
 			offRejected();
 			offPrompt();
+			offPrompt2();
 			offReceived();
 			offTimer();
+			offTick();
+			offTimerUpdate();
+			offTimerUpdateSnake();
+			offTimer2();
+			offTick2();
+			offTimerUpdate2();
+			offTimerUpdateSnake2();
 			offEnded();
+			offEnded2();
+			clearLocalTimer();
 		};
 	}, [ws, authState.user, state.active?.accepted?.request_id]);
+
+	// After reload, the backend may not re-push timer ticks. Use persisted minutes as a fallback.
+	useEffect(() => {
+		if (!wsConnected) return;
+		const active = state.active?.accepted;
+		if (!active) return;
+		if (active.kind !== 'chat') return;
+		const roomId = active.room_id;
+		if (!roomId) return;
+		if (state.endedRooms[roomId]) return;
+		const mins = state.active?.minutes;
+		if (!mins) return;
+		// If we already have a timer for this room, don't override it.
+		if (state.timer?.room_id === roomId && typeof state.timer.remaining_sec === 'number') return;
+		startLocalTimer({ requestId: active.request_id, roomId, minutes: mins });
+	}, [wsConnected, state.active?.accepted?.request_id, state.active?.minutes, state.timer?.room_id, state.endedRooms, startLocalTimer]);
 
 	// When an accepted chat booking is active, keep the room joined so messages arrive
 	// even if the user is on the Messages list (WhatsApp-like unread behavior).

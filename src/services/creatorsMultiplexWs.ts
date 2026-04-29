@@ -202,8 +202,24 @@ export class CreatorsMultiplexWs {
 
 	private handleLine(line: string) {
 		if (!line.trim()) return;
+		const isRelevant =
+			line.includes('|posts|') ||
+			line.includes('|user|') ||
+			line.includes('|creator|') ||
+			line.includes('|chat|');
+
 		const frame = parseCreatorsWsLine(line);
-		if (!frame) return;
+		if (!frame) {
+			if (isRelevant && import.meta.env.DEV) {
+				console.warn('[MUX] Unparsed frame:', line);
+			}
+			return;
+		}
+
+		if (isRelevant && import.meta.env.DEV && (frame.kind === 'success' || frame.kind === 'error')) {
+			const suffix = frame.kind === 'success' ? `${frame.command} ${frame.requestId}` : `rid=${frame.requestId}`;
+			console.debug(`[MUX] ${frame.kind} ${frame.service} ${suffix}`);
+		}
 
 		if (frame.kind === 'error') {
 			const p = this.pending[frame.requestId];
@@ -257,6 +273,10 @@ export class CreatorsMultiplexWs {
 			};
 
 			const lines = `> ${service} ${requestId}\n${commandLine}\n`;
+			if (service === 'posts' && import.meta.env.DEV) {
+				// Helpful to correlate which backend commands time out.
+				console.debug(`[MUX] >> posts ${requestId}: ${commandLine}`);
+			}
 			this.rawSend(lines);
 			this.flushQueue();
 		});

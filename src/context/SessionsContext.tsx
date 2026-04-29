@@ -1,8 +1,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useWs } from './WsContext';
+import { useWs, useWsConnected } from './WsContext';
 import { useAuth } from './AuthContext';
 import { useChat } from './ChatContext';
+import { useNotifications } from './NotificationContext';
 import {
 	sessionsAccept,
 	sessionsCancel,
@@ -53,12 +54,47 @@ export type FeedbackPromptState = {
 	request_id: string,
 };
 
+type EndedRoomsMap = Record<string, SessionsEndedEvent>;
+
+const ENDED_ROOMS_STORAGE_KEY = 'cw.sessions.endedRooms.v1';
+const LOCAL_SESSIONS_STORAGE_KEY = 'cw.sessions.snapshot.v1';
+
+function loadEndedRooms(): EndedRoomsMap {
+	try {
+		const raw = globalThis.localStorage?.getItem(ENDED_ROOMS_STORAGE_KEY);
+		if (!raw) return {};
+		const parsed = JSON.parse(raw) as unknown;
+		if (!parsed || typeof parsed !== 'object') return {};
+		return parsed as EndedRoomsMap;
+	} catch {
+		return {};
+	}
+}
+
+type LocalSessionsSnapshot = Pick<
+	SessionsState,
+	'outgoing' | 'incoming' | 'active' | 'timer' | 'ended' | 'endedRooms' | 'feedbackPrompt' | 'feedbackReceived'
+>;
+
+function loadLocalSessionsSnapshot(): LocalSessionsSnapshot | null {
+	try {
+		const raw = globalThis.localStorage?.getItem(LOCAL_SESSIONS_STORAGE_KEY);
+		if (!raw) return null;
+		const parsed = JSON.parse(raw) as unknown;
+		if (!parsed || typeof parsed !== 'object') return null;
+		return parsed as LocalSessionsSnapshot;
+	} catch {
+		return null;
+	}
+}
+
 type SessionsState = {
 	outgoing: OutgoingRequestState,
 	incoming: IncomingRequestState[],
 	active: ActiveBookingState | null,
 	timer: SessionsTimerEvent | null,
 	ended: SessionsEndedEvent | null,
+	endedRooms: EndedRoomsMap,
 	feedbackPrompt: FeedbackPromptState | null,
 	feedbackReceived: SessionsFeedbackReceivedEvent | null,
 };
@@ -76,9 +112,11 @@ type Action =
 	{ type: 'TIMER_UPDATE', payload: SessionsTimerEvent } |
 	{ type: 'ENDED_SET', payload: SessionsEndedEvent } |
 	{ type: 'ENDED_CLEAR' } |
+	{ type: 'ENDED_ROOMS_MERGE', payload: EndedRoomsMap } |
 	{ type: 'FEEDBACK_PROMPT', payload: SessionsFeedbackPromptEvent } |
 	{ type: 'FEEDBACK_RECEIVED', payload: SessionsFeedbackReceivedEvent } |
-	{ type: 'FEEDBACK_CLEAR' };
+	{ type: 'FEEDBACK_CLEAR' } |
+	{ type: 'HYDRATE_LOCAL', payload: LocalSessionsSnapshot };
 
 const initialState: SessionsState = {
 	outgoing: { state: 'idle' },
@@ -86,6 +124,7 @@ const initialState: SessionsState = {
 	active: null,
 	timer: null,
 	ended: null,
+	endedRooms: loadEndedRooms(),
 	feedbackPrompt: null,
 	feedbackReceived: null,
 };
@@ -110,21 +149,48 @@ function sessionsReducer(state: SessionsState, action: Action): SessionsState {
 		case 'INCOMING_REMOVE':
 			return { ...state, incoming: state.incoming.filter(r => r.request.request_id !== action.payload.request_id) };
 		case 'ACTIVE_SET':
-			return { ...state, active: action.payload, ended: null };
+			return {
+				...state,
+				active: action.payload,
+				ended: null,
+				endedRooms: action.payload.accepted.room_id ?
+					(() => {
+						const next = { ...state.endedRooms };
+						delete next[action.payload.accepted.room_id];
+						return next;
+					})() :
+					state.endedRooms,
+			};
 		case 'ACTIVE_CLEAR':
 			return { ...state, active: null, timer: null };
 		case 'TIMER_UPDATE':
 			return { ...state, timer: action.payload };
 		case 'ENDED_SET':
-			return { ...state, ended: action.payload };
+			return {
+				...state,
+				ended: action.payload,
+				endedRooms: action.payload.room_id ? { ...state.endedRooms, [action.payload.room_id]: action.payload } : state.endedRooms,
+			};
 		case 'ENDED_CLEAR':
 			return { ...state, ended: null };
+		case 'ENDED_ROOMS_MERGE': {
+			const next = { ...state.endedRooms, ...action.payload };
+			return { ...state, endedRooms: next };
+		}
 		case 'FEEDBACK_PROMPT':
 			return { ...state, feedbackPrompt: { request_id: action.payload.request_id } };
 		case 'FEEDBACK_RECEIVED':
 			return { ...state, feedbackReceived: action.payload };
 		case 'FEEDBACK_CLEAR':
 			return { ...state, feedbackPrompt: null, feedbackReceived: null };
+		case 'HYDRATE_LOCAL': {
+			return {
+				...state,
+				...action.payload,
+				// Ensure `endedRooms` never regresses to empty if storage is missing.
+				endedRooms: { ...state.endedRooms, ...(action.payload.endedRooms ?? {}) },
+			};
+		}
 		default:
 			return state;
 	}
@@ -153,14 +219,29 @@ const SessionsContext = createContext<SessionsContextValue | null>(null);
 
 export function SessionsProvider({ children }: { children: React.ReactNode }) {
 	const ws = useWs();
+	const wsConnected = useWsConnected();
 	const navigate = useNavigate();
 	const { state: authState } = useAuth();
-	const { addConversation } = useChat();
+	const { addConversation, addRoomMessage } = useChat();
+	const { showToast } = useNotifications();
 	const [state, dispatch] = useReducer(sessionsReducer, initialState);
 	const uiCallTypeByRequestIdRef = useRef<Record<string, SessionsUiCallType>>({});
 	const creatorMetaByRequestIdRef = useRef<Record<string, { userId: string, name: string, avatar: string }>>({});
 	const fanMetaByRequestIdRef = useRef<Record<string, { userId: string, name: string }>>({});
 	const roomIdByRequestIdRef = useRef<Record<string, string>>({});
+	const joinedBookedRoomRef = useRef<string | null>(null);
+	const didPromptActiveRequestIdRef = useRef<string | null>(null);
+	const didHydrateLocalRef = useRef(false);
+	const hydratedLocalAtMsRef = useRef<number | null>(null);
+
+	function ensureBookedRoomJoined(roomId: string) {
+		if (!wsConnected) return;
+		if (!roomId) return;
+		if (state.endedRooms[roomId]) return;
+		if (joinedBookedRoomRef.current === roomId) return;
+		joinedBookedRoomRef.current = roomId;
+		void ws.request('chat', 'joinroom', [roomId]).catch(() => {});
+	}
 
 	const requestSession = useCallback(
 		(opts: {
@@ -198,7 +279,13 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 		(requestId: string) =>
 			sessionsAccept(ws, { requestId }).then(res => {
 				dispatch({ type: 'INCOMING_REMOVE', payload: { request_id: requestId } });
-				const fan = fanMetaByRequestIdRef.current[res.request_id];
+				const fan =
+					fanMetaByRequestIdRef.current[res.request_id] ??
+					(() => {
+						// After reload, meta refs can be empty; rely on restored incoming request payload.
+						const row = state.incoming.find(r => r.request.request_id === res.request_id)?.request;
+						return row ? { userId: row.fan_user_id, name: row.fan_display } : undefined;
+					})();
 				dispatch({
 					type: 'ACTIVE_SET',
 					payload: {
@@ -209,7 +296,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 				});
 				return res;
 			}),
-		[ws]
+		[ws, state.incoming]
 	);
 
 	const rejectSession = useCallback(
@@ -261,6 +348,28 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 
 	const clearOutgoing = useCallback(() => dispatch({ type: 'OUTGOING_CLEAR' }), []);
 	const clearFeedback = useCallback(() => dispatch({ type: 'FEEDBACK_CLEAR' }), []);
+
+	// Backend does not support `sessions /state`. We rely on push events + local persistence.
+	useEffect(() => {
+		if (didHydrateLocalRef.current) return;
+		didHydrateLocalRef.current = true;
+
+		const snap = loadLocalSessionsSnapshot();
+		if (!snap) return;
+		hydratedLocalAtMsRef.current = Date.now();
+		dispatch({ type: 'HYDRATE_LOCAL', payload: snap });
+
+		// Notify user on reopen if there is a live chat session or a pending request.
+		const me = authState.user;
+		if (!me) return;
+		if (snap.active?.accepted?.kind === 'chat' && snap.active.accepted.room_id && !snap.endedRooms?.[snap.active.accepted.room_id]) {
+			showToast('Chat session is still active. Open Messages to resume.');
+		} else if (snap.outgoing?.state === 'pending') {
+			showToast('Your session request is still pending.');
+		} else if (Array.isArray(snap.incoming) && snap.incoming.length) {
+			showToast('You have a pending session request.');
+		}
+	}, [authState.user, showToast]);
 
 	// Subscribe to sessions push events
 	useEffect(() => {
@@ -322,10 +431,10 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 		});
 		const offTimer = ws.on('sessions', 'timer', data => {
 			const payload = data as SessionsTimerEvent;
-			const active = state.active?.accepted;
-			if (!active) return;
-			if (active.request_id !== payload.request_id) return;
+			// Timer ticks are a reliable way to learn the active room after reload/reconnect,
+			// even if local `active` wasn't restored yet.
 			dispatch({ type: 'TIMER_UPDATE', payload });
+			ensureBookedRoomJoined(payload.room_id);
 		});
 		const offEnded = ws.on('sessions', 'ended', data => {
 			const payload = data as SessionsEndedEvent;
@@ -333,6 +442,11 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 			// Always record the ended booking so chat UI can reflect it by `room_id`,
 			// even if the local `active` booking is different or already cleared.
 			dispatch({ type: 'ENDED_SET', payload });
+			// Stop treating this room as joinable/realtime after end.
+			if (joinedBookedRoomRef.current === payload.room_id) {
+				joinedBookedRoomRef.current = null;
+			}
+			void ws.request('chat', 'leaveroom', [payload.room_id]).catch(() => {});
 			if (active?.room_id === payload.room_id) {
 				dispatch({ type: 'ACTIVE_CLEAR' });
 			}
@@ -349,6 +463,59 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 		};
 	}, [ws, authState.user, state.active?.accepted?.request_id]);
 
+	// When an accepted chat booking is active, keep the room joined so messages arrive
+	// even if the user is on the Messages list (WhatsApp-like unread behavior).
+	useEffect(() => {
+		if (!wsConnected) return;
+		const active = state.active?.accepted;
+		if (active?.kind !== 'chat') return;
+		ensureBookedRoomJoined(active.room_id);
+	}, [wsConnected, state.active?.accepted?.request_id]);
+
+	// Global chat listener for the joined booked room (so Messages list gets live updates).
+	useEffect(() => {
+		if (!wsConnected) return;
+		const off = ws.on('chat', 'c', data => {
+			const dto = data as { id: string, room_id: string, user_id: string, body: string, created_at: string };
+			const roomId = dto?.room_id ?? '';
+			if (!roomId) return;
+			if (joinedBookedRoomRef.current !== roomId) return;
+			addRoomMessage({
+				id: dto.id,
+				conversationId: roomId,
+				senderId: dto.user_id,
+				senderName: 'User',
+				senderAvatar: '',
+				content: dto.body,
+				isPaid: false,
+				isUnlocked: true,
+				createdAt: dto.created_at,
+				isSeen: false,
+			});
+		});
+		return off;
+	}, [addRoomMessage, ws, wsConnected]);
+
+	// Persist ended room markers so reload can't "unlock" ended sessions.
+	useEffect(() => {
+		try {
+			globalThis.localStorage?.setItem(ENDED_ROOMS_STORAGE_KEY, JSON.stringify(state.endedRooms));
+			const snapshot: LocalSessionsSnapshot = {
+				outgoing: state.outgoing,
+				incoming: state.incoming,
+				active: state.active,
+				timer: state.timer,
+				ended: state.ended,
+				endedRooms: state.endedRooms,
+				feedbackPrompt: state.feedbackPrompt,
+				feedbackReceived: state.feedbackReceived,
+			};
+			globalThis.localStorage?.setItem(LOCAL_SESSIONS_STORAGE_KEY, JSON.stringify(snapshot));
+		} catch {
+			// ignore
+		}
+	}, [state]);
+
 	// Cross-service: `/endsession` on `sessions` may also emit `|call|ended|{...}`.
 	useEffect(() => {
 		const offEnded = ws.on('call', 'ended', data => {
@@ -362,11 +529,16 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 		return offEnded;
 	}, [ws, state.active?.accepted?.kind, state.active?.accepted?.call_session_id]);
 
-	// Route side-effects when a booking becomes active.
+	// Auto-navigate to chat on accept (but don't force-redirect immediately after local restore).
 	useEffect(() => {
 		const active = state.active?.accepted;
-		if (!active) return;
+		if (!active) {
+			didPromptActiveRequestIdRef.current = null;
+			return;
+		}
 		if (!authState.user) return;
+		if (didPromptActiveRequestIdRef.current === active.request_id) return;
+		didPromptActiveRequestIdRef.current = active.request_id;
 
 		if (active.kind === 'chat') {
 			const roomId = active.room_id;
@@ -376,10 +548,19 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 
 			// Ensure ChatRoom can render by pre-creating a conversation for this room_id.
 			// (ChatRoom is room-based; for sessions we treat the room_id as the conversation id.)
+			const otherFromState = state.active?.otherDisplay;
 			const other =
 				me.role === 'creator' ?
-					(fanMeta ? { id: fanMeta.userId, name: fanMeta.name, avatar: '' } : { id: 'fan', name: 'Fan', avatar: '' }) :
-					(creatorMeta ? { id: creatorMeta.userId, name: creatorMeta.name, avatar: creatorMeta.avatar } : { id: 'creator', name: 'Creator', avatar: '' });
+					{
+						id: fanMeta?.userId ?? 'fan',
+						name: fanMeta?.name ?? otherFromState?.name ?? 'Fan',
+						avatar: otherFromState?.avatar ?? '',
+					} :
+					{
+						id: creatorMeta?.userId ?? 'creator',
+						name: creatorMeta?.name ?? otherFromState?.name ?? 'Creator',
+						avatar: creatorMeta?.avatar ?? otherFromState?.avatar ?? '',
+					};
 
 			addConversation({
 				id: roomId,
@@ -392,14 +573,24 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 				isOnline: true,
 			});
 
-			// Reuse existing chat page; it expects a conversation id. For sessions we use the booking room_id.
-			void navigate(`/messages/${roomId}`);
-			return;
+			const hydratedAt = hydratedLocalAtMsRef.current;
+			const isLikelyLocalRestore = hydratedAt ? Date.now() - hydratedAt < 1500 : false;
+			if (isLikelyLocalRestore) {
+				showToast('Chat session is still active. Open Messages to resume.');
+			} else {
+				void navigate(`/messages/${roomId}`);
+			}
 		}
-		if (active.kind === 'call') {
-			void navigate('/call');
-		}
-	}, [state.active?.accepted?.request_id, state.active?.accepted?.kind, authState.user, navigate, addConversation]);
+		// No prompt for call sessions (chat-only prompt requested).
+	}, [
+		state.active?.accepted?.request_id,
+		state.active?.accepted?.kind,
+		authState.user,
+		addConversation,
+		showToast,
+		state.active?.otherDisplay,
+		navigate,
+	]);
 
 	const value = useMemo<SessionsContextValue>(() => ({
 		state,

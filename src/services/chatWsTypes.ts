@@ -12,6 +12,18 @@ export interface ChatTypingEventPayload {
 	active: boolean;
 }
 
+export interface ChatPresenceEventPayload {
+	room_id: string;
+	user_id: string;
+}
+
+export interface ChatSeenEventPayload {
+	room_id: string;
+	user_id: string;
+	last_message_id: string;
+	seen_at: string;
+}
+
 export interface ChatJoinLeaveResponse {
 	ok: boolean;
 	room_id: string;

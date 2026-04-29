@@ -7,7 +7,6 @@ import { useAuth, useCurrentCreator } from '../../context/AuthContext';
 import { useContent } from '../../context/ContentContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { mockCreators } from '../../data/users';
-import { isPostsMockMode } from '../../services/postsMode';
 import { uploadPostMediaFile } from '../../services/uploadPostMedia';
 import { formatINR } from '../../services/razorpay';
 import { PostCard } from '../../components/ui/PostCard';
@@ -18,7 +17,6 @@ export function ContentManager() {
 	const { state: contentState, createPost, deletePost, loadCreatorPosts } = useContent();
 	const { showToast } = useNotifications();
 	const { state: authState } = useAuth();
-	const useMockPosts = isPostsMockMode();
 	const [showNewPost, setShowNewPost] = useState(false);
 	const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
@@ -27,7 +25,6 @@ export function ContentManager() {
 	const [newPostLocked, setNewPostLocked] = useState(false);
 	const [newPostPPV, setNewPostPPV] = useState(false);
 	const [newPostPrice, setNewPostPrice] = useState('4.99');
-	const [newPostImageUrl, setNewPostImageUrl] = useState('');
 	const [remoteMediaFile, setRemoteMediaFile] = useState<File | null>(null);
 	const [isPosting, setIsPosting] = useState(false);
 	const [uploadError, setUploadError] = useState<string>('');
@@ -54,7 +51,7 @@ export function ContentManager() {
 		const id = authedCreatorId || creatorData.id;
 		if (!id) return;
 		void loadCreatorPosts(id, true);
-	}, [useMockPosts, authedCreatorId, creatorData.id, loadCreatorPosts, contentState.postsWsStatus]);
+	}, [authedCreatorId, creatorData.id, loadCreatorPosts, contentState.postsWsStatus]);
 
 	function handleCreatePost() {
 		const text = newPostText.trim();
@@ -89,7 +86,6 @@ export function ContentManager() {
 				showToast('Post published!');
 				setShowNewPost(false);
 				setNewPostText('');
-				setNewPostImageUrl('');
 				setRemoteMediaFile(null);
 				setNewPostLocked(false);
 				setNewPostPPV(false);
@@ -247,15 +243,7 @@ export function ContentManager() {
 						className="w-full bg-input border border-border/20 rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40 resize-none"
 					/>
 
-					{newPostType === 'image' && useMockPosts && (
-						<input
-							value={newPostImageUrl}
-							onChange={e => setNewPostImageUrl(e.target.value)}
-							placeholder="Image URL (or leave blank for default)"
-							className="w-full bg-input border border-border/20 rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
-						/>
-					)}
-					{newPostType === 'image' && !useMockPosts && (
+					{newPostType === 'image' && (
 						<div>
 							<label className="block text-xs text-muted mb-1">Image or video file</label>
 							<input

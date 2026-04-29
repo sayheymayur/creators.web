@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Send, Image as ImageIcon, Zap, Lock, Unlock, CheckCheck, Check, Phone, Video } from '../../components/icons';
+import { ArrowLeft, Send, Image as ImageIcon, Zap, Lock, Unlock, Phone, Video } from '../../components/icons';
 import { useAuth } from '../../context/AuthContext';
 import { useChat } from '../../context/ChatContext';
 import { useContent } from '../../context/ContentContext';
@@ -17,6 +17,7 @@ import { Navbar } from '../../components/layout/Navbar';
 import { useRoomChat } from '../../hooks/useRoomChat';
 import { formatINR } from '../../services/razorpay';
 import { SessionFeedbackModal } from '../../components/session/SessionFeedbackModal';
+import { isUuid } from '../../utils/isUuid';
 
 function formatRemaining(sec: number): string {
 	if (!Number.isFinite(sec)) return '—';
@@ -24,6 +25,52 @@ function formatRemaining(sec: number): string {
 	const m = Math.floor(s / 60);
 	const r = s % 60;
 	return `${m}:${String(r).padStart(2, '0')}`;
+}
+
+function WhatsAppSingleTick({ className }: { className?: string }) {
+	return (
+		<svg
+			viewBox="0 0 16 16"
+			fill="none"
+			className={className}
+			aria-hidden="true"
+		>
+			<path
+				d="M3 8.5l2.2 2.2L13 3.8"
+				stroke="currentColor"
+				strokeWidth="1.8"
+				strokeLinecap="round"
+				strokeLinejoin="round"
+			/>
+		</svg>
+	);
+}
+
+function WhatsAppDoubleTick({ className }: { className?: string }) {
+	return (
+		<svg
+			viewBox="0 0 18 16"
+			fill="none"
+			className={className}
+			aria-hidden="true"
+		>
+			<path
+				d="M1.2 8.6l2.1 2.1L10.1 3.9"
+				stroke="currentColor"
+				strokeWidth="1.8"
+				strokeLinecap="round"
+				strokeLinejoin="round"
+				opacity="0.85"
+			/>
+			<path
+				d="M7.3 10.7l2-2L16.8 1.2"
+				stroke="currentColor"
+				strokeWidth="1.8"
+				strokeLinecap="round"
+				strokeLinejoin="round"
+			/>
+		</svg>
+	);
 }
 
 export function ChatRoom() {
@@ -34,6 +81,8 @@ export function ChatRoom() {
 		state: chatState,
 		sendMessage,
 		markRead,
+		markSeenUpTo,
+		setActive,
 		unlockMessage,
 		upsertRoomMessages,
 		addRoomMessage,
@@ -48,6 +97,7 @@ export function ChatRoom() {
 	const [text, setText] = useState('');
 	const [showTipModal, setShowTipModal] = useState(false);
 	const [realtimeSending, setRealtimeSending] = useState(false);
+	const [otherInRoom, setOtherInRoom] = useState(false);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
 	const replyIdxRef = useRef(0);
 	const lastSendRef = useRef<{ at: number, roomId: string, text: string } | null>(null);
@@ -76,7 +126,36 @@ export function ChatRoom() {
 		[showToast]
 	);
 
+	const onPresenceEvent = useCallback(
+		(ev: { type: 'join' | 'leave', user_id?: string }) => {
+			// De-spam join/leave toasts (some backends emit on reconnect; StrictMode dev can also re-run effects).
+			const key = `${ev.type}:${ev.user_id ?? ''}`;
+			const now = Date.now();
+			const last = (globalThis as unknown as { __cw_presence_toast?: { key: string, at: number } })?.__cw_presence_toast;
+			if (last?.key === key && now - (last.at ?? 0) < 1500) return;
+			(globalThis as unknown as { __cw_presence_toast?: { key: string, at: number } }).__cw_presence_toast = { key, at: now };
+
+			// Track other participant presence for WhatsApp-style delivery ticks.
+			const otherIdxLocal = conv?.participantIds?.indexOf(userId) === 0 ? 1 : 0;
+			const otherIdLocal = conv?.participantIds?.[otherIdxLocal] ?? '';
+			if (otherIdLocal && ev.user_id === otherIdLocal) {
+				setOtherInRoom(ev.type === 'join');
+			}
+			if (ev.type === 'join') showToast('User joined the session');
+			if (ev.type === 'leave') showToast('User left the session');
+		},
+		[showToast, conv, userId]
+	);
+
 	const roomId = convId ?? '';
+
+	const onSeenEvent = useCallback(
+		(payload: { last_message_id: string }) => {
+			// When the other user reports they saw up to X, mark my sent messages as seen up to that id.
+			markSeenUpTo(roomId, payload.last_message_id);
+		},
+		[markSeenUpTo, roomId]
+	);
 	const activeChatBooking =
 		sessionsState.active?.accepted.kind === 'chat' && sessionsState.active.accepted.room_id === roomId ?
 			sessionsState.active.accepted :
@@ -84,20 +163,32 @@ export function ChatRoom() {
 	const endedChatBooking =
 		sessionsState.ended?.room_id === roomId ?
 			sessionsState.ended :
+			(sessionsState.endedRooms?.[roomId] ?? null);
+	const timerForRoom =
+		sessionsState.timer?.room_id === roomId ?
+			sessionsState.timer :
 			null;
-	const isBookedChatRoom = !!activeChatBooking || !!endedChatBooking;
-	const canSendBookedChat = !isBookedChatRoom || !!activeChatBooking;
+	// If we have a timer tick for this room, it implies an accepted active booking even if `/state`
+	// didn't hydrate `active` yet (common right after reload).
+	const isBookedActive = (!!activeChatBooking || !!timerForRoom) && !endedChatBooking;
+	const activeRequestId = activeChatBooking?.request_id ?? timerForRoom?.request_id ?? null;
+	const isBookedChatRoom = isBookedActive || !!endedChatBooking;
+	const canSendBookedChat = !isBookedChatRoom || isBookedActive;
 
-	const { otherTyping, realtimeActive, notifyTyping, sendRealtime } = useRoomChat({
-		roomUuid: conv && convId ? convId : undefined,
+	const { otherTyping, realtimeActive, notifyTyping, sendRealtime, sendSeen } = useRoomChat({
+		// For booked chats, the route param is the sessions room_id. After reload the conversation
+		// may not be hydrated yet; still join the room using the UUID route param.
+		roomUuid: convId && isUuid(convId) ? convId : undefined,
 		currentUserId: userId,
 		postsWsStatus: contentState.postsWsStatus,
 		getParticipantMeta,
 		upsertRoomMessages,
 		addRoomMessage,
+		onPresenceEvent,
+		onSeenEvent,
 		onProtocolError,
-		sendWithAck: !!activeChatBooking,
-		transport: activeChatBooking ? 'ws' : 'multiplex',
+		sendWithAck: isBookedActive,
+		transport: isBookedActive ? 'ws' : 'multiplex',
 	});
 
 	useEffect(() => {
@@ -105,10 +196,38 @@ export function ChatRoom() {
 	}, [convId, markRead]);
 
 	useEffect(() => {
+		if (!convId) return;
+		setActive(convId);
+		return () => {
+			setActive(null);
+		};
+	}, [convId, setActive]);
+
+	const lastSeenSentAtRef = useRef(0);
+	const lastSeenMsgIdRef = useRef<string | null>(null);
+
+	useEffect(() => {
+		// Auto-send seen for the latest message from the other user (throttled).
+		if (!realtimeActive || !convId) return;
+		const otherIdxLocal = conv?.participantIds?.indexOf(userId) === 0 ? 1 : 0;
+		const otherIdLocal = conv?.participantIds?.[otherIdxLocal] ?? '';
+		if (!otherIdLocal) return;
+		const latestFromOther = [...messages].reverse().find(m => m.senderId === otherIdLocal && /^\d+$/.test(m.id));
+		const mid = latestFromOther?.id;
+		if (!mid) return;
+		const now = Date.now();
+		if (lastSeenMsgIdRef.current === mid) return;
+		if (now - lastSeenSentAtRef.current < 1200) return;
+		lastSeenSentAtRef.current = now;
+		lastSeenMsgIdRef.current = mid;
+		sendSeen(mid);
+	}, [realtimeActive, convId, conv, messages, userId, sendSeen]);
+
+	useEffect(() => {
 		messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
 	}, [messages]);
 
-	if (!conv || !convId) {
+	if (!convId) {
 		return (
 			<div className="min-h-screen bg-background text-foreground flex items-center justify-center">
 				<p className="text-muted">Conversation not found</p>
@@ -119,10 +238,11 @@ export function ChatRoom() {
 	// Booking-derived chat rooms: disable sending after `sessions|ended`.
 	// `roomId` and booking state are computed above so the hook call remains unconditional.
 
-	const otherIdx = conv.participantIds.indexOf(userId) === 0 ? 1 : 0;
-	const otherName = conv.participantNames[otherIdx];
-	const otherAvatar = conv.participantAvatars[otherIdx];
-	const otherId = conv.participantIds[otherIdx];
+	const otherIdx = conv?.participantIds?.indexOf(userId) === 0 ? 1 : 0;
+	const otherName = conv?.participantNames?.[otherIdx] ?? sessionsState.active?.otherDisplay?.name ?? 'User';
+	const otherAvatar = conv?.participantAvatars?.[otherIdx] ?? sessionsState.active?.otherDisplay?.avatar ?? '';
+	const otherId = conv?.participantIds?.[otherIdx] ?? '';
+	const otherIsOnline = conv?.isOnline ?? false;
 
 	const replies = [
 		'Thank you for the message.',
@@ -142,7 +262,7 @@ export function ChatRoom() {
 		if (!text.trim() || !authState.user) return;
 		const trimmed = text.trim();
 
-		if (isBookedChatRoom && !activeChatBooking) {
+		if (isBookedChatRoom && !isBookedActive) {
 			showToast('Session ended. You can’t send more messages.', 'error');
 			return;
 		}
@@ -181,7 +301,7 @@ export function ChatRoom() {
 			void sendRealtime(trimmed)
 				.then(dto => {
 					if (!dto) {
-						// fire-and-forget mode; delivery is via `chat|newmessage`
+						// fire-and-forget mode; delivery is via `chat|c`
 						updateMessage(roomId, localId, { sendStatus: 'sent' });
 						return;
 					}
@@ -253,19 +373,14 @@ export function ChatRoom() {
 		}
 	}
 
-	const statusLine = otherTyping ?
-		'Typing…' :
-		conv.isOnline ?
-			'Online now' :
-			'Offline';
+	const statusLine =
+		otherTyping ?
+			'typing…' :
+			(otherInRoom ? 'Active now' : (otherIsOnline ? 'Online now' : 'Offline'));
 
-	const timerForRoom =
-		sessionsState.timer?.room_id === roomId ?
-			sessionsState.timer :
-			null;
-	const timerLine =
-		activeChatBooking && timerForRoom ?
-			`${formatRemaining(timerForRoom.remaining_sec)} left` :
+	const remainingLabel =
+		isBookedActive && timerForRoom ?
+			`${formatRemaining(timerForRoom.remaining_sec)}` :
 			null;
 
 	return (
@@ -278,27 +393,28 @@ export function ChatRoom() {
 					<button
 						type="button"
 						onClick={() => {
-							const role = authState.user?.role;
-							let home = '/feed';
-							if (role === 'admin') home = '/admin';
-							else if (role === 'creator') home = '/creator-dashboard';
-							void navigate(home);
+							void navigate(-1);
 						}}
 						className="p-1.5 rounded-lg hover:bg-foreground/10 transition-colors"
 					>
 						<ArrowLeft className="w-5 h-5 text-muted" />
 					</button>
-					<Avatar src={otherAvatar} alt={otherName} size="md" isOnline={conv.isOnline} />
+					<Avatar src={otherAvatar} alt={otherName} size="md" isOnline={otherIsOnline} />
 					<div>
 						<p className="text-sm font-semibold text-foreground">{otherName}</p>
-						<p className="text-xs text-muted">{timerLine ?? statusLine}</p>
+						<p className="text-xs text-muted">{statusLine}</p>
 					</div>
 					<div className="ml-auto flex items-center gap-2">
-						{activeChatBooking && !endedChatBooking && (
+						{remainingLabel && (
+							<div className="px-2.5 py-1 rounded-xl border border-border/20 bg-foreground/5 text-xs font-semibold text-foreground/80 tabular-nums">
+								{remainingLabel}
+							</div>
+						)}
+						{activeRequestId && isBookedActive && !endedChatBooking && (
 							<button
 								type="button"
 								onClick={() => {
-									void completeBookedSession(activeChatBooking.request_id)
+									void completeBookedSession(activeRequestId)
 										.then(() => showToast('Ending session…'))
 										.catch(err => showToast(err instanceof Error ? err.message : 'Failed to end session', 'error'));
 								}}
@@ -309,25 +425,29 @@ export function ChatRoom() {
 						)}
 						<button
 							type="button"
-							onClick={() => { startCall(otherId, otherName, otherAvatar, 'audio'); void navigate('/call'); }}
+							onClick={() => { if (!otherId) return; startCall(otherId, otherName, otherAvatar, 'audio'); void navigate('/call'); }}
+							disabled={!otherId}
 							className="w-8 h-8 rounded-xl bg-foreground/10 hover:bg-emerald-500/20 hover:text-emerald-400 text-muted flex items-center justify-center transition-all"
 						>
 							<Phone className="w-4 h-4" />
 						</button>
 						<button
 							type="button"
-							onClick={() => { startCall(otherId, otherName, otherAvatar, 'video'); void navigate('/call'); }}
+							onClick={() => { if (!otherId) return; startCall(otherId, otherName, otherAvatar, 'video'); void navigate('/call'); }}
+							disabled={!otherId}
 							className="w-8 h-8 rounded-xl bg-foreground/10 hover:bg-sky-500/20 hover:text-sky-400 text-muted flex items-center justify-center transition-all"
 						>
 							<Video className="w-4 h-4" />
 						</button>
-						<button
-							onClick={() => setShowTipModal(true)}
-							className="flex items-center gap-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 text-xs font-semibold px-3 py-1.5 rounded-xl transition-all"
-						>
-							<Zap className="w-3.5 h-3.5 fill-amber-400" />
-							Tip
-						</button>
+						{authState.user?.role === 'fan' ? (
+							<button
+								onClick={() => setShowTipModal(true)}
+								className="flex items-center gap-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 text-xs font-semibold px-3 py-1.5 rounded-xl transition-all"
+							>
+								<Zap className="w-3.5 h-3.5 fill-amber-400" />
+								Tip
+							</button>
+						) : null}
 					</div>
 				</div>
 			</div>
@@ -381,9 +501,14 @@ export function ChatRoom() {
 												<span className="text-[10px] text-rose-300">Failed</span> :
 												msg.sendStatus === 'sending' ?
 													<span className="text-[10px] text-muted/70">Sending…</span> :
-													(msg.isSeen ?
-														<CheckCheck className="w-3 h-3 text-rose-400" /> :
-														<Check className="w-3 h-3 text-muted/70" />)
+													(() => {
+														// Presence (`chat|j`) is not reliable after reload; use server ack as "delivered".
+														const isServerAcked = /^\d+$/.test(msg.id) || msg.sendStatus === 'sent';
+														if (msg.isSeen) return <WhatsAppDoubleTick className="w-4 h-4 text-rose-400" />;
+														if (isServerAcked) return <WhatsAppDoubleTick className="w-4 h-4 text-muted/70" />;
+														if (otherInRoom) return <WhatsAppDoubleTick className="w-4 h-4 text-muted/70" />;
+														return <WhatsAppSingleTick className="w-3.5 h-3.5 text-muted/70" />;
+													})()
 										)}
 									</div>
 								</div>

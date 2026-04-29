@@ -4,7 +4,8 @@ import { formatINR } from '../../services/razorpay';
 import { compareMinor, formatINRFromMinor, inrRupeesToMinor } from '../../utils/money';
 import type { SessionType } from '../../types';
 
-const DURATION_OPTIONS = [5, 10, 15, 20, 30, 60];
+// Backend spec allowed values: 10, 15, 20, 25, 30
+const DURATION_OPTIONS = [10, 15, 20, 25, 30];
 
 export type SessionPayMode = 'external' | 'wallet';
 

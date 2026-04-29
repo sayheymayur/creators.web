@@ -8,7 +8,7 @@ import {
 	chatSendMsg,
 	chatTyping,
 } from '../services/chatWsService';
-import type { ChatMessageDTO, ChatTypingEventPayload } from '../services/chatWsTypes';
+import type { ChatMessageDTO, ChatPresenceEventPayload, ChatSeenEventPayload, ChatTypingEventPayload } from '../services/chatWsTypes';
 import type { Message } from '../types';
 import { isUuid } from '../utils/isUuid';
 
@@ -48,6 +48,8 @@ export interface UseRoomChatParams {
 	getParticipantMeta: (userId: string) => { name: string, avatar: string };
 	upsertRoomMessages: (conversationId: string, messages: Message[]) => void;
 	addRoomMessage: (message: Message) => void;
+	onPresenceEvent?: (ev: { type: 'join' | 'leave', room_id: string, user_id: string }) => void;
+	onSeenEvent?: (payload: ChatSeenEventPayload) => void;
 	onProtocolError?: (message: string) => void;
 	/** If true, uses `/sendmsg` ack response to immediately add the sender's message to UI. */
 	sendWithAck?: boolean;
@@ -70,9 +72,11 @@ export interface UseRoomChatResult {
 	/**
 	 * Send text over WS (`/sendmsg`).
 	 * - When `sendWithAck` is true, returns the acknowledged `ChatMessageDTO`.
-	 * - When `sendWithAck` is false, returns `undefined` (delivery via `chat|newmessage`).
+	 * - When `sendWithAck` is false, returns `undefined` (delivery via `chat|c`).
 	 */
 	sendRealtime: (text: string) => Promise<ChatMessageDTO | undefined>;
+	/** Send a seen receipt for the given message id (best-effort). */
+	sendSeen: (lastMessageId: string) => void;
 }
 
 const TYPING_DEBOUNCE_MS = 400;
@@ -85,6 +89,8 @@ export function useRoomChat(params: UseRoomChatParams): UseRoomChatResult {
 		getParticipantMeta,
 		upsertRoomMessages,
 		addRoomMessage,
+		onPresenceEvent,
+		onSeenEvent,
 		onProtocolError,
 		sendWithAck = false,
 		transport = 'auto',
@@ -92,6 +98,56 @@ export function useRoomChat(params: UseRoomChatParams): UseRoomChatResult {
 
 	const ws = useWs();
 	const wsConnected = useWsConnected();
+	const devSkipLeaveOnceRef = useRef<boolean>(import.meta.env.DEV);
+	const applySeenState = useCallback(
+		(roomId: string, body: unknown) => {
+			if (!body) return;
+			const now = new Date().toISOString();
+			const curUid = userRef.current;
+			const toId = (v: unknown): string => {
+				if (typeof v === 'string') return v;
+				if (typeof v === 'number') return String(v);
+				return '';
+			};
+			const emit = (userId: string, lastMessageId: string) => {
+				if (!userId || !lastMessageId) return;
+				if (userId === curUid) return;
+				seenRef.current?.({
+					room_id: roomId,
+					user_id: userId,
+					last_message_id: lastMessageId,
+					seen_at: now,
+				});
+			};
+
+			if (typeof body !== 'object') return;
+			const obj = body as Record<string, unknown>;
+			const rid = toId(obj.room_id);
+			if (rid && rid !== roomId) return;
+
+			// { room_id, seen: { [userId]: last_message_id } }
+			if (obj.seen && typeof obj.seen === 'object') {
+				for (const [uid, mid] of Object.entries(obj.seen as Record<string, unknown>)) {
+					emit(toId(uid), toId(mid));
+				}
+				return;
+			}
+			// { room_id, user_id, last_message_id }
+			if (obj.user_id && obj.last_message_id) {
+				emit(toId(obj.user_id), toId(obj.last_message_id));
+				return;
+			}
+			// { room_id, pointers: [{ user_id, last_message_id }, ...] }
+			if (Array.isArray(obj.pointers)) {
+				for (const p of obj.pointers) {
+					if (!p || typeof p !== 'object') continue;
+					const po = p as Record<string, unknown>;
+					emit(toId(po.user_id), toId(po.last_message_id));
+				}
+			}
+		},
+		[]
+	);
 
 	const [otherTyping, setOtherTyping] = useState(false);
 	const typingClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -112,10 +168,14 @@ export function useRoomChat(params: UseRoomChatParams): UseRoomChatResult {
 	const addRef = useRef(addRoomMessage);
 	const metaRef = useRef(getParticipantMeta);
 	const userRef = useRef(currentUserId);
+	const presenceRef = useRef(onPresenceEvent);
+	const seenRef = useRef(onSeenEvent);
 	upsertRef.current = upsertRoomMessages;
 	addRef.current = addRoomMessage;
 	metaRef.current = getParticipantMeta;
 	userRef.current = currentUserId;
+	presenceRef.current = onPresenceEvent;
+	seenRef.current = onSeenEvent;
 
 	useEffect(() => {
 		if (!realtimeActive || !roomUuid) return;
@@ -123,11 +183,29 @@ export function useRoomChat(params: UseRoomChatParams): UseRoomChatResult {
 		let cancelled = false;
 
 		if (effectiveTransport === 'ws') {
-			const offEv = ws.on('chat', 'newmessage', data => {
+			const offMsg = ws.on('chat', 'c', data => {
 				if (cancelled || roomRef.current !== roomUuid) return;
 				const dto = data as ChatMessageDTO;
 				if (dto.room_id !== roomUuid) return;
 				addRef.current(dtoToMessage(dto, metaRef.current));
+			});
+			const offJoin = ws.on('chat', 'j', data => {
+				if (cancelled || roomRef.current !== roomUuid) return;
+				const pl = data as ChatPresenceEventPayload;
+				if (pl.room_id !== roomUuid || pl.user_id === userRef.current) return;
+				presenceRef.current?.({ type: 'join', room_id: pl.room_id, user_id: pl.user_id });
+			});
+			const offLeave = ws.on('chat', 'l', data => {
+				if (cancelled || roomRef.current !== roomUuid) return;
+				const pl = data as ChatPresenceEventPayload;
+				if (pl.room_id !== roomUuid || pl.user_id === userRef.current) return;
+				presenceRef.current?.({ type: 'leave', room_id: pl.room_id, user_id: pl.user_id });
+			});
+			const offSeen = ws.on('chat', 'seen', data => {
+				if (cancelled || roomRef.current !== roomUuid) return;
+				const pl = data as ChatSeenEventPayload;
+				if (pl.room_id !== roomUuid || pl.user_id === userRef.current) return;
+				seenRef.current?.(pl);
 			});
 			const offTyping = ws.on('chat', 'typing', data => {
 				if (cancelled || roomRef.current !== roomUuid) return;
@@ -150,6 +228,14 @@ export function useRoomChat(params: UseRoomChatParams): UseRoomChatResult {
 					const merged = mergeChatDTOs(b.recentCache ?? [], b.page ?? []);
 					const messages = merged.map(d => dtoToMessage(d, metaRef.current));
 					upsertRef.current(roomUuid, messages);
+					// Restore seen pointers after (re)join so ticks are correct immediately.
+					return ws.request('chat', 'seenstate', [roomUuid]).then(
+						seenBody => {
+							if (cancelled) return;
+							applySeenState(roomUuid, seenBody);
+						},
+						() => {}
+					);
 				})
 				.catch(e => {
 					if (!cancelled) onProtocolError?.(e instanceof Error ? e.message : String(e));
@@ -157,11 +243,18 @@ export function useRoomChat(params: UseRoomChatParams): UseRoomChatResult {
 
 			return () => {
 				cancelled = true;
-				offEv();
+				offMsg();
+				offJoin();
+				offLeave();
+				offSeen();
 				offTyping();
 				if (typingClearTimerRef.current) clearTimeout(typingClearTimerRef.current);
 				if (typingDebounceRef.current) clearTimeout(typingDebounceRef.current);
-				if (wsConnected) {
+				// In React StrictMode (dev), effects mount/unmount once for verification.
+				// Avoid emitting a real `/leaveroom` during the dev-only test cleanup.
+				if (devSkipLeaveOnceRef.current) {
+					devSkipLeaveOnceRef.current = false;
+				} else if (wsConnected) {
 					void ws.request('chat', 'leaveroom', [roomUuid]).catch(() => {});
 				}
 				lastTypingSentRef.current = null;
@@ -174,10 +267,28 @@ export function useRoomChat(params: UseRoomChatParams): UseRoomChatResult {
 
 		const unsubEv = client.subscribeChatEvents((event, payload) => {
 			if (cancelled || roomRef.current !== roomUuid) return;
-			if (event === 'newmessage') {
+			if (event === 'c') {
 				const dto = payload as ChatMessageDTO;
 				if (dto.room_id !== roomUuid) return;
 				addRef.current(dtoToMessage(dto, metaRef.current));
+				return;
+			}
+			if (event === 'j') {
+				const pl = payload as ChatPresenceEventPayload;
+				if (pl.room_id !== roomUuid || pl.user_id === userRef.current) return;
+				presenceRef.current?.({ type: 'join', room_id: pl.room_id, user_id: pl.user_id });
+				return;
+			}
+			if (event === 'l') {
+				const pl = payload as ChatPresenceEventPayload;
+				if (pl.room_id !== roomUuid || pl.user_id === userRef.current) return;
+				presenceRef.current?.({ type: 'leave', room_id: pl.room_id, user_id: pl.user_id });
+				return;
+			}
+			if (event === 'seen') {
+				const pl = payload as ChatSeenEventPayload;
+				if (pl.room_id !== roomUuid || pl.user_id === userRef.current) return;
+				seenRef.current?.(pl);
 				return;
 			}
 			if (event === 'typing') {
@@ -222,7 +333,9 @@ export function useRoomChat(params: UseRoomChatParams): UseRoomChatResult {
 			if (typingClearTimerRef.current) clearTimeout(typingClearTimerRef.current);
 			if (typingDebounceRef.current) clearTimeout(typingDebounceRef.current);
 			const c = getCreatorsMultiplexSingleton();
-			if (c?.isOpen()) {
+			if (devSkipLeaveOnceRef.current) {
+				devSkipLeaveOnceRef.current = false;
+			} else if (c?.isOpen()) {
 				void chatLeaveRoom(c, roomUuid).catch(() => {});
 			}
 			lastTypingSentRef.current = null;
@@ -286,5 +399,22 @@ export function useRoomChat(params: UseRoomChatParams): UseRoomChatResult {
 		[realtimeActive, roomUuid, notifyTyping, sendWithAck, effectiveTransport, ws]
 	);
 
-	return { otherTyping, realtimeActive, notifyTyping, sendRealtime };
+	const sendSeen = useCallback(
+		(lastMessageId: string) => {
+			if (!realtimeActive || !roomUuid) return;
+			const mid = (lastMessageId ?? '').trim();
+			if (!/^\d+$/.test(mid)) return;
+
+			if (effectiveTransport === 'ws') {
+				void ws.request('chat', 'seen', [roomUuid, mid]).catch(() => {});
+				return;
+			}
+			const client = getCreatorsMultiplexSingleton();
+			if (!client?.isOpen()) return;
+			void client.send('chat', `/seen ${roomUuid} ${mid}`).catch(() => {});
+		},
+		[realtimeActive, roomUuid, effectiveTransport, ws]
+	);
+
+	return { otherTyping, realtimeActive, notifyTyping, sendRealtime, sendSeen };
 }

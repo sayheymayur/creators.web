@@ -124,12 +124,35 @@ function ProtectedRoute({ children, roles }: { children: React.ReactNode, roles?
 	return <>{children}</>;
 }
 
+function getAuthedRedirectPath(role?: string | null) {
+	return role === 'admin' ? '/admin' :
+		role === 'creator' ? '/creator-dashboard' : '/feed';
+}
+
+function GuestRoute({ children }: { children: React.ReactNode }) {
+	const { state, authStatus } = useAuth();
+	if (authStatus === 'unknown') return null;
+	if (state.isAuthenticated) return <Navigate to={getAuthedRedirectPath(state.user?.role)} replace />;
+	return <>{children}</>;
+}
+
+function AppFallbackRoute() {
+	const { state, authStatus } = useAuth();
+	if (authStatus === 'unknown') return null;
+	return (
+		<Navigate
+			to={state.isAuthenticated ? getAuthedRedirectPath(state.user?.role) : '/'}
+			replace
+		/>
+	);
+}
+
 function AppRoutes() {
 	const { state } = useAuth();
 
 	return (
 		<Routes>
-			<Route path="/" element={<Landing />} />
+			<Route path="/" element={<GuestRoute><Landing /></GuestRoute>} />
 			<Route path="/contact" element={<Contact />} />
 			<Route path="/privacy-policy" element={<PrivacyPolicy />} />
 			<Route path="/partner/apply" element={<PartnerApply />} />
@@ -180,7 +203,7 @@ function AppRoutes() {
 			<Route path="/live/:streamId" element={<ProtectedRoute><LiveStreamRoom /></ProtectedRoute>} />
 			<Route path="/go-live" element={<ProtectedRoute roles={['creator']}><GoLivePage /></ProtectedRoute>} />
 
-			<Route path="*" element={<Navigate to="/" replace />} />
+			<Route path="*" element={<AppFallbackRoute />} />
 		</Routes>
 	);
 }

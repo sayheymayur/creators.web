@@ -45,5 +45,9 @@ export function formatServiceLine(service: string, requestId?: string): string {
 
 export function formatCommandLine(command: string, args: string[] = []): string {
 	const joined = args.length > 0 ? ` ${args.join(' ')}` : '';
-	return `/${command}${joined}`;
+	const trimmed = command.trim();
+	// Many call sites pass commands with a leading `/` (e.g. `/list feed 30`).
+	// Avoid turning it into `//list feed 30`.
+	if (trimmed.startsWith('/')) return `${trimmed}${joined}`;
+	return `/${trimmed}${joined}`;
 }

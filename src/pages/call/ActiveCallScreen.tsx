@@ -28,6 +28,9 @@ export function ActiveCallScreen() {
 	const [elapsed, setElapsed] = useState(0);
 	const [bookedRemainingSec, setBookedRemainingSec] = useState<number | null>(null);
 	const [showControls, setShowControls] = useState(true);
+	const [bookedMuted, setBookedMuted] = useState(false);
+	const [bookedCameraOff, setBookedCameraOff] = useState(false);
+	const [bookedSpeakerOn, setBookedSpeakerOn] = useState(true);
 	const controlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 	const bookedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -40,6 +43,7 @@ export function ActiveCallScreen() {
 	const [hasRemoteVideo, setHasRemoteVideo] = useState(false);
 	const [agoraError, setAgoraError] = useState('');
 	const didPlayRemoteVideoRef = useRef(false);
+	const speakerOnRef = useRef(true);
 
 	const isTimedSession = session && (session.type === 'audio' || session.type === 'video');
 	const secondsRemaining = sessionState.secondsRemaining;
@@ -142,11 +146,11 @@ export function ActiveCallScreen() {
 	const callStatus = call?.status;
 	const isVideo = callType === 'video';
 	const isConnecting = callStatus === 'ringing' || callStatus === 'connecting';
-	const isMuted = call?.isMuted ?? false;
-	const isCameraOff = call?.isCameraOff ?? false;
-	const isSpeakerOn = call?.isSpeakerOn ?? true;
-
 	const isBookedCall = !!sessionsBooking?.accepted?.request_id;
+	const isMuted = call ? (call.isMuted ?? false) : bookedMuted;
+	const isCameraOff = call ? (call.isCameraOff ?? false) : bookedCameraOff;
+	const isSpeakerOn = call ? (call.isSpeakerOn ?? true) : bookedSpeakerOn;
+
 	const isBookedWarning = isBookedCall && (bookedRemainingSec ?? 0) <= 60 && (bookedRemainingSec ?? 0) > 0;
 
 	const timerDisplay =
@@ -156,6 +160,23 @@ export function ActiveCallScreen() {
 				formatDuration(secondsRemaining) :
 				formatDuration(elapsed);
 	const hideControls = !showControls && isVideo;
+
+	const onToggleMute = () => {
+		if (call) toggleMute();
+		else setBookedMuted(v => !v);
+	};
+	const onToggleCamera = () => {
+		if (call) toggleCamera();
+		else setBookedCameraOff(v => !v);
+	};
+	const onToggleSpeaker = () => {
+		if (call) toggleSpeaker();
+		else setBookedSpeakerOn(v => !v);
+	};
+
+	useEffect(() => {
+		speakerOnRef.current = isSpeakerOn;
+	}, [isSpeakerOn]);
 
 	useEffect(() => {
 		if ((!call && !sessionsBooking) || !authState.user) return;
@@ -185,7 +206,7 @@ export function ActiveCallScreen() {
 			void client.subscribe(user, mediaType).then(() => {
 				if (mediaType === 'audio' && user.audioTrack) {
 					remoteAudioTrackRef.current = user.audioTrack;
-					if (isSpeakerOn) user.audioTrack.play();
+					if (speakerOnRef.current) user.audioTrack.play();
 				}
 				if (mediaType === 'video' && user.videoTrack) {
 					remoteVideoTrackRef.current = user.videoTrack;
@@ -250,7 +271,7 @@ export function ActiveCallScreen() {
 			if (localVideoTrack) localVideoTrack.close();
 			void leavePromise;
 		};
-	}, [authState.user, call?.id, call?.participantId, call?.type, session?.creatorId, sessionsBooking?.accepted.request_id, callType, isSpeakerOn]);
+	}, [authState.user, call?.id, call?.participantId, call?.type, session?.creatorId, sessionsBooking?.accepted.request_id, callType]);
 
 	// Ensure remote video attaches even if it was published before the DOM ref existed.
 	useEffect(() => {
@@ -294,7 +315,7 @@ export function ActiveCallScreen() {
 			onClick={resetControlsTimer}
 		>
 			{isVideo ? (
-				<div className="absolute inset-0">
+				<div className="absolute inset-0 pointer-events-none">
 					{/* Always mount the remote container so Agora can attach reliably */}
 					<div
 						ref={remoteVideoRef}
@@ -303,7 +324,7 @@ export function ActiveCallScreen() {
 
 					{/* Fallback when remote video isn't published */}
 					{!hasRemoteVideo && (
-						<div className="absolute inset-0">
+						<div className="absolute inset-0 pointer-events-none">
 							<img
 								src={participantAvatar}
 								alt={participantName}
@@ -384,11 +405,11 @@ export function ActiveCallScreen() {
 
 				<div className={`mt-auto pb-14 px-8 transition-opacity duration-300 ${hideControls ? 'opacity-0' : 'opacity-100'}`}>
 					<div className="flex items-center justify-center gap-5 mb-8">
-						<ControlBtn active={!isMuted} onPress={toggleMute} icon={isMuted ? MicOff : Mic} label={isMuted ? 'Unmute' : 'Mute'} />
+						<ControlBtn active={!isMuted} onPress={onToggleMute} icon={isMuted ? MicOff : Mic} label={isMuted ? 'Unmute' : 'Mute'} />
 						{isVideo && (
-							<ControlBtn active={!isCameraOff} onPress={toggleCamera} icon={isCameraOff ? VideoOff : Video} label={isCameraOff ? 'Camera off' : 'Camera'} />
+							<ControlBtn active={!isCameraOff} onPress={onToggleCamera} icon={isCameraOff ? VideoOff : Video} label={isCameraOff ? 'Camera off' : 'Camera'} />
 						)}
-						<ControlBtn active={isSpeakerOn} onPress={toggleSpeaker} icon={isSpeakerOn ? Volume2 : VolumeX} label="Speaker" />
+						<ControlBtn active={isSpeakerOn} onPress={onToggleSpeaker} icon={isSpeakerOn ? Volume2 : VolumeX} label="Speaker" />
 						{isVideo && (
 							<ControlBtn active={false} onPress={() => {}} icon={RotateCcw} label="Flip" />
 						)}

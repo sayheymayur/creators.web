@@ -8,6 +8,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useSessions } from '../../context/SessionsContext';
 import { buildCallChannel, fetchAgoraRtcToken, getAgoraAppId, stringToAgoraUid } from '../../services/agoraRtc';
 import { formatINR } from '../../services/razorpay';
+import { ensureMediaPermissions } from '../../services/mediaPermissions';
 
 function formatDuration(secs: number): string {
 	const m = Math.floor(secs / 60).toString().padStart(2, '0');
@@ -25,9 +26,11 @@ export function ActiveCallScreen() {
 	const session = sessionState.activeSession;
 	const sessionsBooking = sessionsState.active?.accepted?.kind === 'call' ? sessionsState.active : null;
 	const [elapsed, setElapsed] = useState(0);
+	const [bookedRemainingSec, setBookedRemainingSec] = useState<number | null>(null);
 	const [showControls, setShowControls] = useState(true);
 	const controlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+	const bookedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 	const localVideoRef = useRef<HTMLDivElement | null>(null);
 	const remoteVideoRef = useRef<HTMLDivElement | null>(null);
 	const localAudioTrackRef = useRef<ILocalAudioTrack | null>(null);
@@ -40,6 +43,39 @@ export function ActiveCallScreen() {
 	const isTimedSession = session && (session.type === 'audio' || session.type === 'video');
 	const secondsRemaining = sessionState.secondsRemaining;
 	const isWarning = isTimedSession && secondsRemaining <= 60 && secondsRemaining > 0;
+
+	const bookedEndsAt =
+		sessionsBooking?.accepted?.request_id && sessionsState.timer?.request_id === sessionsBooking.accepted.request_id ?
+			sessionsState.timer.ends_at :
+			(sessionsBooking?.accepted?.ends_at ?? null);
+
+	useEffect(() => {
+		if (!sessionsBooking?.accepted?.request_id) {
+			setBookedRemainingSec(null);
+			if (bookedTimerRef.current) clearInterval(bookedTimerRef.current);
+			bookedTimerRef.current = null;
+			return;
+		}
+		if (!bookedEndsAt) {
+			setBookedRemainingSec(null);
+			if (bookedTimerRef.current) clearInterval(bookedTimerRef.current);
+			bookedTimerRef.current = null;
+			return;
+		}
+		const endsAtMs = new Date(bookedEndsAt).getTime();
+		if (!Number.isFinite(endsAtMs)) return;
+		const tick = () => {
+			const rem = Math.max(0, Math.floor((endsAtMs - Date.now()) / 1000));
+			setBookedRemainingSec(rem);
+		};
+		tick();
+		if (bookedTimerRef.current) clearInterval(bookedTimerRef.current);
+		bookedTimerRef.current = setInterval(tick, 1000);
+		return () => {
+			if (bookedTimerRef.current) clearInterval(bookedTimerRef.current);
+			bookedTimerRef.current = null;
+		};
+	}, [sessionsBooking?.accepted?.request_id, bookedEndsAt]);
 
 	useEffect(() => {
 		if (!call && !session && !sessionsBooking) {
@@ -109,9 +145,15 @@ export function ActiveCallScreen() {
 	const isCameraOff = call?.isCameraOff ?? false;
 	const isSpeakerOn = call?.isSpeakerOn ?? true;
 
-	const timerDisplay = isTimedSession ?
-		formatDuration(secondsRemaining) :
-		formatDuration(elapsed);
+	const isBookedCall = !!sessionsBooking?.accepted?.request_id;
+	const isBookedWarning = isBookedCall && (bookedRemainingSec ?? 0) <= 60 && (bookedRemainingSec ?? 0) > 0;
+
+	const timerDisplay =
+		isBookedCall && typeof bookedRemainingSec === 'number' ?
+			formatDuration(bookedRemainingSec) :
+			isTimedSession ?
+				formatDuration(secondsRemaining) :
+				formatDuration(elapsed);
 	const hideControls = !showControls && isVideo;
 
 	useEffect(() => {
@@ -167,24 +209,27 @@ export function ActiveCallScreen() {
 			}
 		});
 
-		void fetchAgoraRtcToken(channelName, uid, 'host').then(token => (
-			client.join(appId, channelName, bookingAgora?.token ?? token, uid).then(() => (
-				AgoraRTC.createMicrophoneAudioTrack().then(audioTrack => {
-					localAudioTrackRef.current = audioTrack;
-					const audioOnly = (call?.type ?? callType) !== 'video';
-					if (audioOnly) {
-						return client.publish([audioTrack]);
-					}
-					return AgoraRTC.createCameraVideoTrack().then(videoTrack => {
-						localVideoTrackRef.current = videoTrack;
-						if (localVideoRef.current) videoTrack.play(localVideoRef.current);
-						return client.publish([audioTrack, videoTrack]);
-					});
-				})
+		const audioOnly = (call?.type ?? callType) !== 'video';
+		void ensureMediaPermissions({ audio: true, video: !audioOnly })
+			.then(() => fetchAgoraRtcToken(channelName, uid, 'host'))
+			.then(token => (
+				client.join(appId, channelName, bookingAgora?.token ?? token ?? null, uid).then(() => (
+					AgoraRTC.createMicrophoneAudioTrack().then(audioTrack => {
+						localAudioTrackRef.current = audioTrack;
+						if (audioOnly) {
+							return client.publish([audioTrack]);
+						}
+						return AgoraRTC.createCameraVideoTrack().then(videoTrack => {
+							localVideoTrackRef.current = videoTrack;
+							if (localVideoRef.current) videoTrack.play(localVideoRef.current);
+							return client.publish([audioTrack, videoTrack]);
+						});
+					})
+				))
 			))
-		)).catch(() => {
-			setAgoraError('Unable to connect media. Showing call preview.');
-		});
+			.catch(e => {
+				setAgoraError(e instanceof Error ? e.message : 'Unable to connect media. Showing call preview.');
+			});
 
 		return () => {
 			remoteAudioTrackRef.current?.stop();
@@ -203,7 +248,7 @@ export function ActiveCallScreen() {
 			if (localVideoTrack) localVideoTrack.close();
 			void leavePromise;
 		};
-	}, [authState.user, call?.id, call?.participantId, call?.type, session?.creatorId, sessionsBooking?.accepted.request_id]);
+	}, [authState.user, call?.id, call?.participantId, call?.type, session?.creatorId, sessionsBooking?.accepted.request_id, callType, isSpeakerOn]);
 
 	useEffect(() => {
 		const localAudioTrack = localAudioTrackRef.current;
@@ -268,17 +313,17 @@ export function ActiveCallScreen() {
 						</p>
 					) : (
 						<div className="flex items-center justify-center gap-2 mt-1">
-							{isTimedSession && (
+							{(isTimedSession || (isBookedCall && typeof bookedRemainingSec === 'number')) && (
 								<div className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-mono font-bold ${
-									isWarning ? 'bg-rose-500/30 text-rose-300 animate-pulse' : 'bg-background/70 text-foreground/80 dark:bg-white/10 dark:text-white/70'
+									(isWarning || isBookedWarning) ? 'bg-rose-500/30 text-rose-300 animate-pulse' : 'bg-background/70 text-foreground/80 dark:bg-white/10 dark:text-white/70'
 								}`}
 								>
-									{isWarning && <AlertTriangle className="w-3 h-3" />}
+									{(isWarning || isBookedWarning) && <AlertTriangle className="w-3 h-3" />}
 									<Clock className="w-3 h-3" />
 									{timerDisplay} left
 								</div>
 							)}
-							{!isTimedSession && (
+							{!isTimedSession && !(isBookedCall && typeof bookedRemainingSec === 'number') && (
 								<p className="text-muted dark:text-white/60 text-sm tabular-nums">{timerDisplay}</p>
 							)}
 						</div>
@@ -291,10 +336,10 @@ export function ActiveCallScreen() {
 					)}
 				</div>
 
-				{isWarning && (
+				{(isWarning || isBookedWarning) && (
 					<div className={`mx-6 bg-rose-500/20 border border-rose-500/30 rounded-2xl px-4 py-3 flex items-center gap-2 transition-opacity duration-300 ${hideControls ? 'opacity-0' : 'opacity-100'}`}>
 						<AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-						<p className="text-sm text-rose-300 font-medium">1 minute remaining in your session</p>
+						<p className="text-sm text-rose-300 font-medium">1 minute remaining</p>
 					</div>
 				)}
 

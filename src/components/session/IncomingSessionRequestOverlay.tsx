@@ -3,6 +3,7 @@ import { MessageCircle, Phone, PhoneOff, Video } from '../icons';
 import { useSessions } from '../../context/SessionsContext';
 import { formatINRFromMinor } from '../../utils/money';
 import { useNotifications } from '../../context/NotificationContext';
+import { ensureMediaPermissions } from '../../services/mediaPermissions';
 
 function centsToMinorString(cents: string): string {
 	const trimmed = (cents ?? '').trim();
@@ -13,6 +14,7 @@ export function IncomingSessionRequestOverlay() {
 	const { state, acceptSession, rejectSession } = useSessions();
 	const { showToast } = useNotifications();
 	const [busy, setBusy] = useState(false);
+	const [callType, setCallType] = useState<'audio' | 'video'>('video');
 
 	const incoming = state.incoming[0]?.request;
 	const priceMinor = useMemo(() => centsToMinorString(incoming?.price_cents ?? '0'), [incoming?.price_cents]);
@@ -20,11 +22,14 @@ export function IncomingSessionRequestOverlay() {
 	if (!incoming) return null;
 
 	const isChat = incoming.kind === 'chat';
+	const isCall = incoming.kind === 'call';
 
 	function handleAccept() {
 		if (busy) return;
 		setBusy(true);
-		acceptSession(incoming.request_id)
+		const preflight = isCall ? ensureMediaPermissions({ audio: true, video: callType === 'video' }) : Promise.resolve();
+		void preflight
+			.then(() => acceptSession(incoming.request_id, isCall ? { uiCallType: callType } : undefined))
 			.then(() => {
 				showToast('Accepted session request');
 			})
@@ -75,6 +80,35 @@ export function IncomingSessionRequestOverlay() {
 					<p className="text-muted/80 dark:text-white/40 text-sm">
 						Price: {formatINRFromMinor(priceMinor)}
 					</p>
+
+					{isCall && (
+						<div className="flex items-center justify-center gap-2 mt-6">
+							<button
+								type="button"
+								onClick={() => setCallType('audio')}
+								disabled={busy}
+								className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
+									callType === 'audio' ?
+										'bg-sky-500/15 border-sky-500/30 text-sky-300' :
+										'bg-foreground/5 border-border/20 text-muted hover:bg-foreground/10'
+								}`}
+							>
+								Audio
+							</button>
+							<button
+								type="button"
+								onClick={() => setCallType('video')}
+								disabled={busy}
+								className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
+									callType === 'video' ?
+										'bg-rose-500/15 border-rose-500/30 text-rose-300' :
+										'bg-foreground/5 border-border/20 text-muted hover:bg-foreground/10'
+								}`}
+							>
+								Video
+							</button>
+						</div>
+					)}
 
 					<div className="flex items-center justify-center gap-10 mt-10">
 						<div className="flex flex-col items-center gap-2">

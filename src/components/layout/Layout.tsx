@@ -4,6 +4,7 @@ import { ToastContainer } from '../ui/Toast';
 import { IncomingCallOverlay } from '../call/IncomingCallOverlay';
 import { IncomingSessionRequestOverlay } from '../session/IncomingSessionRequestOverlay';
 import { SessionFeedbackModal } from '../session/SessionFeedbackModal';
+import { ActiveCallBanner } from '../session/ActiveCallBanner';
 
 interface LayoutProps {
 	children: React.ReactNode;
@@ -21,6 +22,7 @@ export function Layout({ children }: LayoutProps) {
 			<IncomingCallOverlay />
 			<IncomingSessionRequestOverlay />
 			<SessionFeedbackModal />
+			<ActiveCallBanner />
 		</div>
 	);
 }

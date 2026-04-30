@@ -4,6 +4,7 @@ import { useWs, useWsConnected } from './WsContext';
 import { useAuth } from './AuthContext';
 import { useChat } from './ChatContext';
 import { useNotifications } from './NotificationContext';
+import { ensureMediaPermissions } from '../services/mediaPermissions';
 import {
 	sessionsAccept,
 	sessionsCancel,
@@ -63,6 +64,29 @@ type EndedRoomsMap = Record<string, SessionsEndedEvent>;
 
 const ENDED_ROOMS_STORAGE_KEY = 'cw.sessions.endedRooms.v1';
 const LOCAL_SESSIONS_STORAGE_KEY = 'cw.sessions.snapshot.v1';
+const CALL_AGORA_CREDS_STORAGE_KEY = 'cw.sessions.callAgoraCreds.v1';
+
+type CallAgoraCredsMap = Record<string, NonNullable<SessionsAcceptedPayload['agora']>>;
+
+function loadCallAgoraCreds(): CallAgoraCredsMap {
+	try {
+		const raw = globalThis.localStorage?.getItem(CALL_AGORA_CREDS_STORAGE_KEY);
+		if (!raw) return {};
+		const parsed = JSON.parse(raw) as unknown;
+		if (!parsed || typeof parsed !== 'object') return {};
+		return parsed as CallAgoraCredsMap;
+	} catch {
+		return {};
+	}
+}
+
+function saveCallAgoraCreds(next: CallAgoraCredsMap) {
+	try {
+		globalThis.localStorage?.setItem(CALL_AGORA_CREDS_STORAGE_KEY, JSON.stringify(next));
+	} catch {
+		// ignore
+	}
+}
 
 function loadEndedRooms(): EndedRoomsMap {
 	try {
@@ -219,7 +243,7 @@ type SessionsContextValue = {
 		uiCallType?: SessionsUiCallType,
 		creatorDisplay?: { name: string, avatar: string },
 	}) => Promise<SessionsRequestResponse>,
-	acceptSession: (requestId: string) => Promise<SessionsAcceptedPayload>,
+	acceptSession: (requestId: string, opts?: { uiCallType?: SessionsUiCallType }) => Promise<SessionsAcceptedPayload>,
 	rejectSession: (requestId: string, message?: string) => Promise<SessionsRejectedPayload>,
 	cancelSession: (requestId: string) => Promise<{ ok: true }>,
 	completeSession: (requestId: string) => Promise<SessionsCompleteResponse>,
@@ -239,6 +263,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 	const { addConversation, addRoomMessage } = useChat();
 	const { showToast } = useNotifications();
 	const [state, dispatch] = useReducer(sessionsReducer, initialState);
+	const callAgoraCredsByRequestIdRef = useRef<CallAgoraCredsMap>(loadCallAgoraCreds());
 	const uiCallTypeByRequestIdRef = useRef<Record<string, SessionsUiCallType>>({});
 	const minutesByRequestIdRef = useRef<Record<string, number>>({});
 	const creatorMetaByRequestIdRef = useRef<Record<string, { userId: string, name: string, avatar: string }>>({});
@@ -322,8 +347,11 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 	);
 
 	const acceptSession = useCallback(
-		(requestId: string) =>
-			sessionsAccept(ws, { requestId }).then(res => {
+		(requestId: string, opts?: { uiCallType?: SessionsUiCallType }) => {
+			if (opts?.uiCallType) {
+				uiCallTypeByRequestIdRef.current[requestId] = opts.uiCallType;
+			}
+			return sessionsAccept(ws, { requestId }).then(res => {
 				dispatch({ type: 'INCOMING_REMOVE', payload: { request_id: requestId } });
 				const fan =
 					fanMetaByRequestIdRef.current[res.request_id] ??
@@ -341,7 +369,8 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 					},
 				});
 				return res;
-			}),
+			});
+		},
 		[ws, state.incoming]
 	);
 
@@ -418,13 +447,14 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 	}, [authState.user, showToast]);
 
 	const bookingRowToAccepted = (row: SessionsBookingRow): SessionsAcceptedPayload => {
+		const storedAgora = callAgoraCredsByRequestIdRef.current[row.id];
 		return {
 			request_id: row.id,
 			room_id: row.room_id ?? '',
 			kind: row.kind,
 			call_session_id: row.call_session_id,
 			session: null,
-			agora: null,
+			agora: storedAgora ?? null,
 			started_at: row.started_at,
 			ends_at: row.ends_at,
 			duration_minutes: row.duration_minutes,
@@ -485,7 +515,9 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 					{
 						accepted: bookingRowToAccepted(activeAccepted),
 						minutes: activeAccepted.duration_minutes,
-						uiCallType: uiCallTypeByRequestIdRef.current[activeAccepted.id],
+						uiCallType:
+							(state.active?.accepted?.request_id === activeAccepted.id ? state.active.uiCallType : undefined) ??
+							uiCallTypeByRequestIdRef.current[activeAccepted.id],
 					} :
 					null;
 
@@ -588,6 +620,16 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 		const offAccepted = ws.on('sessions', 'accepted', data => {
 			const payload = data as SessionsAcceptedPayload;
 			roomIdByRequestIdRef.current[payload.request_id] = payload.room_id;
+
+			// Persist per-user Agora creds so a reload can re-attach and resume the call booking.
+			if (payload.kind === 'call' && payload.agora) {
+				callAgoraCredsByRequestIdRef.current = {
+					...callAgoraCredsByRequestIdRef.current,
+					[payload.request_id]: payload.agora,
+				};
+				saveCallAgoraCreds(callAgoraCredsByRequestIdRef.current);
+			}
+
 			const me = authState.user;
 			const creatorMeta = creatorMetaByRequestIdRef.current[payload.request_id];
 			const fanMeta = fanMetaByRequestIdRef.current[payload.request_id];
@@ -605,6 +647,16 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 					otherDisplay,
 				},
 			});
+			if (payload.kind === 'call') {
+				const uiCallType = uiCallTypeByRequestIdRef.current[payload.request_id] ?? 'video';
+				void ensureMediaPermissions({ audio: true, video: uiCallType === 'video' })
+					.then(() => {
+						void navigate('/call');
+					})
+					.catch(e => {
+						showToast(e instanceof Error ? e.message : 'Unable to access microphone/camera', 'error');
+					});
+			}
 			// If the server isn't pushing `sessions|timer` reliably, we can still show a timer from the known minutes.
 			// This covers the fan role (minutes known from request) and any backend that includes minutes in the request event.
 			if (payload.kind === 'chat') {
@@ -704,7 +756,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 			offEnded2();
 			clearLocalTimer();
 		};
-	}, [ws, authState.user, state.active?.accepted?.request_id]);
+	}, [ws, authState.user, state.active?.accepted?.request_id, navigate, showToast]);
 
 	// After reload, the backend may not re-push timer ticks. Use persisted minutes as a fallback.
 	useEffect(() => {

@@ -298,12 +298,12 @@ export function ActiveCallScreen() {
 				return c.join(appId, channelName, token, uid)
 					.then(() => undefined)
 					.catch(e => {
-					const msg = e instanceof Error ? e.message : String(e);
-					if (/UID_CONFLICT/i.test(msg) && attempt < 3) {
-						return delay(1200).then(() => joinWithRetry(token, attempt + 1));
-					}
-					throw e;
-				});
+						const msg = e instanceof Error ? e.message : String(e);
+						if (/UID_CONFLICT/i.test(msg) && attempt < 3) {
+							return delay(1200).then(() => joinWithRetry(token, attempt + 1));
+						}
+						throw e;
+					});
 			};
 
 			const publishTracks = () => {

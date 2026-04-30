@@ -39,6 +39,7 @@ export function ActiveCallScreen() {
 	const remoteVideoTrackRef = useRef<IRemoteVideoTrack | null>(null);
 	const [hasRemoteVideo, setHasRemoteVideo] = useState(false);
 	const [agoraError, setAgoraError] = useState('');
+	const didPlayRemoteVideoRef = useRef(false);
 
 	const isTimedSession = session && (session.type === 'audio' || session.type === 'video');
 	const secondsRemaining = sessionState.secondsRemaining;
@@ -189,9 +190,7 @@ export function ActiveCallScreen() {
 				if (mediaType === 'video' && user.videoTrack) {
 					remoteVideoTrackRef.current = user.videoTrack;
 					setHasRemoteVideo(true);
-					if (remoteVideoRef.current) {
-						user.videoTrack.play(remoteVideoRef.current);
-					}
+					didPlayRemoteVideoRef.current = false;
 				}
 			}).catch(() => {
 				setAgoraError('Failed to subscribe remote media.');
@@ -201,7 +200,9 @@ export function ActiveCallScreen() {
 		client.on('user-unpublished', (_user, mediaType) => {
 			if (mediaType === 'video') {
 				setHasRemoteVideo(false);
+				remoteVideoTrackRef.current?.stop();
 				remoteVideoTrackRef.current = null;
+				didPlayRemoteVideoRef.current = false;
 			}
 			if (mediaType === 'audio') {
 				remoteAudioTrackRef.current?.stop();
@@ -237,6 +238,7 @@ export function ActiveCallScreen() {
 			remoteVideoTrackRef.current?.stop();
 			remoteVideoTrackRef.current = null;
 			setHasRemoteVideo(false);
+			didPlayRemoteVideoRef.current = false;
 
 			const localAudioTrack = localAudioTrackRef.current;
 			const localVideoTrack = localVideoTrackRef.current;
@@ -249,6 +251,22 @@ export function ActiveCallScreen() {
 			void leavePromise;
 		};
 	}, [authState.user, call?.id, call?.participantId, call?.type, session?.creatorId, sessionsBooking?.accepted.request_id, callType, isSpeakerOn]);
+
+	// Ensure remote video attaches even if it was published before the DOM ref existed.
+	useEffect(() => {
+		if (!isVideo) return;
+		if (!hasRemoteVideo) return;
+		if (didPlayRemoteVideoRef.current) return;
+		const el = remoteVideoRef.current;
+		const track = remoteVideoTrackRef.current;
+		if (!el || !track) return;
+		try {
+			track.play(el);
+			didPlayRemoteVideoRef.current = true;
+		} catch {
+			// ignore; next render/tick may succeed
+		}
+	}, [isVideo, hasRemoteVideo]);
 
 	useEffect(() => {
 		const localAudioTrack = localAudioTrackRef.current;
@@ -275,18 +293,25 @@ export function ActiveCallScreen() {
 			onTouchStart={resetControlsTimer}
 			onClick={resetControlsTimer}
 		>
-			{isVideo && hasRemoteVideo ? (
-				<div ref={remoteVideoRef} className="absolute inset-0" />
-			) : null}
-
-			{isVideo && !hasRemoteVideo ? (
+			{isVideo ? (
 				<div className="absolute inset-0">
-					<img
-						src={participantAvatar}
-						alt={participantName}
-						className="w-full h-full object-cover scale-105"
+					{/* Always mount the remote container so Agora can attach reliably */}
+					<div
+						ref={remoteVideoRef}
+						className="absolute inset-0 pointer-events-none [&>video]:w-full [&>video]:h-full [&>video]:object-cover"
 					/>
-					<div className="absolute inset-0 bg-background/30 dark:bg-black/30" />
+
+					{/* Fallback when remote video isn't published */}
+					{!hasRemoteVideo && (
+						<div className="absolute inset-0">
+							<img
+								src={participantAvatar}
+								alt={participantName}
+								className="w-full h-full object-cover scale-105"
+							/>
+							<div className="absolute inset-0 bg-background/30 dark:bg-black/30" />
+						</div>
+					)}
 				</div>
 			) : (
 				<div className="absolute inset-0 flex items-center justify-center">

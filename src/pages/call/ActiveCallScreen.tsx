@@ -49,7 +49,7 @@ export function ActiveCallScreen() {
 	const leaveSerialRef = useRef<Promise<void>>(Promise.resolve());
 	const connectOpRef = useRef(0);
 
-	const delay = (ms: number) => new Promise<void>(resolve => window.setTimeout(resolve, ms));
+	const delay = (ms: number) => new Promise<void>(resolve => { window.setTimeout(resolve, ms); });
 
 	const isTimedSession = session && (session.type === 'audio' || session.type === 'video');
 	const secondsRemaining = sessionState.secondsRemaining;
@@ -280,89 +280,107 @@ export function ActiveCallScreen() {
 
 		setAgoraError('');
 
-		const run = async () => {
+		const run = () => {
 			// Ensure any previous client has fully left before we create a new one.
-			await leaveSerialRef.current;
-			if (cancelled || opId !== connectOpRef.current) return;
-
 			let receiveOnly = false;
-			try {
-				await ensureMediaPermissions({ audio: true, video: !audioOnly });
-			} catch (e) {
-				if (!isDeviceInUseError(e)) throw e;
-				// Continue in receive-only mode (join but don't publish).
-				receiveOnly = true;
-				setBookedMuted(true);
-				setBookedCameraOff(true);
-				setAgoraError('Device is in use. Joined in receive-only mode.');
-			}
-			if (cancelled || opId !== connectOpRef.current) return;
 
-			client = AgoraRTC.createClient({ codec: 'vp8', mode: 'rtc' });
-			clientRef.current = client;
+			const cancelledNow = () => cancelled || opId !== connectOpRef.current;
 
-			client.on('user-published', (user, mediaType) => {
-				void client?.subscribe(user, mediaType).then(() => {
-					if (mediaType === 'audio' && user.audioTrack) {
-						remoteAudioTrackRef.current = user.audioTrack;
-						if (speakerOnRef.current) user.audioTrack.play();
-					}
-					if (mediaType === 'video' && user.videoTrack) {
-						remoteVideoTrackRef.current = user.videoTrack;
-						setHasRemoteVideo(true);
-						didPlayRemoteVideoRef.current = false;
-					}
-				}).catch(() => {
-					setAgoraError('Failed to subscribe remote media.');
-				});
-			});
+			const getToken = () => {
+				if (bookingAgora?.token) return Promise.resolve(bookingAgora.token);
+				return fetchAgoraRtcToken(channelName, uid, 'host').then(t => t ?? null);
+			};
 
-			client.on('user-unpublished', (_user, mediaType) => {
-				if (mediaType === 'video') {
-					setHasRemoteVideo(false);
-					remoteVideoTrackRef.current?.stop();
-					remoteVideoTrackRef.current = null;
-					didPlayRemoteVideoRef.current = false;
-				}
-				if (mediaType === 'audio') {
-					remoteAudioTrackRef.current?.stop();
-					remoteAudioTrackRef.current = null;
-				}
-			});
-
-			const token = bookingAgora?.token ?? await fetchAgoraRtcToken(channelName, uid, 'host') ?? null;
-
-			// Retry join on UID_CONFLICT: old connection may still be releasing after reload.
-			for (let attempt = 0; attempt < 4; attempt += 1) {
-				if (cancelled || opId !== connectOpRef.current) return;
-				try {
-					await client.join(appId, channelName, token, uid);
-					break;
-				} catch (e) {
+			const joinWithRetry = (token: string | null, attempt: number): Promise<void> => {
+				const c = client;
+				if (!c) return Promise.resolve();
+				if (cancelledNow()) return Promise.resolve();
+				return c.join(appId, channelName, token, uid)
+					.then(() => undefined)
+					.catch(e => {
 					const msg = e instanceof Error ? e.message : String(e);
 					if (/UID_CONFLICT/i.test(msg) && attempt < 3) {
-						await delay(1200);
-						continue;
+						return delay(1200).then(() => joinWithRetry(token, attempt + 1));
 					}
 					throw e;
-				}
-			}
+				});
+			};
 
-			if (cancelled || opId !== connectOpRef.current) return;
+			const publishTracks = () => {
+				const c = client;
+				if (!c) return Promise.resolve();
+				if (cancelledNow()) return Promise.resolve();
+				// If device is in use, don't try to publish tracks; remain receive-only.
+				if (receiveOnly) return Promise.resolve();
 
-			// If device is in use, don't try to publish tracks; remain receive-only.
-			if (!receiveOnly) {
-				const audioTrack = await AgoraRTC.createMicrophoneAudioTrack();
-				localAudioTrackRef.current = audioTrack;
-				if (audioOnly) {
-					await client.publish([audioTrack]);
-					return;
-				}
-				const videoTrack = await AgoraRTC.createCameraVideoTrack();
-				localVideoTrackRef.current = videoTrack;
-				if (localVideoRef.current) videoTrack.play(localVideoRef.current);
-				await client.publish([audioTrack, videoTrack]);
-			}
+				return AgoraRTC.createMicrophoneAudioTrack().then(audioTrack => {
+					localAudioTrackRef.current = audioTrack;
+					if (audioOnly) return c.publish([audioTrack]);
+					return AgoraRTC.createCameraVideoTrack().then(videoTrack => {
+						localVideoTrackRef.current = videoTrack;
+						if (localVideoRef.current) videoTrack.play(localVideoRef.current);
+						return c.publish([audioTrack, videoTrack]);
+					});
+				}).then(() => undefined);
+			};
+
+			return leaveSerialRef.current
+				.then(() => {
+					if (cancelledNow()) return;
+					return ensureMediaPermissions({ audio: true, video: !audioOnly }).catch(e => {
+						if (!isDeviceInUseError(e)) throw e;
+						// Continue in receive-only mode (join but don't publish).
+						receiveOnly = true;
+						setBookedMuted(true);
+						setBookedCameraOff(true);
+						setAgoraError('Device is in use. Joined in receive-only mode.');
+					});
+				})
+				.then(() => {
+					if (cancelledNow()) return;
+
+					client = AgoraRTC.createClient({ codec: 'vp8', mode: 'rtc' });
+					clientRef.current = client;
+
+					client.on('user-published', (user, mediaType) => {
+						void client?.subscribe(user, mediaType).then(() => {
+							if (mediaType === 'audio' && user.audioTrack) {
+								remoteAudioTrackRef.current = user.audioTrack;
+								if (speakerOnRef.current) user.audioTrack.play();
+							}
+							if (mediaType === 'video' && user.videoTrack) {
+								remoteVideoTrackRef.current = user.videoTrack;
+								setHasRemoteVideo(true);
+								didPlayRemoteVideoRef.current = false;
+							}
+						}).catch(() => {
+							setAgoraError('Failed to subscribe remote media.');
+						});
+					});
+
+					client.on('user-unpublished', (_user, mediaType) => {
+						if (mediaType === 'video') {
+							setHasRemoteVideo(false);
+							remoteVideoTrackRef.current?.stop();
+							remoteVideoTrackRef.current = null;
+							didPlayRemoteVideoRef.current = false;
+						}
+						if (mediaType === 'audio') {
+							remoteAudioTrackRef.current?.stop();
+							remoteAudioTrackRef.current = null;
+						}
+					});
+				})
+				.then(() => {
+					if (cancelledNow()) return null;
+					return getToken();
+				})
+				.then(token => {
+					if (cancelledNow()) return;
+					if (token === null && cancelledNow()) return;
+					return joinWithRetry(token ?? null, 0);
+				})
+				.then(() => publishTracks());
 		};
 
 		void run().catch(e => {

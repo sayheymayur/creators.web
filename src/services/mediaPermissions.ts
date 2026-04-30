@@ -5,7 +5,10 @@ export function canUseMediaDevices(): boolean {
 export function isDeviceInUseError(err: unknown): boolean {
 	const name = err && typeof err === 'object' && 'name' in err ? String((err as { name?: unknown }).name) : '';
 	if (name === 'NotReadableError') return true;
-	const msg = err instanceof Error ? err.message : String(err ?? '');
+	const msg =
+		err instanceof Error ? err.message :
+		typeof err === 'string' ? err :
+		'';
 	return /device.*in use|in use/i.test(msg);
 }
 
@@ -41,16 +44,11 @@ export async function ensureMediaPermissions(opts: { audio: boolean, video: bool
 		throw new Error('Media permissions are not supported in this browser.');
 	}
 
-	let stream: MediaStream | null = null;
-	try {
-		stream = await globalThis.navigator.mediaDevices.getUserMedia({
-			audio,
-			video,
+	return globalThis.navigator.mediaDevices.getUserMedia({ audio, video })
+		.then(stream => {
+			stopTracks(stream);
+		})
+		.catch(e => {
+			throw toUserFacingError(e, video);
 		});
-	} catch (e) {
-		throw toUserFacingError(e, video);
-	} finally {
-		if (stream) stopTracks(stream);
-	}
 }
-

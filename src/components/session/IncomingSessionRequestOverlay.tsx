@@ -3,7 +3,7 @@ import { MessageCircle, Phone, PhoneOff, Video } from '../icons';
 import { useSessions } from '../../context/SessionsContext';
 import { formatINRFromMinor } from '../../utils/money';
 import { useNotifications } from '../../context/NotificationContext';
-import { ensureMediaPermissions } from '../../services/mediaPermissions';
+import { ensureMediaPermissions, isDeviceInUseError } from '../../services/mediaPermissions';
 
 function centsToMinorString(cents: string): string {
 	const trimmed = (cents ?? '').trim();
@@ -27,7 +27,15 @@ export function IncomingSessionRequestOverlay() {
 	function handleAccept() {
 		if (busy) return;
 		setBusy(true);
-		const preflight = isCall ? ensureMediaPermissions({ audio: true, video: callType === 'video' }) : Promise.resolve();
+		const preflight = isCall ?
+			ensureMediaPermissions({ audio: true, video: callType === 'video' }).catch(e => {
+				if (isDeviceInUseError(e)) {
+					showToast('Camera/mic is busy in another tab. Joining will be receive-only on this tab.', 'error');
+					return;
+				}
+				throw e;
+			}) :
+			Promise.resolve();
 		void preflight
 			.then(() => acceptSession(incoming.request_id, isCall ? { uiCallType: callType } : undefined))
 			.then(() => {

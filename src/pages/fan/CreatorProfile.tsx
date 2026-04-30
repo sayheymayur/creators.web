@@ -9,7 +9,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useContent } from '../../context/ContentContext';
 import { mockCreators } from '../../data/users';
 import { useNotifications } from '../../context/NotificationContext';
-import { ensureMediaPermissions } from '../../services/mediaPermissions';
+import { ensureMediaPermissions, isDeviceInUseError } from '../../services/mediaPermissions';
 import { useChat } from '../../context/ChatContext';
 import { useCall } from '../../context/CallContext';
 import { useSession } from '../../context/SessionContext';
@@ -169,7 +169,13 @@ export function CreatorProfile() {
 
 		const preflight =
 			kind === 'call' ?
-				ensureMediaPermissions({ audio: true, video: uiCallType === 'video' }) :
+				ensureMediaPermissions({ audio: true, video: uiCallType === 'video' }).catch(e => {
+					if (isDeviceInUseError(e)) {
+						showToast('Camera/mic is busy in another tab. You can still request; join will be receive-only here.', 'error');
+						return;
+					}
+					throw e;
+				}) :
 				Promise.resolve();
 
 		void preflight

@@ -1,6 +1,6 @@
-import { useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import AgoraRTC, { type ILocalAudioTrack, type ILocalVideoTrack, type IRemoteAudioTrack, type IRemoteVideoTrack } from 'agora-rtc-sdk-ng';
+import AgoraRTC, { type IAgoraRTCClient, type ILocalAudioTrack, type ILocalVideoTrack, type IRemoteAudioTrack, type IRemoteVideoTrack } from 'agora-rtc-sdk-ng';
 import { Mic, MicOff, Video, VideoOff, Volume2, VolumeX, Phone, RotateCcw, Minimize2, Clock, AlertTriangle } from '../../components/icons';
 import { useCall } from '../../context/CallContext';
 import { useSession } from '../../context/SessionContext';
@@ -8,7 +8,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useSessions } from '../../context/SessionsContext';
 import { buildCallChannel, fetchAgoraRtcToken, getAgoraAppId, stringToAgoraUid } from '../../services/agoraRtc';
 import { formatINR } from '../../services/razorpay';
-import { ensureMediaPermissions } from '../../services/mediaPermissions';
+import { ensureMediaPermissions, isDeviceInUseError } from '../../services/mediaPermissions';
 
 function formatDuration(secs: number): string {
 	const m = Math.floor(secs / 60).toString().padStart(2, '0');
@@ -44,6 +44,12 @@ export function ActiveCallScreen() {
 	const [agoraError, setAgoraError] = useState('');
 	const didPlayRemoteVideoRef = useRef(false);
 	const speakerOnRef = useRef(true);
+	const didAutoEndBookedRef = useRef<string | null>(null);
+	const clientRef = useRef<IAgoraRTCClient | null>(null);
+	const leaveSerialRef = useRef<Promise<void>>(Promise.resolve());
+	const connectOpRef = useRef(0);
+
+	const delay = (ms: number) => new Promise<void>(resolve => window.setTimeout(resolve, ms));
 
 	const isTimedSession = session && (session.type === 'audio' || session.type === 'video');
 	const secondsRemaining = sessionState.secondsRemaining;
@@ -59,6 +65,7 @@ export function ActiveCallScreen() {
 			setBookedRemainingSec(null);
 			if (bookedTimerRef.current) clearInterval(bookedTimerRef.current);
 			bookedTimerRef.current = null;
+			didAutoEndBookedRef.current = null;
 			return;
 		}
 		if (!bookedEndsAt) {
@@ -81,6 +88,71 @@ export function ActiveCallScreen() {
 			bookedTimerRef.current = null;
 		};
 	}, [sessionsBooking?.accepted?.request_id, bookedEndsAt]);
+
+	const teardownAgora = useCallback((reason: 'end' | 'cleanup') => {
+		// Stop remote playback immediately
+		remoteAudioTrackRef.current?.stop();
+		remoteAudioTrackRef.current = null;
+		remoteVideoTrackRef.current?.stop();
+		remoteVideoTrackRef.current = null;
+		setHasRemoteVideo(false);
+		didPlayRemoteVideoRef.current = false;
+
+		// Close local devices (turn off camera/mic lights)
+		const localAudioTrack = localAudioTrackRef.current;
+		const localVideoTrack = localVideoTrackRef.current;
+		localAudioTrackRef.current = null;
+		localVideoTrackRef.current = null;
+		try { localAudioTrack?.close(); } catch { /* noop */ }
+		try { localVideoTrack?.close(); } catch { /* noop */ }
+
+		// Leave Agora channel; serialize leave to prevent UID_CONFLICT on fast reload/rejoin
+		const client = clientRef.current;
+		clientRef.current = null;
+		if (client) {
+			leaveSerialRef.current = leaveSerialRef.current
+				.then(() => client.leave())
+				.then(() => undefined)
+				.catch(() => undefined);
+		}
+
+		if (reason === 'end') setAgoraError('');
+	}, []);
+
+	// Best-effort cleanup on reload/navigation so Agora releases UID faster.
+	useEffect(() => {
+		const onPageHide = () => {
+			teardownAgora('cleanup');
+		};
+		window.addEventListener('pagehide', onPageHide);
+		window.addEventListener('beforeunload', onPageHide);
+		return () => {
+			window.removeEventListener('pagehide', onPageHide);
+			window.removeEventListener('beforeunload', onPageHide);
+		};
+	}, [teardownAgora]);
+
+	// Auto-end booked calls when timer reaches 0 (covers cases where worker:sessions isn't running).
+	useEffect(() => {
+		const booking = sessionsBooking?.accepted;
+		if (!booking) return;
+		const roomId = booking.room_id;
+		if (roomId && sessionsState.endedRooms[roomId]) return;
+		if (typeof bookedRemainingSec !== 'number') return;
+		if (bookedRemainingSec > 0) return;
+		if (didAutoEndBookedRef.current === booking.request_id) return;
+		didAutoEndBookedRef.current = booking.request_id;
+		teardownAgora('end');
+		void endBookedSession(booking.request_id).catch(() => {});
+	}, [sessionsBooking?.accepted?.request_id, sessionsBooking?.accepted?.room_id, bookedRemainingSec, sessionsState.endedRooms, endBookedSession, teardownAgora]);
+
+	// When a booking ends (manual/timeout), force-teardown media so devices switch off immediately.
+	useEffect(() => {
+		const roomId = sessionsBooking?.accepted?.room_id ?? '';
+		if (!roomId) return;
+		if (!sessionsState.endedRooms[roomId]) return;
+		teardownAgora('end');
+	}, [sessionsBooking?.accepted?.room_id, sessionsState.endedRooms, teardownAgora]);
 
 	useEffect(() => {
 		if (!call && !session && !sessionsBooking) {
@@ -121,6 +193,7 @@ export function ActiveCallScreen() {
 	}, [call?.type, session?.type]);
 
 	function handleEndCall() {
+		teardownAgora('end');
 		if (sessionsBooking?.accepted) {
 			void endBookedSession(sessionsBooking.accepted.request_id).catch(() => {});
 		}
@@ -194,84 +267,121 @@ export function ActiveCallScreen() {
 			buildCallChannel(me.id, participantId);
 		const uid = bookingAgora?.uid ?? stringToAgoraUid(me.id);
 		const appId = bookingAgora?.app_id ?? getAgoraAppId();
-		const client = AgoraRTC.createClient({ codec: 'vp8', mode: 'rtc' });
-		setAgoraError('');
 
 		if (bookingAgora?.dummy) {
 			setAgoraError('Call is in dummy mode (Agora not configured).');
 			return () => {};
 		}
 
-		client.on('user-published', (user, mediaType) => {
-			void client.subscribe(user, mediaType).then(() => {
-				if (mediaType === 'audio' && user.audioTrack) {
-					remoteAudioTrackRef.current = user.audioTrack;
-					if (speakerOnRef.current) user.audioTrack.play();
-				}
-				if (mediaType === 'video' && user.videoTrack) {
-					remoteVideoTrackRef.current = user.videoTrack;
-					setHasRemoteVideo(true);
+		const audioOnly = (call?.type ?? callType) !== 'video';
+		const opId = (connectOpRef.current += 1);
+		let cancelled = false;
+		let client: IAgoraRTCClient | null = null;
+
+		setAgoraError('');
+
+		const run = async () => {
+			// Ensure any previous client has fully left before we create a new one.
+			await leaveSerialRef.current;
+			if (cancelled || opId !== connectOpRef.current) return;
+
+			let receiveOnly = false;
+			try {
+				await ensureMediaPermissions({ audio: true, video: !audioOnly });
+			} catch (e) {
+				if (!isDeviceInUseError(e)) throw e;
+				// Continue in receive-only mode (join but don't publish).
+				receiveOnly = true;
+				setBookedMuted(true);
+				setBookedCameraOff(true);
+				setAgoraError('Device is in use. Joined in receive-only mode.');
+			}
+			if (cancelled || opId !== connectOpRef.current) return;
+
+			client = AgoraRTC.createClient({ codec: 'vp8', mode: 'rtc' });
+			clientRef.current = client;
+
+			client.on('user-published', (user, mediaType) => {
+				void client?.subscribe(user, mediaType).then(() => {
+					if (mediaType === 'audio' && user.audioTrack) {
+						remoteAudioTrackRef.current = user.audioTrack;
+						if (speakerOnRef.current) user.audioTrack.play();
+					}
+					if (mediaType === 'video' && user.videoTrack) {
+						remoteVideoTrackRef.current = user.videoTrack;
+						setHasRemoteVideo(true);
+						didPlayRemoteVideoRef.current = false;
+					}
+				}).catch(() => {
+					setAgoraError('Failed to subscribe remote media.');
+				});
+			});
+
+			client.on('user-unpublished', (_user, mediaType) => {
+				if (mediaType === 'video') {
+					setHasRemoteVideo(false);
+					remoteVideoTrackRef.current?.stop();
+					remoteVideoTrackRef.current = null;
 					didPlayRemoteVideoRef.current = false;
 				}
-			}).catch(() => {
-				setAgoraError('Failed to subscribe remote media.');
+				if (mediaType === 'audio') {
+					remoteAudioTrackRef.current?.stop();
+					remoteAudioTrackRef.current = null;
+				}
 			});
-		});
 
-		client.on('user-unpublished', (_user, mediaType) => {
-			if (mediaType === 'video') {
-				setHasRemoteVideo(false);
-				remoteVideoTrackRef.current?.stop();
-				remoteVideoTrackRef.current = null;
-				didPlayRemoteVideoRef.current = false;
-			}
-			if (mediaType === 'audio') {
-				remoteAudioTrackRef.current?.stop();
-				remoteAudioTrackRef.current = null;
-			}
-		});
+			const token = bookingAgora?.token ?? await fetchAgoraRtcToken(channelName, uid, 'host') ?? null;
 
-		const audioOnly = (call?.type ?? callType) !== 'video';
-		void ensureMediaPermissions({ audio: true, video: !audioOnly })
-			.then(() => fetchAgoraRtcToken(channelName, uid, 'host'))
-			.then(token => (
-				client.join(appId, channelName, bookingAgora?.token ?? token ?? null, uid).then(() => (
-					AgoraRTC.createMicrophoneAudioTrack().then(audioTrack => {
-						localAudioTrackRef.current = audioTrack;
-						if (audioOnly) {
-							return client.publish([audioTrack]);
-						}
-						return AgoraRTC.createCameraVideoTrack().then(videoTrack => {
-							localVideoTrackRef.current = videoTrack;
-							if (localVideoRef.current) videoTrack.play(localVideoRef.current);
-							return client.publish([audioTrack, videoTrack]);
-						});
-					})
-				))
-			))
-			.catch(e => {
-				setAgoraError(e instanceof Error ? e.message : 'Unable to connect media. Showing call preview.');
-			});
+			// Retry join on UID_CONFLICT: old connection may still be releasing after reload.
+			for (let attempt = 0; attempt < 4; attempt += 1) {
+				if (cancelled || opId !== connectOpRef.current) return;
+				try {
+					await client.join(appId, channelName, token, uid);
+					break;
+				} catch (e) {
+					const msg = e instanceof Error ? e.message : String(e);
+					if (/UID_CONFLICT/i.test(msg) && attempt < 3) {
+						await delay(1200);
+						continue;
+					}
+					throw e;
+				}
+			}
+
+			if (cancelled || opId !== connectOpRef.current) return;
+
+			// If device is in use, don't try to publish tracks; remain receive-only.
+			if (!receiveOnly) {
+				const audioTrack = await AgoraRTC.createMicrophoneAudioTrack();
+				localAudioTrackRef.current = audioTrack;
+				if (audioOnly) {
+					await client.publish([audioTrack]);
+					return;
+				}
+				const videoTrack = await AgoraRTC.createCameraVideoTrack();
+				localVideoTrackRef.current = videoTrack;
+				if (localVideoRef.current) videoTrack.play(localVideoRef.current);
+				await client.publish([audioTrack, videoTrack]);
+			}
+		};
+
+		void run().catch(e => {
+			const msg = e instanceof Error ? e.message : 'Unable to connect media. Showing call preview.';
+			setAgoraError(msg);
+		});
 
 		return () => {
-			remoteAudioTrackRef.current?.stop();
-			remoteAudioTrackRef.current = null;
-			remoteVideoTrackRef.current?.stop();
-			remoteVideoTrackRef.current = null;
-			setHasRemoteVideo(false);
-			didPlayRemoteVideoRef.current = false;
-
-			const localAudioTrack = localAudioTrackRef.current;
-			const localVideoTrack = localVideoTrackRef.current;
-			localAudioTrackRef.current = null;
-			localVideoTrackRef.current = null;
-
-			const leavePromise = client.leave().catch(() => undefined);
-			if (localAudioTrack) localAudioTrack.close();
-			if (localVideoTrack) localVideoTrack.close();
-			void leavePromise;
+			cancelled = true;
+			if (client && clientRef.current === client) clientRef.current = null;
+			if (client) {
+				leaveSerialRef.current = leaveSerialRef.current
+					.then(() => client?.leave())
+					.then(() => undefined)
+					.catch(() => undefined);
+			}
+			teardownAgora('cleanup');
 		};
-	}, [authState.user, call?.id, call?.participantId, call?.type, session?.creatorId, sessionsBooking?.accepted.request_id, callType]);
+	}, [authState.user, call?.id, call?.participantId, call?.type, session?.creatorId, sessionsBooking?.accepted.request_id, callType, teardownAgora]);
 
 	// Ensure remote video attaches even if it was published before the DOM ref existed.
 	useEffect(() => {
@@ -300,6 +410,21 @@ export function ActiveCallScreen() {
 		if (!localVideoTrack) return;
 		void localVideoTrack.setEnabled(!isCameraOff);
 	}, [isCameraOff]);
+
+	// When we hide the local preview (camera off), the DOM element unmounts.
+	// On re-enable we must re-attach the existing track to the new element.
+	useEffect(() => {
+		if (!isVideo) return;
+		if (isCameraOff) return;
+		const localVideoTrack = localVideoTrackRef.current;
+		const el = localVideoRef.current;
+		if (!localVideoTrack || !el) return;
+		try {
+			localVideoTrack.play(el);
+		} catch {
+			// ignore
+		}
+	}, [isVideo, isCameraOff]);
 
 	useEffect(() => {
 		const remoteAudioTrack = remoteAudioTrackRef.current;

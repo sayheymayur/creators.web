@@ -2,6 +2,13 @@ export function canUseMediaDevices(): boolean {
 	return !!(globalThis.navigator?.mediaDevices?.getUserMedia);
 }
 
+export function isDeviceInUseError(err: unknown): boolean {
+	const name = err && typeof err === 'object' && 'name' in err ? String((err as { name?: unknown }).name) : '';
+	if (name === 'NotReadableError') return true;
+	const msg = err instanceof Error ? err.message : String(err ?? '');
+	return /device.*in use|in use/i.test(msg);
+}
+
 function stopTracks(stream: MediaStream) {
 	stream.getTracks().forEach(t => {
 		try { t.stop(); } catch { /* noop */ }
@@ -19,6 +26,9 @@ function toUserFacingError(err: unknown, wantsVideo: boolean): Error {
 	const isNotFound = name === 'NotFoundError' || name === 'DevicesNotFoundError';
 	if (isNotFound) {
 		return new Error(wantsVideo ? 'No camera/microphone found on this device.' : 'No microphone found on this device.');
+	}
+	if (isDeviceInUseError(err)) {
+		return new Error('Camera/microphone is already in use in another tab/app. You can still join, but won’t be able to publish from this tab.');
 	}
 	return err instanceof Error ? err : new Error('Unable to access camera/microphone.');
 }

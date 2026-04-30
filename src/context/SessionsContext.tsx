@@ -4,7 +4,7 @@ import { useWs, useWsConnected } from './WsContext';
 import { useAuth } from './AuthContext';
 import { useChat } from './ChatContext';
 import { useNotifications } from './NotificationContext';
-import { ensureMediaPermissions } from '../services/mediaPermissions';
+import { ensureMediaPermissions, isDeviceInUseError } from '../services/mediaPermissions';
 import {
 	sessionsAccept,
 	sessionsCancel,
@@ -64,25 +64,30 @@ type EndedRoomsMap = Record<string, SessionsEndedEvent>;
 
 const ENDED_ROOMS_STORAGE_KEY = 'cw.sessions.endedRooms.v1';
 const LOCAL_SESSIONS_STORAGE_KEY = 'cw.sessions.snapshot.v1';
-const CALL_AGORA_CREDS_STORAGE_KEY = 'cw.sessions.callAgoraCreds.v1';
+const CALL_AGORA_CREDS_STORAGE_KEY = 'cw.sessions.callAgoraCredsByUser.v1';
 
 type CallAgoraCredsMap = Record<string, NonNullable<SessionsAcceptedPayload['agora']>>;
+type CallAgoraCredsByUserMap = Record<string, CallAgoraCredsMap>;
 
-function loadCallAgoraCreds(): CallAgoraCredsMap {
+function loadCallAgoraCredsByUser(): CallAgoraCredsByUserMap {
 	try {
-		const raw = globalThis.localStorage?.getItem(CALL_AGORA_CREDS_STORAGE_KEY);
+		// Migrate away from older unscoped key(s) and avoid localStorage (shared across tabs).
+		try { globalThis.localStorage?.removeItem('cw.sessions.callAgoraCreds.v1'); } catch { /* ignore */ }
+		try { globalThis.localStorage?.removeItem('cw.sessions.callAgoraCredsByUser.v1'); } catch { /* ignore */ }
+
+		const raw = globalThis.sessionStorage?.getItem(CALL_AGORA_CREDS_STORAGE_KEY);
 		if (!raw) return {};
 		const parsed = JSON.parse(raw) as unknown;
 		if (!parsed || typeof parsed !== 'object') return {};
-		return parsed as CallAgoraCredsMap;
+		return parsed as CallAgoraCredsByUserMap;
 	} catch {
 		return {};
 	}
 }
 
-function saveCallAgoraCreds(next: CallAgoraCredsMap) {
+function saveCallAgoraCredsByUser(next: CallAgoraCredsByUserMap) {
 	try {
-		globalThis.localStorage?.setItem(CALL_AGORA_CREDS_STORAGE_KEY, JSON.stringify(next));
+		globalThis.sessionStorage?.setItem(CALL_AGORA_CREDS_STORAGE_KEY, JSON.stringify(next));
 	} catch {
 		// ignore
 	}
@@ -263,7 +268,8 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 	const { addConversation, addRoomMessage } = useChat();
 	const { showToast } = useNotifications();
 	const [state, dispatch] = useReducer(sessionsReducer, initialState);
-	const callAgoraCredsByRequestIdRef = useRef<CallAgoraCredsMap>(loadCallAgoraCreds());
+	const callAgoraCredsByUserRef = useRef<CallAgoraCredsByUserMap>(loadCallAgoraCredsByUser());
+	const callAgoraCredsByRequestIdRef = useRef<CallAgoraCredsMap>({});
 	const uiCallTypeByRequestIdRef = useRef<Record<string, SessionsUiCallType>>({});
 	const minutesByRequestIdRef = useRef<Record<string, number>>({});
 	const creatorMetaByRequestIdRef = useRef<Record<string, { userId: string, name: string, avatar: string }>>({});
@@ -462,6 +468,16 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 		};
 	};
 
+	// Scope persisted Agora creds by user id (prevents fan/creator overwriting each other on the same origin).
+	useEffect(() => {
+		const uid = authState.user?.id ?? '';
+		if (!uid) {
+			callAgoraCredsByRequestIdRef.current = {};
+			return;
+		}
+		callAgoraCredsByRequestIdRef.current = callAgoraCredsByUserRef.current[uid] ?? {};
+	}, [authState.user?.id]);
+
 	const deriveTimerFromEndsAt = (opts: { requestId: string, roomId: string, endsAt: string | null | undefined }) => {
 		const ends = opts.endsAt ?? '';
 		if (!ends) return null;
@@ -623,11 +639,14 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 
 			// Persist per-user Agora creds so a reload can re-attach and resume the call booking.
 			if (payload.kind === 'call' && payload.agora) {
-				callAgoraCredsByRequestIdRef.current = {
-					...callAgoraCredsByRequestIdRef.current,
-					[payload.request_id]: payload.agora,
-				};
-				saveCallAgoraCreds(callAgoraCredsByRequestIdRef.current);
+				const uid = authState.user?.id ?? '';
+				if (uid) {
+					const prevForUser = callAgoraCredsByUserRef.current[uid] ?? {};
+					const nextForUser = { ...prevForUser, [payload.request_id]: payload.agora };
+					callAgoraCredsByUserRef.current = { ...callAgoraCredsByUserRef.current, [uid]: nextForUser };
+					callAgoraCredsByRequestIdRef.current = nextForUser;
+					saveCallAgoraCredsByUser(callAgoraCredsByUserRef.current);
+				}
 			}
 
 			const me = authState.user;
@@ -649,7 +668,10 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 			});
 			if (payload.kind === 'call') {
 				const uiCallType = uiCallTypeByRequestIdRef.current[payload.request_id] ?? 'video';
-				void ensureMediaPermissions({ audio: true, video: uiCallType === 'video' })
+				void ensureMediaPermissions({ audio: true, video: uiCallType === 'video' }).catch(e => {
+					if (isDeviceInUseError(e)) return;
+					throw e;
+				})
 					.then(() => {
 						void navigate('/call');
 					})

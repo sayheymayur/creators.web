@@ -727,7 +727,10 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 				payload.ends_at = new Date(Date.now() + payload.remaining_sec * 1000).toISOString();
 			}
 			dispatch({ type: 'TIMER_UPDATE', payload });
-			ensureBookedRoomJoined(payload.room_id);
+			const activeAccepted = state.active?.accepted;
+			if (activeAccepted?.kind === 'chat' && activeAccepted.room_id === payload.room_id) {
+				ensureBookedRoomJoined(payload.room_id);
+			}
 		};
 
 		const offTimer = ws.on('sessions', 'timer', onTimerLike);
@@ -779,7 +782,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 			offEnded2();
 			clearLocalTimer();
 		};
-	}, [ws, authState.user, state.active?.accepted?.request_id, navigate, showToast]);
+	}, [ws, authState.user, state.active?.accepted?.request_id, state.active?.accepted?.kind, state.active?.accepted?.room_id, navigate, showToast]);
 
 	// After reload, the backend may not re-push timer ticks. Use persisted minutes as a fallback.
 	useEffect(() => {

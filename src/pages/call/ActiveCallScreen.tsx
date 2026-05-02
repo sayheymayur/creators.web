@@ -6,6 +6,7 @@ import { useCall } from '../../context/CallContext';
 import { useSession } from '../../context/SessionContext';
 import { useAuth } from '../../context/AuthContext';
 import { useSessions } from '../../context/SessionsContext';
+import { AGORA_TOKEN_ENDPOINT } from '../../config/agora';
 import { buildCallChannel, fetchAgoraRtcToken, getAgoraAppId, stringToAgoraUid } from '../../services/agoraRtc';
 import { formatINR } from '../../services/razorpay';
 import { ensureMediaPermissions, isDeviceInUseError } from '../../services/mediaPermissions';
@@ -14,6 +15,17 @@ function formatDuration(secs: number): string {
 	const m = Math.floor(secs / 60).toString().padStart(2, '0');
 	const s = (secs % 60).toString().padStart(2, '0');
 	return `${m}:${s}`;
+}
+
+function formatAgoraJoinError(raw: string, hadBookingToken: boolean): string {
+	const lower = raw.toLowerCase();
+	if (lower.includes('can_not_get_gateway_server') || lower.includes('dynamic use static key')) {
+		if (!hadBookingToken && !AGORA_TOKEN_ENDPOINT) {
+			return 'Video needs an RTC token. Set VITE_AGORA_TOKEN_ENDPOINT or pass agora.token from your server (projects with App Certificate require tokens).';
+		}
+		return 'Could not reach Agora. Confirm VITE_AGORA_APP_ID matches the project used to mint the token.';
+	}
+	return raw;
 }
 
 export function ActiveCallScreen() {
@@ -384,8 +396,8 @@ export function ActiveCallScreen() {
 		};
 
 		void run().catch(e => {
-			const msg = e instanceof Error ? e.message : 'Unable to connect media. Showing call preview.';
-			setAgoraError(msg);
+			const raw = e instanceof Error ? e.message : 'Unable to connect media. Showing call preview.';
+			setAgoraError(formatAgoraJoinError(raw, Boolean(bookingAgora?.token)));
 		});
 
 		return () => {

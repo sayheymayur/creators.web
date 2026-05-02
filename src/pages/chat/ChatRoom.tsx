@@ -169,9 +169,13 @@ export function ChatRoom() {
 		sessionsState.timer?.room_id === roomId ?
 			sessionsState.timer :
 			null;
+	const activeCallBookingSameRoom =
+		sessionsState.active?.accepted.kind === 'call' && sessionsState.active.accepted.room_id === roomId;
 	// If we have a timer tick for this room, it implies an accepted active booking even if `/state`
-	// didn't hydrate `active` yet (common right after reload).
-	const isBookedActive = (!!activeChatBooking || !!timerForRoom) && !endedChatBooking;
+	// didn't hydrate `active` yet (common right after reload). Timers also run for call bookings;
+	// do not treat timer alone as "booked chat" when this room is the active call.
+	const isBookedActive =
+		(!!activeChatBooking || (!!timerForRoom && !activeCallBookingSameRoom)) && !endedChatBooking;
 	const activeRequestId = activeChatBooking?.request_id ?? timerForRoom?.request_id ?? null;
 	const isBookedChatRoom = isBookedActive || !!endedChatBooking;
 	const canSendBookedChat = !isBookedChatRoom || isBookedActive;

@@ -26,11 +26,14 @@ export function MessagesList() {
 	const userId = authState.user?.id ?? '';
 
 	// If there's an active booked chat session, show a pinned "Resume session" row
-	// even if subscription state resets on reload.
+	// even if subscription state resets on reload. Do not use `timer.room_id` while a
+	// call booking is active — timers apply to calls too.
 	const activeChatRoomId =
 		sessionsState.active?.accepted.kind === 'chat' ?
 			sessionsState.active.accepted.room_id :
-			(sessionsState.timer?.room_id ?? null);
+			sessionsState.active?.accepted.kind === 'call' ?
+				null :
+				(sessionsState.timer?.room_id ?? null);
 	const hasChatRowAlready =
 		!!activeChatRoomId &&
 		chatState.conversations.some(c => c.id === activeChatRoomId && c.participantIds.includes(userId));

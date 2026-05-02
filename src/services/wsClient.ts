@@ -92,6 +92,17 @@ class WsConnection {
 		this.onStatus();
 	}
 
+	/** Close the socket but keep automatic reconnect enabled (unlike disconnect). */
+	closeForReconnect(): void {
+		this.shouldReconnect = true;
+		if (this.reconnectTimer !== null) {
+			window.clearTimeout(this.reconnectTimer);
+			this.reconnectTimer = null;
+		}
+		this.queue = [];
+		this.socket?.close();
+	}
+
 	send(msg: string): void {
 		if (!this.connected || !this.socket) {
 			this.queue.push(msg);
@@ -205,6 +216,22 @@ export class WsClient {
 
 	authenticate(jwt: string, requestId?: string): Promise<unknown> {
 		return this.request('user', 'authenticate', [jwt], requestId);
+	}
+
+	/** Server-side unbind for the current connection (same protocol as multiplex `user /logout`). */
+	userLogout(): Promise<unknown> {
+		return this.request('user', '/logout', []);
+	}
+
+	/** Clear client-side auth dedupe so the next token triggers authenticate. */
+	resetAuthTracking(): void {
+		this.lastAuthToken = null;
+	}
+
+	/** Drop the TCP connection and reconnect with backoff; keeps guest/public WS traffic working. */
+	reconnectSocket(): void {
+		this.currentService = null;
+		this.connection.closeForReconnect();
 	}
 
 	refreshAuth(): void {

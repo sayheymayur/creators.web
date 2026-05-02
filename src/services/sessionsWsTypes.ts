@@ -54,6 +54,11 @@ export type SessionsAcceptedPayload = {
 	call_session_id: string | null,
 	session: CallSessionSnapshot | null,
 	agora: AgoraRtcCredentials | null,
+	/** New timed-session fields (may be present depending on backend build). */
+	started_at?: string | null,
+	ends_at?: string | null,
+	duration_minutes?: number,
+	price_cents?: string,
 };
 
 export type SessionsRejectedPayload = {
@@ -114,4 +119,31 @@ export type SessionsEndedEvent = {
 	request_id: string,
 	room_id: string,
 	reason?: 'timeout' | 'manual',
+};
+
+/**
+ * `/state` response row — used to restore outgoing/incoming/active bookings after reconnect.
+ * Matches the spec transcript (string ids, ISO timestamps).
+ */
+export type SessionsBookingRow = {
+	id: string,
+	fan_user_id: string,
+	creator_user_id: string,
+	kind: SessionKind,
+	status: 'pending' | 'accepted' | 'completed' | 'cancelled',
+	price_cents: string,
+	duration_minutes: number,
+	room_id: string | null,
+	call_session_id: string | null,
+	started_at: string | null,
+	ends_at: string | null,
+	completed_at: string | null,
+	created_at: string,
+	updated_at: string,
+};
+
+export type SessionsStateResponse = {
+	outgoing: SessionsBookingRow[],
+	incoming: SessionsBookingRow[],
+	active: SessionsBookingRow[],
 };

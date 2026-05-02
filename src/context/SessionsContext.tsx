@@ -1,9 +1,11 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useWs, useWsConnected } from './WsContext';
+import { useWs, useWsAuthReady, useWsConnected } from './WsContext';
 import { useAuth } from './AuthContext';
 import { useChat } from './ChatContext';
 import { useNotifications } from './NotificationContext';
+import { mockCreators } from '../data/users';
+import { ensureMediaPermissions, isDeviceInUseError } from '../services/mediaPermissions';
 import {
 	sessionsAccept,
 	sessionsCancel,
@@ -12,12 +14,15 @@ import {
 	sessionsFeedback,
 	sessionsReject,
 	sessionsRequest,
+	sessionsState,
 } from '../services/sessionsWsService';
 import type {
 	SessionKind,
 	SessionsAcceptedPayload,
 	SessionsCompleteResponse,
 	SessionsEndSessionResponse,
+	SessionsStateResponse,
+	SessionsBookingRow,
 	SessionsEndedEvent,
 	SessionsFeedbackPromptEvent,
 	SessionsFeedbackReceivedEvent,
@@ -37,17 +42,21 @@ export type OutgoingRequestState =
 	{ state: 'rejected', rejected: SessionsRejectedPayload };
 
 export type IncomingRequestState = {
-	request: SessionsRequestEvent,
+	request: SessionsRequestEvent & { minutes?: number },
 };
 
 export type ActiveBookingState = {
 	accepted: SessionsAcceptedPayload,
+	/** For chat sessions, used to drive a local countdown fallback and persist across reloads. */
+	minutes?: number,
 	/**
 	 * For `kind === "call"`, the UI needs to know whether to show audio vs video.
 	 * The server spec only distinguishes call vs chat, so we keep a local hint.
 	 */
 	uiCallType?: SessionsUiCallType,
 	otherDisplay?: { name: string, avatar: string },
+	/** From server booking row when syncing `/state`; used for name fallbacks (e.g. ContentContext). */
+	peerIds?: { fan_user_id: string, creator_user_id: string },
 };
 
 export type FeedbackPromptState = {
@@ -58,6 +67,34 @@ type EndedRoomsMap = Record<string, SessionsEndedEvent>;
 
 const ENDED_ROOMS_STORAGE_KEY = 'cw.sessions.endedRooms.v1';
 const LOCAL_SESSIONS_STORAGE_KEY = 'cw.sessions.snapshot.v1';
+const CALL_AGORA_CREDS_STORAGE_KEY = 'cw.sessions.callAgoraCredsByUser.v1';
+
+type CallAgoraCredsMap = Record<string, NonNullable<SessionsAcceptedPayload['agora']>>;
+type CallAgoraCredsByUserMap = Record<string, CallAgoraCredsMap>;
+
+function loadCallAgoraCredsByUser(): CallAgoraCredsByUserMap {
+	try {
+		// Migrate away from older unscoped key(s) and avoid localStorage (shared across tabs).
+		try { globalThis.localStorage?.removeItem('cw.sessions.callAgoraCreds.v1'); } catch { /* ignore */ }
+		try { globalThis.localStorage?.removeItem('cw.sessions.callAgoraCredsByUser.v1'); } catch { /* ignore */ }
+
+		const raw = globalThis.sessionStorage?.getItem(CALL_AGORA_CREDS_STORAGE_KEY);
+		if (!raw) return {};
+		const parsed = JSON.parse(raw) as unknown;
+		if (!parsed || typeof parsed !== 'object') return {};
+		return parsed as CallAgoraCredsByUserMap;
+	} catch {
+		return {};
+	}
+}
+
+function saveCallAgoraCredsByUser(next: CallAgoraCredsByUserMap) {
+	try {
+		globalThis.sessionStorage?.setItem(CALL_AGORA_CREDS_STORAGE_KEY, JSON.stringify(next));
+	} catch {
+		// ignore
+	}
+}
 
 function loadEndedRooms(): EndedRoomsMap {
 	try {
@@ -74,6 +111,12 @@ function loadEndedRooms(): EndedRoomsMap {
 type LocalSessionsSnapshot = Pick<
 	SessionsState,
 	'outgoing' | 'incoming' | 'active' | 'timer' | 'ended' | 'endedRooms' | 'feedbackPrompt' | 'feedbackReceived'
+>;
+
+/** Fields merged from `sessions /state` only; never overwrites push-driven feedback state. */
+type SessionsRemoteHydratePayload = Pick<
+	LocalSessionsSnapshot,
+	'outgoing' | 'incoming' | 'active' | 'timer' | 'ended' | 'endedRooms'
 >;
 
 function loadLocalSessionsSnapshot(): LocalSessionsSnapshot | null {
@@ -105,7 +148,7 @@ type Action =
 	{ type: 'OUTGOING_ACCEPTED', payload: SessionsAcceptedPayload } |
 	{ type: 'OUTGOING_REJECTED', payload: SessionsRejectedPayload } |
 	{ type: 'OUTGOING_CLEAR' } |
-	{ type: 'INCOMING_ADD', payload: SessionsRequestEvent } |
+	{ type: 'INCOMING_ADD', payload: SessionsRequestEvent & { minutes?: number } } |
 	{ type: 'INCOMING_REMOVE', payload: { request_id: string } } |
 	{ type: 'ACTIVE_SET', payload: ActiveBookingState } |
 	{ type: 'ACTIVE_CLEAR' } |
@@ -116,7 +159,8 @@ type Action =
 	{ type: 'FEEDBACK_PROMPT', payload: SessionsFeedbackPromptEvent } |
 	{ type: 'FEEDBACK_RECEIVED', payload: SessionsFeedbackReceivedEvent } |
 	{ type: 'FEEDBACK_CLEAR' } |
-	{ type: 'HYDRATE_LOCAL', payload: LocalSessionsSnapshot };
+	{ type: 'HYDRATE_LOCAL', payload: LocalSessionsSnapshot } |
+	{ type: 'HYDRATE_REMOTE', payload: SessionsRemoteHydratePayload };
 
 const initialState: SessionsState = {
 	outgoing: { state: 'idle' },
@@ -191,6 +235,33 @@ function sessionsReducer(state: SessionsState, action: Action): SessionsState {
 				endedRooms: { ...state.endedRooms, ...(action.payload.endedRooms ?? {}) },
 			};
 		}
+		case 'HYDRATE_REMOTE': {
+			// Server `/state` is source-of-truth; keep locally persisted ended markers.
+			// Do not touch `feedbackPrompt` / `feedbackReceived` (push-driven; avoids stale /state races).
+			const p = action.payload;
+			let activeOut = p.active;
+			if (
+				p.active?.accepted?.request_id &&
+				state.active?.accepted?.request_id === p.active.accepted.request_id
+			) {
+				activeOut = {
+					...p.active,
+					otherDisplay: p.active.otherDisplay?.name ? p.active.otherDisplay : state.active.otherDisplay,
+					peerIds: p.active.peerIds ?? state.active.peerIds,
+					uiCallType: p.active.uiCallType ?? state.active.uiCallType,
+					minutes: p.active.minutes ?? state.active.minutes,
+				};
+			}
+			return {
+				...state,
+				outgoing: p.outgoing,
+				incoming: p.incoming,
+				active: activeOut ?? p.active,
+				timer: p.timer,
+				ended: p.ended,
+				endedRooms: { ...state.endedRooms, ...(p.endedRooms ?? {}) },
+			};
+		}
 		default:
 			return state;
 	}
@@ -205,7 +276,7 @@ type SessionsContextValue = {
 		uiCallType?: SessionsUiCallType,
 		creatorDisplay?: { name: string, avatar: string },
 	}) => Promise<SessionsRequestResponse>,
-	acceptSession: (requestId: string) => Promise<SessionsAcceptedPayload>,
+	acceptSession: (requestId: string, opts?: { uiCallType?: SessionsUiCallType }) => Promise<SessionsAcceptedPayload>,
 	rejectSession: (requestId: string, message?: string) => Promise<SessionsRejectedPayload>,
 	cancelSession: (requestId: string) => Promise<{ ok: true }>,
 	completeSession: (requestId: string) => Promise<SessionsCompleteResponse>,
@@ -220,12 +291,16 @@ const SessionsContext = createContext<SessionsContextValue | null>(null);
 export function SessionsProvider({ children }: { children: React.ReactNode }) {
 	const ws = useWs();
 	const wsConnected = useWsConnected();
+	const wsAuthReady = useWsAuthReady();
 	const navigate = useNavigate();
 	const { state: authState } = useAuth();
 	const { addConversation, addRoomMessage } = useChat();
 	const { showToast } = useNotifications();
 	const [state, dispatch] = useReducer(sessionsReducer, initialState);
+	const callAgoraCredsByUserRef = useRef<CallAgoraCredsByUserMap>(loadCallAgoraCredsByUser());
+	const callAgoraCredsByRequestIdRef = useRef<CallAgoraCredsMap>({});
 	const uiCallTypeByRequestIdRef = useRef<Record<string, SessionsUiCallType>>({});
+	const minutesByRequestIdRef = useRef<Record<string, number>>({});
 	const creatorMetaByRequestIdRef = useRef<Record<string, { userId: string, name: string, avatar: string }>>({});
 	const fanMetaByRequestIdRef = useRef<Record<string, { userId: string, name: string }>>({});
 	const roomIdByRequestIdRef = useRef<Record<string, string>>({});
@@ -233,6 +308,36 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 	const didPromptActiveRequestIdRef = useRef<string | null>(null);
 	const didHydrateLocalRef = useRef(false);
 	const hydratedLocalAtMsRef = useRef<number | null>(null);
+	const localTimerRef = useRef<{ requestId: string, roomId: string, endsAtMs: number, t: number | null } | null>(null);
+	const stateSyncRef = useRef<{ atMs: number, reason: string } | null>(null);
+
+	const clearLocalTimer = useCallback(() => {
+		const cur = localTimerRef.current;
+		if (!cur) return;
+		if (cur.t != null) window.clearInterval(cur.t);
+		localTimerRef.current = null;
+	}, []);
+
+	const startLocalTimer = useCallback((opts: { requestId: string, roomId: string, minutes: number }) => {
+		clearLocalTimer();
+		const endsAtMs = Date.now() + Math.max(1, Math.floor(opts.minutes)) * 60_000;
+		const tick = () => {
+			const rem = Math.max(0, Math.floor((endsAtMs - Date.now()) / 1000));
+			dispatch({
+				type: 'TIMER_UPDATE',
+				payload: {
+					request_id: opts.requestId,
+					room_id: opts.roomId,
+					ends_at: new Date(endsAtMs).toISOString(),
+					remaining_sec: rem,
+				},
+			});
+			if (rem <= 0) clearLocalTimer();
+		};
+		tick();
+		const t = window.setInterval(tick, 1000);
+		localTimerRef.current = { requestId: opts.requestId, roomId: opts.roomId, endsAtMs, t };
+	}, [clearLocalTimer]);
 
 	function ensureBookedRoomJoined(roomId: string) {
 		if (!wsConnected) return;
@@ -254,6 +359,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 			dispatch({ type: 'OUTGOING_REQUESTING', payload: { creatorUserId: opts.creatorUserId, kind: opts.kind } });
 			return sessionsRequest(ws, { creatorUserId: opts.creatorUserId, kind: opts.kind, minutes: opts.minutes })
 				.then(res => {
+					minutesByRequestIdRef.current[res.request_id] = opts.minutes;
 					if (opts.kind === 'call' && opts.uiCallType) {
 						uiCallTypeByRequestIdRef.current[res.request_id] = opts.uiCallType;
 					}
@@ -276,8 +382,11 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 	);
 
 	const acceptSession = useCallback(
-		(requestId: string) =>
-			sessionsAccept(ws, { requestId }).then(res => {
+		(requestId: string, opts?: { uiCallType?: SessionsUiCallType }) => {
+			if (opts?.uiCallType) {
+				uiCallTypeByRequestIdRef.current[requestId] = opts.uiCallType;
+			}
+			return sessionsAccept(ws, { requestId }).then(res => {
 				dispatch({ type: 'INCOMING_REMOVE', payload: { request_id: requestId } });
 				const fan =
 					fanMetaByRequestIdRef.current[res.request_id] ??
@@ -286,17 +395,20 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 						const row = state.incoming.find(r => r.request.request_id === res.request_id)?.request;
 						return row ? { userId: row.fan_user_id, name: row.fan_display } : undefined;
 					})();
+				const me = authState.user;
 				dispatch({
 					type: 'ACTIVE_SET',
 					payload: {
 						accepted: res,
 						uiCallType: uiCallTypeByRequestIdRef.current[res.request_id],
 						otherDisplay: fan ? { name: fan.name, avatar: '' } : undefined,
+						peerIds: fan && me?.role === 'creator' ? { fan_user_id: fan.userId, creator_user_id: me.id } : undefined,
 					},
 				});
 				return res;
-			}),
-		[ws, state.incoming]
+			});
+		},
+		[ws, state.incoming, authState.user]
 	);
 
 	const rejectSession = useCallback(
@@ -349,7 +461,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 	const clearOutgoing = useCallback(() => dispatch({ type: 'OUTGOING_CLEAR' }), []);
 	const clearFeedback = useCallback(() => dispatch({ type: 'FEEDBACK_CLEAR' }), []);
 
-	// Backend does not support `sessions /state`. We rely on push events + local persistence.
+	// Local restore for offline continuity (but the source of truth is `sessions /state`).
 	useEffect(() => {
 		if (didHydrateLocalRef.current) return;
 		didHydrateLocalRef.current = true;
@@ -371,19 +483,239 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 		}
 	}, [authState.user, showToast]);
 
+	const bookingRowToAccepted = (row: SessionsBookingRow): SessionsAcceptedPayload => {
+		const storedAgora = callAgoraCredsByRequestIdRef.current[row.id];
+		return {
+			request_id: row.id,
+			room_id: row.room_id ?? '',
+			kind: row.kind,
+			call_session_id: row.call_session_id,
+			session: null,
+			agora: storedAgora ?? null,
+			started_at: row.started_at,
+			ends_at: row.ends_at,
+			duration_minutes: row.duration_minutes,
+			price_cents: row.price_cents,
+		};
+	};
+
+	// Scope persisted Agora creds by user id (prevents fan/creator overwriting each other on the same origin).
+	useEffect(() => {
+		const uid = authState.user?.id ?? '';
+		if (!uid) {
+			callAgoraCredsByRequestIdRef.current = {};
+			return;
+		}
+		callAgoraCredsByRequestIdRef.current = callAgoraCredsByUserRef.current[uid] ?? {};
+	}, [authState.user?.id]);
+
+	const deriveTimerFromEndsAt = (opts: { requestId: string, roomId: string, endsAt: string | null | undefined }) => {
+		const ends = opts.endsAt ?? '';
+		if (!ends) return null;
+		const endsAtMs = new Date(ends).getTime();
+		if (!Number.isFinite(endsAtMs)) return null;
+		const rem = Math.max(0, Math.floor((endsAtMs - Date.now()) / 1000));
+		const payload: SessionsTimerEvent = {
+			request_id: opts.requestId,
+			room_id: opts.roomId,
+			ends_at: new Date(endsAtMs).toISOString(),
+			remaining_sec: rem,
+		};
+		return payload;
+	};
+
+	const syncState = useCallback((reason: string) => {
+		if (!wsConnected || !wsAuthReady) return;
+		if (!authState.user) return;
+		const now = Date.now();
+		const prev = stateSyncRef.current;
+		if (prev && now - prev.atMs < 1500) return;
+		stateSyncRef.current = { atMs: now, reason };
+		void sessionsState(ws, `rs-${reason}`)
+			.then((remote: SessionsStateResponse) => {
+				const outgoing = (remote.outgoing ?? []);
+				const incomingRows = (remote.incoming ?? []);
+				const activeRows = (remote.active ?? []);
+
+				const pendingOutgoing = outgoing.find(r => r.status === 'pending' || r.status === 'accepted') ?? null;
+				const nextOutgoing: OutgoingRequestState =
+					pendingOutgoing ?
+						{ state: 'pending', request: { request_id: pendingOutgoing.id, status: 'pending', price_cents: pendingOutgoing.price_cents, kind: pendingOutgoing.kind } } :
+						{ state: 'idle' };
+
+				const nextIncoming: IncomingRequestState[] = incomingRows
+					.filter(r => r.status === 'pending')
+					.map(r => ({
+						request: {
+							request_id: r.id,
+							fan_user_id: r.fan_user_id,
+							fan_display: `User ${r.fan_user_id}`,
+							kind: r.kind,
+							price_cents: r.price_cents,
+							created_at: r.created_at,
+							minutes: r.duration_minutes,
+						},
+					}));
+
+				const activeAccepted = activeRows.find(r => r.status === 'accepted' && !!r.room_id) ?? null;
+				let nextActive: ActiveBookingState | null = null;
+				if (activeAccepted) {
+					const rid = activeAccepted.id;
+					const prevSame =
+						state.active?.accepted?.request_id === rid ?
+							state.active.otherDisplay :
+							undefined;
+					let otherDisplay: { name: string, avatar: string } | undefined;
+					if (prevSame?.name) {
+						otherDisplay = prevSame;
+					} else {
+						const me = authState.user;
+						const creatorMeta = creatorMetaByRequestIdRef.current[rid];
+						const fanMeta = fanMetaByRequestIdRef.current[rid];
+						if (me?.role === 'creator') {
+							otherDisplay = fanMeta?.name ?
+								{ name: fanMeta.name, avatar: '' } :
+								{ name: 'Fan', avatar: '' };
+						} else if (me) {
+							if (creatorMeta?.name) {
+								otherDisplay = { name: creatorMeta.name, avatar: creatorMeta.avatar };
+							} else {
+								const authProf = authState.creatorProfiles[activeAccepted.creator_user_id];
+								if (authProf?.name) {
+									otherDisplay = { name: authProf.name, avatar: authProf.avatar ?? '' };
+								} else {
+									const mock = mockCreators.find(c => c.id === activeAccepted.creator_user_id);
+									otherDisplay = mock ?
+										{ name: mock.name, avatar: mock.avatar } :
+										{ name: 'Creator', avatar: '' };
+								}
+							}
+						}
+					}
+					nextActive = {
+						accepted: bookingRowToAccepted(activeAccepted),
+						minutes: activeAccepted.duration_minutes,
+						uiCallType:
+							(state.active?.accepted?.request_id === activeAccepted.id ? state.active.uiCallType : undefined) ??
+							uiCallTypeByRequestIdRef.current[activeAccepted.id],
+						otherDisplay,
+						peerIds: {
+							fan_user_id: activeAccepted.fan_user_id,
+							creator_user_id: activeAccepted.creator_user_id,
+						},
+					};
+				}
+
+				const nextTimer =
+					activeAccepted ?
+						deriveTimerFromEndsAt({ requestId: activeAccepted.id, roomId: activeAccepted.room_id ?? '', endsAt: activeAccepted.ends_at }) :
+						null;
+
+				dispatch({
+					type: 'HYDRATE_REMOTE',
+					payload: {
+						outgoing: nextOutgoing,
+						incoming: nextIncoming,
+						active: nextActive,
+						timer: nextTimer,
+						ended: state.ended,
+						endedRooms: state.endedRooms,
+					},
+				});
+			})
+			.catch(() => {});
+	}, [ws, wsConnected, wsAuthReady, authState.user, authState.creatorProfiles, state.active, state.ended, state.endedRooms]);
+
+	// Spec: after reconnect/login, pull `/state` to restore outgoing/incoming/active bookings.
+	useEffect(() => {
+		syncState('state');
+	}, [ws, wsConnected, wsAuthReady, authState.user?.id, syncState]);
+
+	// Spec: if timer expires, server should push `sessions|ended` + `sessions|feedbackprompt`.
+	// If a user reloads at the boundary and misses push frames, resync `/state` at ends_at and retry.
+	useEffect(() => {
+		if (!wsConnected) return;
+		const active = state.active?.accepted;
+		if (!active) return;
+		if (active.kind !== 'chat') return;
+		const roomId = active.room_id;
+		if (!roomId) return;
+		if (state.endedRooms[roomId]) return;
+
+		const endsAt = state.timer?.room_id === roomId ? state.timer.ends_at : (active.ends_at ?? null);
+		if (!endsAt) return;
+		const endsAtMs = new Date(endsAt).getTime();
+		if (!Number.isFinite(endsAtMs)) return;
+
+		const msLeft = endsAtMs - Date.now();
+		const t = window.setTimeout(() => {
+			let tries = 0;
+			syncState('ends');
+			const interval = window.setInterval(() => {
+				tries += 1;
+				if (state.endedRooms[roomId]) {
+					window.clearInterval(interval);
+					return;
+				}
+				syncState('ends');
+				if (tries >= 6) window.clearInterval(interval);
+			}, 5000);
+		}, Math.min(Math.max(0, msLeft + 1200), 2_147_000_000));
+		return () => window.clearTimeout(t);
+	}, [wsConnected, state.active?.accepted?.request_id, state.timer?.ends_at, state.timer?.room_id, state.endedRooms, syncState]);
+
 	// Subscribe to sessions push events
 	useEffect(() => {
+		let offAny: (() => void) | null = null;
+		if (import.meta.env.DEV) {
+			offAny = ws.onAny(frame => {
+				const f = frame;
+				if (f.type !== 'event') return;
+				if (f.service !== 'sessions' && f.service !== 'session') return;
+				const g = globalThis as unknown as Record<string, unknown>;
+				const prev = (g.CW_SESSIONS_FRAMES as unknown[] | undefined) ?? [];
+				g.CW_SESSIONS_FRAMES = [...prev.slice(-24), f];
+			});
+		}
+
 		const offReq = ws.on('sessions', 'request', data => {
-			const payload = data as SessionsRequestEvent;
-			fanMetaByRequestIdRef.current[payload.request_id] = {
-				userId: payload.fan_user_id,
-				name: payload.fan_display,
+			const payloadBase = data as SessionsRequestEvent;
+			// Some backends include requested minutes; capture it if present so we can render a local timer.
+			const raw = (data && typeof data === 'object') ? (data as Record<string, unknown>) : {};
+			const minutesRaw =
+				typeof raw.minutes === 'number' ? raw.minutes :
+				typeof raw.duration_minutes === 'number' ? raw.duration_minutes :
+				typeof raw.durationMinutes === 'number' ? raw.durationMinutes :
+				(typeof raw.minutes === 'string' && /^\d+$/.test(raw.minutes.trim()) ? Number(raw.minutes) : null);
+			const minutes =
+				typeof minutesRaw === 'number' && Number.isFinite(minutesRaw) && minutesRaw > 0 ?
+					Math.floor(minutesRaw) :
+					undefined;
+			if (minutes) minutesByRequestIdRef.current[payloadBase.request_id] = minutes;
+			const payload: SessionsRequestEvent & { minutes?: number } = { ...payloadBase, minutes };
+
+			fanMetaByRequestIdRef.current[payloadBase.request_id] = {
+				userId: payloadBase.fan_user_id,
+				name: payloadBase.fan_display,
 			};
 			dispatch({ type: 'INCOMING_ADD', payload });
 		});
 		const offAccepted = ws.on('sessions', 'accepted', data => {
 			const payload = data as SessionsAcceptedPayload;
 			roomIdByRequestIdRef.current[payload.request_id] = payload.room_id;
+
+			// Persist per-user Agora creds so a reload can re-attach and resume the call booking.
+			if (payload.kind === 'call' && payload.agora) {
+				const uid = authState.user?.id ?? '';
+				if (uid) {
+					const prevForUser = callAgoraCredsByUserRef.current[uid] ?? {};
+					const nextForUser = { ...prevForUser, [payload.request_id]: payload.agora };
+					callAgoraCredsByUserRef.current = { ...callAgoraCredsByUserRef.current, [uid]: nextForUser };
+					callAgoraCredsByRequestIdRef.current = nextForUser;
+					saveCallAgoraCredsByUser(callAgoraCredsByUserRef.current);
+				}
+			}
+
 			const me = authState.user;
 			const creatorMeta = creatorMetaByRequestIdRef.current[payload.request_id];
 			const fanMeta = fanMetaByRequestIdRef.current[payload.request_id];
@@ -391,52 +723,99 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 				me?.role === 'creator' ?
 					(fanMeta ? { name: fanMeta.name, avatar: '' } : undefined) :
 					(creatorMeta ? { name: creatorMeta.name, avatar: creatorMeta.avatar } : undefined);
+			const peerIds =
+				me?.role === 'creator' && fanMeta && me ?
+					{ fan_user_id: fanMeta.userId, creator_user_id: me.id } :
+					me?.role === 'fan' && creatorMeta && me ?
+						{ fan_user_id: me.id, creator_user_id: creatorMeta.userId } :
+						undefined;
 			dispatch({ type: 'OUTGOING_ACCEPTED', payload });
 			dispatch({
 				type: 'ACTIVE_SET',
 				payload: {
 					accepted: payload,
+					minutes: minutesByRequestIdRef.current[payload.request_id],
 					uiCallType: uiCallTypeByRequestIdRef.current[payload.request_id],
 					otherDisplay,
+					peerIds,
 				},
 			});
+			if (payload.kind === 'call') {
+				const uiCallType = uiCallTypeByRequestIdRef.current[payload.request_id] ?? 'video';
+				void ensureMediaPermissions({ audio: true, video: uiCallType === 'video' }).catch(e => {
+					if (isDeviceInUseError(e)) return;
+					throw e;
+				})
+					.then(() => {
+						void navigate('/call');
+					})
+					.catch(e => {
+						showToast(e instanceof Error ? e.message : 'Unable to access microphone/camera', 'error');
+					});
+			}
+			// If the server isn't pushing `sessions|timer` reliably, we can still show a timer from the known minutes.
+			// This covers the fan role (minutes known from request) and any backend that includes minutes in the request event.
+			if (payload.kind === 'chat') {
+				const mins = minutesByRequestIdRef.current[payload.request_id];
+				if (typeof mins === 'number' && Number.isFinite(mins) && mins > 0) {
+					startLocalTimer({ requestId: payload.request_id, roomId: payload.room_id, minutes: mins });
+				}
+			}
 		});
 		const offRejected = ws.on('sessions', 'rejected', data => {
 			const payload = data as SessionsRejectedPayload;
 			dispatch({ type: 'OUTGOING_REJECTED', payload });
 		});
-		const offPrompt = ws.on('sessions', 'feedbackprompt', data => {
+		const onFeedbackPrompt = (data: unknown) => {
 			const payload = data as SessionsFeedbackPromptEvent;
-			// Ensure "session ended" UI is visible on both sides even if `sessions|ended`
-			// arrives late or was missed; the feedback prompt implies completion.
-			const active = state.active?.accepted;
-			const roomId =
-				active?.request_id === payload.request_id ?
-					active.room_id :
-					roomIdByRequestIdRef.current[payload.request_id];
-			if (roomId) {
-				dispatch({
-					type: 'ENDED_SET',
-					payload: { request_id: payload.request_id, room_id: roomId, reason: 'manual' },
-				});
-				if (active?.room_id === roomId) {
-					dispatch({ type: 'ACTIVE_CLEAR' });
-				}
-			}
+			// Spec: prompt is driven by backend; we don't infer end here.
 			dispatch({ type: 'FEEDBACK_PROMPT', payload });
-		});
+		};
+		const offPrompt = ws.on('sessions', 'feedbackprompt', onFeedbackPrompt);
+		const offPrompt2 = ws.on('session', 'feedbackprompt', onFeedbackPrompt);
 		const offReceived = ws.on('sessions', 'feedbackreceived', data => {
 			const payload = data as SessionsFeedbackReceivedEvent;
 			dispatch({ type: 'FEEDBACK_RECEIVED', payload });
 		});
-		const offTimer = ws.on('sessions', 'timer', data => {
-			const payload = data as SessionsTimerEvent;
-			// Timer ticks are a reliable way to learn the active room after reload/reconnect,
-			// even if local `active` wasn't restored yet.
+		const onTimerLike = (data: unknown) => {
+			const str = (v: unknown): string => {
+				if (typeof v === 'string') return v;
+				if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+				return '';
+			};
+			// Backend variants seen across environments:
+			// - { room_id, request_id, ends_at, remaining_sec }
+			// - { roomId, requestId, endsAt, remainingSec }
+			const raw = (data && typeof data === 'object') ? (data as Record<string, unknown>) : {};
+			const payload: SessionsTimerEvent = {
+				request_id: str(raw.request_id ?? raw.requestId),
+				room_id: str(raw.room_id ?? raw.roomId),
+				started_at: typeof raw.started_at === 'string' ? raw.started_at : (typeof raw.startedAt === 'string' ? raw.startedAt : undefined),
+				ends_at: str(raw.ends_at ?? raw.endsAt),
+				remaining_sec: Number(raw.remaining_sec ?? raw.remainingSec ?? 0),
+			};
+			if (!payload.request_id || !payload.room_id) return;
+			// If backend didn't send `ends_at`, approximate it from remaining seconds so the UI can tick.
+			if (!payload.ends_at && Number.isFinite(payload.remaining_sec) && payload.remaining_sec > 0) {
+				payload.ends_at = new Date(Date.now() + payload.remaining_sec * 1000).toISOString();
+			}
 			dispatch({ type: 'TIMER_UPDATE', payload });
-			ensureBookedRoomJoined(payload.room_id);
-		});
-		const offEnded = ws.on('sessions', 'ended', data => {
+			const activeAccepted = state.active?.accepted;
+			if (activeAccepted?.kind === 'chat' && activeAccepted.room_id === payload.room_id) {
+				ensureBookedRoomJoined(payload.room_id);
+			}
+		};
+
+		const offTimer = ws.on('sessions', 'timer', onTimerLike);
+		const offTick = ws.on('sessions', 'tick', onTimerLike);
+		const offTimerUpdate = ws.on('sessions', 'timerupdate', onTimerLike);
+		const offTimerUpdateSnake = ws.on('sessions', 'timer_update', onTimerLike);
+		// Some environments use `session` (singular) as the service name.
+		const offTimer2 = ws.on('session', 'timer', onTimerLike);
+		const offTick2 = ws.on('session', 'tick', onTimerLike);
+		const offTimerUpdate2 = ws.on('session', 'timerupdate', onTimerLike);
+		const offTimerUpdateSnake2 = ws.on('session', 'timer_update', onTimerLike);
+		const onEnded = (data: unknown) => {
 			const payload = data as SessionsEndedEvent;
 			const active = state.active?.accepted;
 			// Always record the ended booking so chat UI can reflect it by `room_id`,
@@ -450,18 +829,49 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 			if (active?.room_id === payload.room_id) {
 				dispatch({ type: 'ACTIVE_CLEAR' });
 			}
-		});
+			clearLocalTimer();
+
+		};
+		const offEnded = ws.on('sessions', 'ended', onEnded);
+		const offEnded2 = ws.on('session', 'ended', onEnded);
 
 		return () => {
+			offAny?.();
 			offReq();
 			offAccepted();
 			offRejected();
 			offPrompt();
+			offPrompt2();
 			offReceived();
 			offTimer();
+			offTick();
+			offTimerUpdate();
+			offTimerUpdateSnake();
+			offTimer2();
+			offTick2();
+			offTimerUpdate2();
+			offTimerUpdateSnake2();
 			offEnded();
+			offEnded2();
+			clearLocalTimer();
 		};
-	}, [ws, authState.user, state.active?.accepted?.request_id]);
+	}, [ws, authState.user, state.active?.accepted?.request_id, state.active?.accepted?.kind, state.active?.accepted?.room_id, navigate, showToast]);
+
+	// After reload, the backend may not re-push timer ticks. Use persisted minutes as a fallback.
+	useEffect(() => {
+		if (!wsConnected) return;
+		const active = state.active?.accepted;
+		if (!active) return;
+		if (active.kind !== 'chat') return;
+		const roomId = active.room_id;
+		if (!roomId) return;
+		if (state.endedRooms[roomId]) return;
+		const mins = state.active?.minutes;
+		if (!mins) return;
+		// If we already have a timer for this room, don't override it.
+		if (state.timer?.room_id === roomId && typeof state.timer.remaining_sec === 'number') return;
+		startLocalTimer({ requestId: active.request_id, roomId, minutes: mins });
+	}, [wsConnected, state.active?.accepted?.request_id, state.active?.minutes, state.timer?.room_id, state.endedRooms, startLocalTimer]);
 
 	// When an accepted chat booking is active, keep the room joined so messages arrive
 	// even if the user is on the Messages list (WhatsApp-like unread behavior).

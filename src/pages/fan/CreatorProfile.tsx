@@ -9,6 +9,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useContent } from '../../context/ContentContext';
 import { mockCreators } from '../../data/users';
 import { useNotifications } from '../../context/NotificationContext';
+import { ensureMediaPermissions, isDeviceInUseError } from '../../services/mediaPermissions';
 import { useChat } from '../../context/ChatContext';
 import { useCall } from '../../context/CallContext';
 import { useSession } from '../../context/SessionContext';
@@ -166,17 +167,31 @@ export function CreatorProfile() {
 		const kind = type === 'chat' ? 'chat' : 'call';
 		const uiCallType = type === 'audio' ? 'audio' : type === 'video' ? 'video' : undefined;
 
-		void requestSession({
-			creatorUserId: creatorForDisplay.id,
-			kind,
-			minutes: durationMinutes,
-			uiCallType,
-			creatorDisplay: { name: creatorForDisplay.name, avatar: creatorForDisplay.avatar },
-		}).then(() => {
-			showToast('Session request sent. Waiting for creator…');
-		}).catch(err => {
-			showToast(err instanceof Error ? err.message : 'Failed to request session', 'error');
-		});
+		const preflight =
+			kind === 'call' ?
+				ensureMediaPermissions({ audio: true, video: uiCallType === 'video' }).catch(e => {
+					if (isDeviceInUseError(e)) {
+						showToast('Camera/mic is busy in another tab. You can still request; join will be receive-only here.', 'error');
+						return;
+					}
+					throw e;
+				}) :
+				Promise.resolve();
+
+		void preflight
+			.then(() => requestSession({
+				creatorUserId: creatorForDisplay.id,
+				kind,
+				minutes: durationMinutes,
+				uiCallType,
+				creatorDisplay: { name: creatorForDisplay.name, avatar: creatorForDisplay.avatar },
+			}))
+			.then(() => {
+				showToast('Session request sent. Waiting for creator…');
+			})
+			.catch(err => {
+				showToast(err instanceof Error ? err.message : 'Failed to request session', 'error');
+			});
 	}
 
 	useEffect(() => {

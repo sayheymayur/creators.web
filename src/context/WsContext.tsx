@@ -1,12 +1,15 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { WsClient } from '../services/wsClient';
 import { useAuth } from './AuthContext';
 import { getSessionToken } from '../services/sessionToken';
 import { parseFrame } from '../services/wsProtocol';
+import { registerCreatorsWsTeardown } from '../services/wsLogoutRegistry';
 
 type WsContextValue = {
 	client: WsClient,
 	isConnected: boolean,
+	ensureAuth: () => Promise<void>,
+	authReady: boolean,
 };
 
 const WsContext = createContext<WsContextValue | null>(null);
@@ -14,6 +17,9 @@ const WsContext = createContext<WsContextValue | null>(null);
 export function WsProvider({ children }: { children: React.ReactNode }) {
 	const { state: authState } = useAuth();
 	const [isConnected, setIsConnected] = useState(false);
+	const [authReady, setAuthReady] = useState(false);
+	const authPromiseRef = useRef<Promise<void>>(Promise.resolve());
+	const lastAuthTokenRef = useRef<string | null>(null);
 
 	const client = useMemo(() => new WsClient({
 		getToken() {
@@ -43,10 +49,50 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
 	}, [client]);
 
 	useEffect(() => {
-		// Refresh auth whenever login/logout changes the token.
-		// (token is stored in localStorage by creatorsApi)
-		client.refreshAuth();
-	}, [authState]);
+		// Spec: clients may connect with ?token=… or authenticate later via `user /authenticate`.
+		// For production-grade behavior we wait for an auth ACK whenever the token changes.
+		const token = getSessionToken();
+		if (!isConnected) {
+			setAuthReady(false);
+			return;
+		}
+		if (!token) {
+			lastAuthTokenRef.current = null;
+			setAuthReady(true);
+			authPromiseRef.current = Promise.resolve();
+			return;
+		}
+		if (lastAuthTokenRef.current === token && authReady) return;
+
+		lastAuthTokenRef.current = token;
+		setAuthReady(false);
+		authPromiseRef.current = client
+			.authenticate(token)
+			.then(() => { setAuthReady(true); })
+			.catch(e => {
+				setAuthReady(false);
+				throw e;
+			});
+	}, [authState.isAuthenticated, authState.user?.id, isConnected, client, authReady]);
+
+	const ensureAuth = useMemo(() => {
+		return () => authPromiseRef.current;
+	}, []);
+
+	useEffect(() => {
+		registerCreatorsWsTeardown(() => {
+			client.resetAuthTracking();
+			if (!client.isConnected) return Promise.resolve();
+			return client.userLogout()
+				.catch(() => {
+					/* ignore — still force a fresh socket */
+				})
+				.then(() => {
+					client.reconnectSocket();
+				});
+		});
+		return () => registerCreatorsWsTeardown(null);
+	}, [client]);
 
 	useEffect(() => {
 		if (!import.meta.env.DEV) return;
@@ -68,7 +114,7 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
 	}, [client]);
 
 	return (
-		<WsContext.Provider value={{ client, isConnected }}>
+		<WsContext.Provider value={{ client, isConnected, ensureAuth, authReady }}>
 			{children}
 		</WsContext.Provider>
 	);
@@ -84,4 +130,16 @@ export function useWsConnected(): boolean {
 	const ctx = useContext(WsContext);
 	if (!ctx) throw new Error('useWsConnected must be used within WsProvider');
 	return ctx.isConnected;
+}
+
+export function useEnsureWsAuth(): () => Promise<void> {
+	const ctx = useContext(WsContext);
+	if (!ctx) throw new Error('useEnsureWsAuth must be used within WsProvider');
+	return ctx.ensureAuth;
+}
+
+export function useWsAuthReady(): boolean {
+	const ctx = useContext(WsContext);
+	if (!ctx) throw new Error('useWsAuthReady must be used within WsProvider');
+	return ctx.authReady;
 }

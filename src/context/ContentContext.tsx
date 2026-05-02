@@ -9,16 +9,9 @@ import React, {
 import type { Post, Comment } from '../types';
 import { isPostLiked, setPostLiked } from '../services/likedPosts';
 import { setPostCommented } from '../services/commentedPosts';
-import {
-	CreatorsMultiplexWs,
-	setCreatorsMultiplexSingleton,
-} from '../services/creatorsMultiplexWs';
-import { creatorsWsUrl } from '../services/wsUrl';
+import { useEnsureWsAuth, useWs, useWsAuthReady, useWsConnected } from './WsContext';
 import { isPostsMockMode } from '../services/postsMode';
 import {
-	creatorWsGet,
-	creatorWsList,
-	creatorWsUpsertProfile,
 	buildCreatorListCommand,
 } from '../services/creatorWsService';
 import type { CreatorGetResponse, CreatorListResponse } from '../services/creatorWsTypes';
@@ -176,7 +169,9 @@ function contentReducer(state: ContentState, action: ContentAction): ContentStat
 			};
 		}
 		case 'ADD_POST': {
-			return { ...state, posts: [action.payload, ...state.posts] };
+			const incoming = action.payload;
+			if (state.posts.some(p => p.id === incoming.id)) return state;
+			return { ...state, posts: [incoming, ...state.posts] };
 		}
 		case 'UPSERT_POST': {
 			const incoming = action.payload;
@@ -348,16 +343,19 @@ const ContentContext = createContext<ContentContextValue | null>(null);
 export function ContentProvider({ children }: { children: React.ReactNode }) {
 	const [state, dispatch] = useReducer(contentReducer, initialState);
 	const { state: authState } = useAuth();
+	const ws = useWs();
+	const wsConnected = useWsConnected();
+	const wsAuthReady = useWsAuthReady();
+	const ensureWsAuth = useEnsureWsAuth();
 	const authUserRef = useRef(authState.user);
 	authUserRef.current = authState.user;
-	const clientRef = useRef<CreatorsMultiplexWs | null>(null);
 	const mockMode = isPostsMockMode();
 	const stateRef = useRef(state);
 	stateRef.current = state;
-	const connectSeqRef = useRef(0);
 	const creatorPkByUserIdRef = useRef<Record<string, string>>({});
 	const creatorUserInflightRef = useRef<Partial<Record<string, Promise<void>>>>({});
 	const creatorBootstrapRef = useRef<{ userId: string, username: string } | null>(null);
+	const initialWsPostsLoadedKeyRef = useRef<string | null>(null);
 
 	const creatorWsDebugEnabled = useCallback((): boolean => {
 		if (!import.meta.env.DEV) return false;
@@ -374,6 +372,20 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 		if (data === undefined) console.debug(msg);
 		else console.debug(msg, data);
 	}, [creatorWsDebugEnabled]);
+
+	const wsRequestLine = useCallback(
+		(service: string, line: string): Promise<unknown> => {
+			const trimmed = line.trim();
+			if (!trimmed.startsWith('/')) {
+				return Promise.reject(new Error(`Invalid WS command line: ${trimmed}`));
+			}
+			const parts = trimmed.split(' ');
+			const command = parts[0].slice(1);
+			const args = parts.slice(1);
+			return ensureWsAuth().then(() => ws.request(service, command, args));
+		},
+		[ws, ensureWsAuth]
+	);
 
 	const resolveCreatorDisplay = useCallback(
 		(userId: string, profiles: Record<string, CreatorDisplay>): CreatorDisplay | undefined => {
@@ -517,150 +529,85 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 		[fetchProfilesForIds, resolveCreatorDisplay]
 	);
 
+	// Posts push events (spec): |posts|new|{...}, |posts|updated|{...}, etc.
 	useEffect(() => {
-		connectSeqRef.current += 1;
-		const seq = connectSeqRef.current;
-
-		// Always close any previous client before creating a new one.
-		// This avoids duplicate live sockets when auth changes quickly or in StrictMode.
-		if (clientRef.current) {
-			clientRef.current.close();
-			clientRef.current = null;
-		}
-
-		const client = new CreatorsMultiplexWs({
-			onPostsEvent: handlePush,
-			onConnectionChange: (s, err) => {
-				if (seq !== connectSeqRef.current) return;
-				if (s === 'connecting') dispatch({ type: 'SET_WS', payload: { status: 'connecting' } });
-				if (s === 'open') dispatch({ type: 'SET_WS', payload: { status: 'ready' } });
-				if (s === 'closed') {
-					dispatch({
-						type: 'SET_WS',
-						payload: { status: 'error', error: err?.message ?? 'Connection closed' },
-					});
-				}
-			},
-		});
-		clientRef.current = client;
-		setCreatorsMultiplexSingleton(client);
-
-		dispatch({ type: 'SET_WS', payload: { status: 'connecting' } });
-		void client
-			.connect(creatorsWsUrl())
-			.then(() => {
-				if (seq !== connectSeqRef.current) return Promise.reject(new Error('stale-ws'));
-
-				// Always fetch feed.
-				const feedP = client.send('posts', '/list feed 30').then(json =>
-					mapList(json).then(posts => {
-						if (seq !== connectSeqRef.current) return;
-						const body = json as ListPostsResponse;
-						dispatch({
-							type: 'MERGE_POSTS_LIST',
-							payload: {
-								posts,
-								nextCursor: body.nextCursor ?? null,
-								listKind: 'feed',
-							},
-						});
-					})
-				);
-
-				const exploreP = client.send('posts', '/list explore 30').then(json =>
-					mapList(json).then(posts => {
-						if (seq !== connectSeqRef.current) return;
-						const body = json as ListPostsResponse;
-						dispatch({
-							type: 'MERGE_POSTS_LIST',
-							payload: {
-								posts,
-								nextCursor: body.nextCursor ?? null,
-								listKind: 'explore',
-								replaceExploreOrder: true,
-							},
-						});
-					})
-				);
-
-				// If logged in as creator/admin, fetch my creator posts too.
-				const u = authUserRef.current;
-				const myId = u?.id;
-				const canHaveOwnPosts = u?.role === 'creator' || u?.role === 'admin';
-				const creatorP = myId && canHaveOwnPosts ?
-					client.send('posts', `/list creator ${myId} 30`).then(json =>
-						mapList(json).then(posts => {
-							if (seq !== connectSeqRef.current) return;
-							const body = json as ListPostsResponse;
-							dispatch({
-								type: 'MERGE_POSTS_LIST',
-								payload: {
-									posts,
-									nextCursor: body.nextCursor ?? null,
-									listKind: 'creator',
-									creatorId: myId,
-								},
-							});
-						})
-					) :
-					Promise.resolve();
-
-				return Promise.all([feedP, exploreP, creatorP]).then(() => {});
-			})
-			.catch(e => {
-				if (e instanceof Error && e.message === 'stale-ws') return;
-				if (seq !== connectSeqRef.current) return;
-				dispatch({
-					type: 'SET_WS',
-					payload: { status: 'error', error: e instanceof Error ? e.message : String(e) },
-				});
-			});
-
+		if (!wsConnected) return;
+		const offNew = ws.on('posts', 'new', data => handlePush('new', data));
+		const offUpdated = ws.on('posts', 'updated', data => handlePush('updated', data));
+		const offDeleted = ws.on('posts', 'deleted', data => handlePush('deleted', data));
+		const offLike = ws.on('posts', 'likeupdate', data => handlePush('likeupdate', data));
+		const offComment = ws.on('posts', 'newcomment', data => handlePush('newcomment', data));
 		return () => {
-			// Only close if this effect instance is still the latest.
-			if (seq === connectSeqRef.current) {
-				setCreatorsMultiplexSingleton(null);
-				client.close();
-				clientRef.current = null;
-			}
+			offNew();
+			offUpdated();
+			offDeleted();
+			offLike();
+			offComment();
 		};
-		// When auth changes, reconnect so the WebSocket uses the latest JWT query param.
-	}, [handlePush, mapList, authState.isAuthenticated, authState.user?.id]);
+	}, [ws, wsConnected, handlePush]);
 
-	const runRemote = useCallback((fn: () => Promise<void>) => {
-		if (stateRef.current.postsWsStatus !== 'ready') {
-			return Promise.reject(new Error('Posts connection is not ready yet'));
+	// Spec-based bootstrapping for feed/explore (and my creator posts).
+	useEffect(() => {
+		const key = authState.user ? `${authState.user.role}:${authState.user.id}` : 'guest';
+		if (!wsConnected) {
+			dispatch({ type: 'SET_WS', payload: { status: 'connecting' } });
+			return;
 		}
-		if (!clientRef.current) {
-			return Promise.reject(new Error('Posts connection is not ready yet'));
-		}
-		return fn();
-	}, []);
+		if (!wsAuthReady) return;
+		if (initialWsPostsLoadedKeyRef.current === key) return;
+		initialWsPostsLoadedKeyRef.current = key;
 
-	const runRemoteTyped = useCallback((fn: (c: CreatorsMultiplexWs) => Promise<unknown>): Promise<unknown> => {
-		if (stateRef.current.postsWsStatus !== 'ready' || !clientRef.current) {
-			return Promise.reject(new Error('Posts connection is not ready yet'));
-		}
-		return fn(clientRef.current);
-	}, []);
+		dispatch({ type: 'SET_WS', payload: { status: 'ready', error: null } });
+
+		const feedP = wsRequestLine('posts', '/list feed 30')
+			.then(json => mapList(json).then(posts => {
+				const body = json as ListPostsResponse;
+				dispatch({
+					type: 'MERGE_POSTS_LIST',
+					payload: { posts, nextCursor: body.nextCursor ?? null, listKind: 'feed' },
+				});
+			}));
+
+		const exploreP = wsRequestLine('posts', '/list explore 30')
+			.then(json => mapList(json).then(posts => {
+				const body = json as ListPostsResponse;
+				dispatch({
+					type: 'MERGE_POSTS_LIST',
+					payload: { posts, nextCursor: body.nextCursor ?? null, listKind: 'explore', replaceExploreOrder: true },
+				});
+			}));
+
+		const u = authUserRef.current;
+		const myId = u?.id;
+		const canHaveOwnPosts = u?.role === 'creator' || u?.role === 'admin';
+		const creatorP = myId && canHaveOwnPosts ?
+			wsRequestLine('posts', `/list creator ${myId} 30`)
+				.then(json => mapList(json).then(posts => {
+					const body = json as ListPostsResponse;
+					dispatch({
+						type: 'MERGE_POSTS_LIST',
+						payload: { posts, nextCursor: body.nextCursor ?? null, listKind: 'creator', creatorId: myId },
+					});
+				})) :
+			Promise.resolve();
+
+		void Promise.all([feedP, exploreP, creatorP]).catch(e => {
+			dispatch({ type: 'SET_WS', payload: { status: 'error', error: e instanceof Error ? e.message : String(e) } });
+		});
+	}, [wsConnected, wsAuthReady, wsRequestLine, mapList, authState.user]);
 
 	const creatorWsSearch = useCallback(
-		(opts: { q?: string, category?: string, limit?: number, beforeCursor?: string }) =>
-			runRemoteTyped(c => {
-				const cmd = buildCreatorListCommand(opts);
-				creatorWsDebug('[creator-ws] -> /list', { cmd, opts });
-				return creatorWsList(c, opts).then(r => {
-					creatorWsDebug('[creator-ws] <- /list', { count: r.creators?.length ?? 0, nextCursor: r.nextCursor });
-					return r;
-				});
-			}) as Promise<CreatorListResponse>,
-		[runRemoteTyped, creatorWsDebug]
+		(opts: { q?: string, category?: string, limit?: number, beforeCursor?: string }) => {
+			const cmd = buildCreatorListCommand(opts);
+			creatorWsDebug('[creator-ws] -> /list', { cmd, opts });
+			return wsRequestLine('creator', cmd).then(json => json as CreatorListResponse);
+		},
+		[wsRequestLine, creatorWsDebug]
 	);
 
 	const creatorWsGetByPk = useCallback(
-		(creatorRowId: string) =>
-			runRemoteTyped(c => creatorWsGet(c, creatorRowId)) as Promise<CreatorGetResponse>,
-		[runRemoteTyped]
+		(creatorRowId: string) => wsRequestLine('creator', `/get ${creatorRowId}`).then(json => json as CreatorGetResponse),
+		[wsRequestLine]
 	);
 
 	const creatorWsGetByUserId = useCallback(
@@ -691,8 +638,13 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 
 	const creatorWsUpsert = useCallback(
 		(username: string, name: string, bio?: string) =>
-			runRemoteTyped(c => creatorWsUpsertProfile(c, username, name, bio)).then(() => {}),
-		[runRemoteTyped]
+			wsRequestLine('creator', (() => {
+				const parts: string[] = ['/upsertprofile', username.trim(), name.trim()];
+				const b = bio?.trim();
+				if (b) parts.push(b);
+				return parts.join(' ');
+			})()).then(() => {}),
+		[wsRequestLine]
 	);
 
 	useEffect(() => {
@@ -756,142 +708,76 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 	}, [mockMode, state.postsWsStatus, creatorWsSearch]);
 
 	const refreshFeed = useCallback(() => {
-		return runRemote(() => {
-			const c = clientRef.current;
-			if (!c) return Promise.resolve();
-			return c.send('posts', '/list feed 30').then(json =>
-				mapList(json).then(posts => {
-					const body = json as ListPostsResponse;
-					dispatch({
-						type: 'MERGE_POSTS_LIST',
-						payload: {
-							posts,
-							nextCursor: body.nextCursor ?? null,
-							listKind: 'feed',
-						},
-					});
-				})
-			);
-		}).catch(e => {
-			dispatch({
-				type: 'SET_WS',
-				payload: { status: 'error', error: e instanceof Error ? e.message : String(e) },
+		return wsRequestLine('posts', '/list feed 30')
+			.then(json => mapList(json).then(posts => {
+				const body = json as ListPostsResponse;
+				dispatch({ type: 'MERGE_POSTS_LIST', payload: { posts, nextCursor: body.nextCursor ?? null, listKind: 'feed' } });
+			}))
+			.catch(e => {
+				dispatch({ type: 'SET_WS', payload: { status: 'error', error: e instanceof Error ? e.message : String(e) } });
 			});
-		});
-	}, [mapList, runRemote]);
+	}, [mapList, wsRequestLine]);
 
 	const loadMoreFeed = useCallback(() => {
 		const cursor = stateRef.current.feedNextCursor;
 		if (!cursor) return Promise.resolve();
-		return runRemote(() => {
-			const c = clientRef.current;
-			if (!c) return Promise.resolve();
-			return c.send('posts', `/list feed 30 ${cursor}`).then(json =>
-				mapList(json).then(posts => {
-					const body = json as ListPostsResponse;
-					dispatch({
-						type: 'MERGE_POSTS_LIST',
-						payload: {
-							posts,
-							nextCursor: body.nextCursor ?? null,
-							listKind: 'feed',
-						},
-					});
-				})
-			);
-		}).catch(e => {
-			dispatch({
-				type: 'SET_WS',
-				payload: { status: 'error', error: e instanceof Error ? e.message : String(e) },
+		return wsRequestLine('posts', `/list feed 30 ${cursor}`)
+			.then(json => mapList(json).then(posts => {
+				const body = json as ListPostsResponse;
+				dispatch({ type: 'MERGE_POSTS_LIST', payload: { posts, nextCursor: body.nextCursor ?? null, listKind: 'feed' } });
+			}))
+			.catch(e => {
+				dispatch({ type: 'SET_WS', payload: { status: 'error', error: e instanceof Error ? e.message : String(e) } });
 			});
-		});
-	}, [mapList, runRemote]);
+	}, [mapList, wsRequestLine]);
 
 	const refreshExplore = useCallback(() => {
-		return runRemote(() => {
-			const c = clientRef.current;
-			if (!c) return Promise.resolve();
-			return c.send('posts', '/list explore 30').then(json =>
-				mapList(json).then(posts => {
-					const body = json as ListPostsResponse;
-					dispatch({
-						type: 'MERGE_POSTS_LIST',
-						payload: {
-							posts,
-							nextCursor: body.nextCursor ?? null,
-							listKind: 'explore',
-							replaceExploreOrder: true,
-						},
-					});
-				})
-			);
-		}).catch(e => {
-			dispatch({
-				type: 'SET_WS',
-				payload: { status: 'error', error: e instanceof Error ? e.message : String(e) },
+		return wsRequestLine('posts', '/list explore 30')
+			.then(json => mapList(json).then(posts => {
+				const body = json as ListPostsResponse;
+				dispatch({
+					type: 'MERGE_POSTS_LIST',
+					payload: { posts, nextCursor: body.nextCursor ?? null, listKind: 'explore', replaceExploreOrder: true },
+				});
+			}))
+			.catch(e => {
+				dispatch({ type: 'SET_WS', payload: { status: 'error', error: e instanceof Error ? e.message : String(e) } });
 			});
-		});
-	}, [mapList, runRemote]);
+	}, [mapList, wsRequestLine]);
 
 	const loadMoreExplore = useCallback(() => {
 		const cursor = stateRef.current.exploreNextCursor;
 		if (!cursor) return Promise.resolve();
-		return runRemote(() => {
-			const c = clientRef.current;
-			if (!c) return Promise.resolve();
-			return c.send('posts', `/list explore 30 ${cursor}`).then(json =>
-				mapList(json).then(posts => {
-					const body = json as ListPostsResponse;
-					dispatch({
-						type: 'MERGE_POSTS_LIST',
-						payload: {
-							posts,
-							nextCursor: body.nextCursor ?? null,
-							listKind: 'explore',
-						},
-					});
-				})
-			);
-		}).catch(e => {
-			dispatch({
-				type: 'SET_WS',
-				payload: { status: 'error', error: e instanceof Error ? e.message : String(e) },
+		return wsRequestLine('posts', `/list explore 30 ${cursor}`)
+			.then(json => mapList(json).then(posts => {
+				const body = json as ListPostsResponse;
+				dispatch({ type: 'MERGE_POSTS_LIST', payload: { posts, nextCursor: body.nextCursor ?? null, listKind: 'explore' } });
+			}))
+			.catch(e => {
+				dispatch({ type: 'SET_WS', payload: { status: 'error', error: e instanceof Error ? e.message : String(e) } });
 			});
-		});
-	}, [mapList, runRemote]);
+	}, [mapList, wsRequestLine]);
 
 	const loadCreatorPosts = useCallback(
 		(creatorId: string, reset = true) => {
 			const cursor = reset ? undefined : stateRef.current.creatorCursors[creatorId] ?? undefined;
 			if (!reset && !cursor) return Promise.resolve();
-			return runRemote(() => {
-				const c = clientRef.current;
-				if (!c) return Promise.resolve();
-				const cmd = cursor ?
-					`/list creator ${creatorId} 30 ${cursor}` :
-					`/list creator ${creatorId} 30`;
-				return c.send('posts', cmd).then(json =>
-					mapList(json).then(posts => {
-						const body = json as ListPostsResponse;
-						dispatch({
-							type: 'MERGE_POSTS_LIST',
-							payload: {
-								posts,
-								nextCursor: body.nextCursor ?? null,
-								listKind: 'creator',
-								creatorId,
-							},
-						});
-					})
-				);
-			}).catch(e => {
-				dispatch({
-					type: 'SET_WS',
-					payload: { status: 'error', error: e instanceof Error ? e.message : String(e) },
+			const cmd = cursor ?
+				`/list creator ${creatorId} 30 ${cursor}` :
+				`/list creator ${creatorId} 30`;
+			return wsRequestLine('posts', cmd)
+				.then(json => mapList(json).then(posts => {
+					const body = json as ListPostsResponse;
+					dispatch({
+						type: 'MERGE_POSTS_LIST',
+						payload: { posts, nextCursor: body.nextCursor ?? null, listKind: 'creator', creatorId },
+					});
+				}))
+				.catch(e => {
+					dispatch({ type: 'SET_WS', payload: { status: 'error', error: e instanceof Error ? e.message : String(e) } });
 				});
-			});
 		},
-		[mapList, runRemote]
+		[mapList, wsRequestLine]
 	);
 
 	const mapCommentList = useCallback(
@@ -915,10 +801,8 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 			if (Object.prototype.hasOwnProperty.call(stateRef.current.commentPagination, postId)) {
 				return Promise.resolve();
 			}
-			return runRemote(() => {
-				const c = clientRef.current;
-				if (!c) return Promise.resolve();
-				return c.send('posts', `/comments ${postId} 30`).then(json => {
+			return wsRequestLine('posts', `/comments ${postId} 30`)
+				.then(json => {
 					const body = json as ListCommentsResponse;
 					return mapCommentList(json).then(comments => {
 						dispatch({
@@ -931,20 +815,18 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 							},
 						});
 					});
-				});
-			}).catch(() => {});
+				})
+				.catch(() => {});
 		},
-		[mapCommentList, runRemote]
+		[mapCommentList, wsRequestLine]
 	);
 
 	const loadMorePostComments = useCallback(
 		(postId: string) => {
 			const next = stateRef.current.commentPagination[postId];
 			if (typeof next !== 'string' || !next) return Promise.resolve();
-			return runRemote(() => {
-				const c = clientRef.current;
-				if (!c) return Promise.resolve();
-				return c.send('posts', `/comments ${postId} 30 ${next}`).then(json => {
+			return wsRequestLine('posts', `/comments ${postId} 30 ${next}`)
+				.then(json => {
 					const body = json as ListCommentsResponse;
 					return mapCommentList(json).then(comments => {
 						dispatch({
@@ -957,19 +839,16 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 							},
 						});
 					});
-				});
-			}).catch(() => {});
+				})
+				.catch(() => {});
 		},
-		[mapCommentList, runRemote]
+		[mapCommentList, wsRequestLine]
 	);
 
 	const toggleLike = useCallback((postId: string, userId: string) => {
 		const post = stateRef.current.posts.find(p => p.id === postId);
 		const liked = post?.likedBy.includes(userId);
-		const c = clientRef.current;
-		if (!c) return Promise.resolve();
-		return c
-			.send('posts', liked ? `/unlike ${postId}` : `/like ${postId}`)
+		return wsRequestLine('posts', liked ? `/unlike ${postId}` : `/like ${postId}`)
 			.then(json => {
 				const body = json as { postId: string, like_count: number, likedByMe: boolean };
 				setPostLiked(userId, body.postId, body.likedByMe);
@@ -984,16 +863,15 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 				});
 			})
 			.catch(() => {});
-	}, []);
+	}, [wsRequestLine]);
 
 	const addComment = useCallback(
 		(postId: string, text: string) => {
-			const c = clientRef.current;
 			const u = authUserRef.current;
-			if (!c || !u) return Promise.resolve();
+			if (!u) return Promise.resolve();
 			const trimmed = text.trim();
 			if (!trimmed) return Promise.resolve();
-			return c.send('posts', `/comment ${postId} ${trimmed}`).then(json => {
+			return wsRequestLine('posts', `/comment ${postId} ${trimmed}`).then(json => {
 				const dto = (json as { comment: CommentDTO }).comment;
 				setPostCommented(u.id, postId, true);
 				return fetchProfilesForIds([dto.user_id]).then(profiles => {
@@ -1003,7 +881,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 				});
 			});
 		},
-		[fetchProfilesForIds, resolveCreatorDisplay]
+		[fetchProfilesForIds, resolveCreatorDisplay, wsRequestLine]
 	);
 
 	const addPost = useCallback((post: Post) => {
@@ -1036,9 +914,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 
 	const createPost = useCallback(
 		(input: CreatePostInput) => {
-			const c = clientRef.current;
-			if (!c) return Promise.reject(new Error('Posts connection not ready'));
-			return c.send('posts', buildCreateCommand(input)).then(json => {
+			return wsRequestLine('posts', buildCreateCommand(input)).then(json => {
 				const dto = (json as { post: PostDTO }).post;
 				const id = String(dto.user_id);
 				return fetchProfilesForIds([id]).then(profiles => {
@@ -1048,39 +924,33 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 				});
 			});
 		},
-		[fetchProfilesForIds, resolveCreatorDisplay]
+		[fetchProfilesForIds, resolveCreatorDisplay, wsRequestLine]
 	);
 
 	const editPost = useCallback((postId: string, text: string) => {
-		const c = clientRef.current;
-		if (!c) return Promise.resolve();
 		const t = text ?? '';
 		const cmd =
 			t.trim() === '' ?
 				`/edit ${postId}` :
 				`/edit ${postId} ${t}`;
-		return c.send('posts', cmd).then(() => {
+		return wsRequestLine('posts', cmd).then(() => {
 			dispatch({ type: 'UPDATE_POST', payload: { id: postId, text } });
 		});
-	}, []);
+	}, [wsRequestLine]);
 
 	const deletePost = useCallback((postId: string) => {
-		const c = clientRef.current;
-		if (!c) return Promise.resolve();
-		return c.send('posts', `/delete ${postId}`).then(() => {
+		return wsRequestLine('posts', `/delete ${postId}`).then(() => {
 			dispatch({ type: 'DELETE_POST', payload: postId });
 		});
-	}, []);
+	}, [wsRequestLine]);
 
 	const reportPost = useCallback(
 		(postId: string, reason: string): Promise<ReportPostResponse> => {
-			const c = clientRef.current;
-			if (!c) return Promise.reject(new Error('Posts connection not ready'));
 			const trimmed = reason.trim();
 			const cmd = trimmed ? `/report ${postId} ${trimmed}` : `/report ${postId}`;
-			return c.send('posts', cmd).then(json => json as ReportPostResponse);
+			return wsRequestLine('posts', cmd).then(json => json as ReportPostResponse);
 		},
-		[]
+		[wsRequestLine]
 	);
 
 	const updatePost = useCallback((post: Partial<Post> & { id: string }) => {
@@ -1088,17 +958,15 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 			dispatch({ type: 'UPDATE_POST', payload: post });
 			return Promise.resolve();
 		}
-		const c = clientRef.current;
-		if (!c) return Promise.resolve();
 		const text = post.text ?? '';
 		const cmd =
 			text.trim() === '' ?
 				`/update ${post.id}` :
 				`/update ${post.id} ${text}`;
-		return c.send('posts', cmd).then(() => {
+		return wsRequestLine('posts', cmd).then(() => {
 			dispatch({ type: 'UPDATE_POST', payload: post });
 		});
-	}, []);
+	}, [wsRequestLine]);
 
 	const unlockPost = useCallback((postId: string, userId: string) => {
 		dispatch({ type: 'UNLOCK_POST', payload: { postId, userId } });

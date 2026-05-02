@@ -4,7 +4,7 @@ const STORAGE_KEY = 'creatorsweb.user';
 
 export function getStoredUser(): User | null {
 	try {
-		const raw = globalThis.localStorage?.getItem(STORAGE_KEY);
+		const raw = globalThis.sessionStorage?.getItem(STORAGE_KEY);
 		if (!raw) return null;
 		const parsed = JSON.parse(raw) as unknown;
 		if (!parsed || typeof parsed !== 'object') return null;
@@ -16,16 +16,29 @@ export function getStoredUser(): User | null {
 
 export function setStoredUser(user: User): void {
 	try {
-		globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify(user));
+		globalThis.sessionStorage?.setItem(STORAGE_KEY, JSON.stringify(user));
 	} catch {
 		// ignore (storage blocked)
+	}
+
+	// Avoid cross-tab user snapshot bleed.
+	try {
+		globalThis.localStorage?.removeItem(STORAGE_KEY);
+	} catch {
+		// ignore
 	}
 }
 
 export function clearStoredUser(): void {
 	try {
-		globalThis.localStorage?.removeItem(STORAGE_KEY);
+		globalThis.sessionStorage?.removeItem(STORAGE_KEY);
 	} catch {
 		// ignore (storage blocked)
+	}
+
+	try {
+		globalThis.localStorage?.removeItem(STORAGE_KEY);
+	} catch {
+		// ignore
 	}
 }

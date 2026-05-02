@@ -98,6 +98,7 @@ export function ChatRoom() {
 	const [showTipModal, setShowTipModal] = useState(false);
 	const [realtimeSending, setRealtimeSending] = useState(false);
 	const [otherInRoom, setOtherInRoom] = useState(false);
+	const [nowMs, setNowMs] = useState(() => Date.now());
 	const messagesEndRef = useRef<HTMLDivElement>(null);
 	const replyIdxRef = useRef(0);
 	const lastSendRef = useRef<{ at: number, roomId: string, text: string } | null>(null);
@@ -168,12 +169,22 @@ export function ChatRoom() {
 		sessionsState.timer?.room_id === roomId ?
 			sessionsState.timer :
 			null;
+	const activeCallBookingSameRoom =
+		sessionsState.active?.accepted.kind === 'call' && sessionsState.active.accepted.room_id === roomId;
 	// If we have a timer tick for this room, it implies an accepted active booking even if `/state`
-	// didn't hydrate `active` yet (common right after reload).
-	const isBookedActive = (!!activeChatBooking || !!timerForRoom) && !endedChatBooking;
+	// didn't hydrate `active` yet (common right after reload). Timers also run for call bookings;
+	// do not treat timer alone as "booked chat" when this room is the active call.
+	const isBookedActive =
+		(!!activeChatBooking || (!!timerForRoom && !activeCallBookingSameRoom)) && !endedChatBooking;
 	const activeRequestId = activeChatBooking?.request_id ?? timerForRoom?.request_id ?? null;
 	const isBookedChatRoom = isBookedActive || !!endedChatBooking;
 	const canSendBookedChat = !isBookedChatRoom || isBookedActive;
+
+	useEffect(() => {
+		if (!isBookedActive) return;
+		const t = window.setInterval(() => setNowMs(Date.now()), 1000);
+		return () => window.clearInterval(t);
+	}, [isBookedActive]);
 
 	const { otherTyping, realtimeActive, notifyTyping, sendRealtime, sendSeen } = useRoomChat({
 		// For booked chats, the route param is the sessions room_id. After reload the conversation
@@ -379,8 +390,18 @@ export function ChatRoom() {
 			(otherInRoom ? 'Active now' : (otherIsOnline ? 'Online now' : 'Offline'));
 
 	const remainingLabel =
-		isBookedActive && timerForRoom ?
-			`${formatRemaining(timerForRoom.remaining_sec)}` :
+		isBookedActive ?
+			(() => {
+				const endsAt = timerForRoom?.ends_at;
+				if (endsAt) {
+					const endsAtMs = new Date(endsAt).getTime();
+					if (Number.isFinite(endsAtMs)) {
+						const rem = Math.max(0, Math.floor((endsAtMs - nowMs) / 1000));
+						return formatRemaining(rem);
+					}
+				}
+				return formatRemaining(timerForRoom?.remaining_sec ?? Number.NaN);
+			})() :
 			null;
 
 	return (

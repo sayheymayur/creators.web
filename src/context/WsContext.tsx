@@ -80,16 +80,16 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
 	}, []);
 
 	useEffect(() => {
-		registerCreatorsWsTeardown(async () => {
+		registerCreatorsWsTeardown(() => {
 			client.resetAuthTracking();
-			if (client.isConnected) {
-				try {
-					await client.userLogout();
-				} catch {
+			if (!client.isConnected) return Promise.resolve();
+			return client.userLogout()
+				.catch(() => {
 					/* ignore — still force a fresh socket */
-				}
-				client.reconnectSocket();
-			}
+				})
+				.then(() => {
+					client.reconnectSocket();
+				});
 		});
 		return () => registerCreatorsWsTeardown(null);
 	}, [client]);

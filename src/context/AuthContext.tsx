@@ -361,28 +361,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 	}, []);
 
 	const logout = useCallback(() => {
-		void (async () => {
-			await creatorsApi.auth.logout().catch(() => {});
-			clearPaymentGatewayCache();
-			clearSessionToken();
-			clearStoredUser();
-			setAuthStatus('guest');
-			setSessionRestoreError(null);
-			await runCreatorsWsTeardown();
+		void creatorsApi.auth.logout()
+			.catch(() => {})
+			.then(() => {
+				clearPaymentGatewayCache();
+				clearSessionToken();
+				clearStoredUser();
+				setAuthStatus('guest');
+				setSessionRestoreError(null);
+				return runCreatorsWsTeardown();
+			})
+			.then(() => {
+				if (isFirebaseConfigured) {
+					void signOut(getFirebaseAuth()).finally(() => {
+						dispatch({ type: 'LOGOUT' });
+					});
+					return;
+				}
+				dispatch({ type: 'LOGOUT' });
 
-			if (isFirebaseConfigured) {
-				void signOut(getFirebaseAuth()).finally(() => {
-					dispatch({ type: 'LOGOUT' });
+				if (!isFirebaseConfigured) return;
+				void firebaseSignOut(getFirebaseAuth()).catch(() => {
+					// Keep logout resilient even if Firebase session clear fails.
 				});
-				return;
-			}
-			dispatch({ type: 'LOGOUT' });
-
-			if (!isFirebaseConfigured) return;
-			void firebaseSignOut(getFirebaseAuth()).catch(() => {
-				// Keep logout resilient even if Firebase session clear fails.
 			});
-		})();
 	}, []);
 
 	const verifyAge = useCallback(() => {

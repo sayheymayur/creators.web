@@ -1,5 +1,5 @@
 import type { User } from '../types';
-import { clearSessionToken, getSessionToken, setSessionToken } from './sessionToken';
+import { getSessionToken, setSessionToken } from './sessionToken';
 
 export type PreferredRole = 'fan' | 'creator';
 export type UploadKind = 'post_image' | 'post_video' | 'avatar' | 'banner' | 'kyc_doc';

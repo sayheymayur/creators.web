@@ -5,23 +5,27 @@ import { useAuth } from '../../context/AuthContext';
 import { useChat } from '../../context/ChatContext';
 import { useContent } from '../../context/ContentContext';
 import { useSessions } from '../../context/SessionsContext';
+import { useCallSession } from '../../context/CallSessionContext';
 import { formatMmSsFromSeconds } from '../../utils/date';
 
+/** Top bar when a booked call is active and the user is not on `/call` and has not chosen PiP minimize. */
 export function ActiveCallBanner() {
 	const navigate = useNavigate();
 	const { state, endSession } = useSessions();
 	const { state: chatState } = useChat();
 	const { state: authState } = useAuth();
 	const { state: contentState } = useContent();
+	const { isMinimized } = useCallSession();
 	const active = state.active?.accepted?.kind === 'call' ? state.active : null;
 	const [bookedRemainingSec, setBookedRemainingSec] = useState<number | null>(null);
 	const [ending, setEnding] = useState(false);
 
 	const show = useMemo(() => {
+		if (isMinimized) return false;
 		if (!active?.accepted?.room_id) return false;
 		if (state.endedRooms[active.accepted.room_id]) return false;
 		return true;
-	}, [active?.accepted?.room_id, state.endedRooms]);
+	}, [active?.accepted?.room_id, state.endedRooms, isMinimized]);
 
 	const bookedEndsAt = useMemo(() => {
 		if (!active?.accepted?.request_id) return null;
@@ -110,7 +114,7 @@ export function ActiveCallBanner() {
 						onClick={() => { void navigate('/call'); }}
 						className="px-3 py-2 rounded-xl text-xs font-bold bg-rose-500 hover:bg-rose-600 text-white transition-colors disabled:opacity-50"
 					>
-						Resume
+						Continue
 					</button>
 				</div>
 			</div>

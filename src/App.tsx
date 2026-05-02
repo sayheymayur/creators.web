@@ -11,6 +11,8 @@ import { LiveStreamProvider } from './context/LiveStreamContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { WsProvider } from './context/WsContext';
 import { SessionsProvider } from './context/SessionsContext';
+import { CallSessionProvider } from './context/CallSessionContext';
+import { MinimizedCallWindow } from './components/call/MinimizedCallWindow';
 
 import { Landing } from './pages/Landing';
 import { Login } from './pages/auth/Login';
@@ -221,9 +223,11 @@ function Providers({ children }: { children: React.ReactNode }) {
 										<CallProvider>
 											<SessionProvider>
 												<SessionsProvider>
-													<LiveStreamProvider>
-														{children}
-													</LiveStreamProvider>
+													<CallSessionProvider>
+														<LiveStreamProvider>
+															{children}
+														</LiveStreamProvider>
+													</CallSessionProvider>
 												</SessionsProvider>
 											</SessionProvider>
 										</CallProvider>
@@ -243,6 +247,7 @@ export default function App() {
 		<Providers>
 			<ErrorBoundary>
 				<AppRoutes />
+				<MinimizedCallWindow />
 			</ErrorBoundary>
 		</Providers>
 	);

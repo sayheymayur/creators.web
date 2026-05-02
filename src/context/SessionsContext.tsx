@@ -113,6 +113,12 @@ type LocalSessionsSnapshot = Pick<
 	'outgoing' | 'incoming' | 'active' | 'timer' | 'ended' | 'endedRooms' | 'feedbackPrompt' | 'feedbackReceived'
 >;
 
+/** Fields merged from `sessions /state` only; never overwrites push-driven feedback state. */
+type SessionsRemoteHydratePayload = Pick<
+	LocalSessionsSnapshot,
+	'outgoing' | 'incoming' | 'active' | 'timer' | 'ended' | 'endedRooms'
+>;
+
 function loadLocalSessionsSnapshot(): LocalSessionsSnapshot | null {
 	try {
 		const raw = globalThis.localStorage?.getItem(LOCAL_SESSIONS_STORAGE_KEY);
@@ -154,7 +160,7 @@ type Action =
 	{ type: 'FEEDBACK_RECEIVED', payload: SessionsFeedbackReceivedEvent } |
 	{ type: 'FEEDBACK_CLEAR' } |
 	{ type: 'HYDRATE_LOCAL', payload: LocalSessionsSnapshot } |
-	{ type: 'HYDRATE_REMOTE', payload: LocalSessionsSnapshot };
+	{ type: 'HYDRATE_REMOTE', payload: SessionsRemoteHydratePayload };
 
 const initialState: SessionsState = {
 	outgoing: { state: 'idle' },
@@ -231,6 +237,7 @@ function sessionsReducer(state: SessionsState, action: Action): SessionsState {
 		}
 		case 'HYDRATE_REMOTE': {
 			// Server `/state` is source-of-truth; keep locally persisted ended markers.
+			// Do not touch `feedbackPrompt` / `feedbackReceived` (push-driven; avoids stale /state races).
 			const p = action.payload;
 			let activeOut = p.active;
 			if (
@@ -247,8 +254,11 @@ function sessionsReducer(state: SessionsState, action: Action): SessionsState {
 			}
 			return {
 				...state,
-				...p,
+				outgoing: p.outgoing,
+				incoming: p.incoming,
 				active: activeOut ?? p.active,
+				timer: p.timer,
+				ended: p.ended,
 				endedRooms: { ...state.endedRooms, ...(p.endedRooms ?? {}) },
 			};
 		}
@@ -610,13 +620,11 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 						timer: nextTimer,
 						ended: state.ended,
 						endedRooms: state.endedRooms,
-						feedbackPrompt: state.feedbackPrompt,
-						feedbackReceived: state.feedbackReceived,
 					},
 				});
 			})
 			.catch(() => {});
-	}, [ws, wsConnected, wsAuthReady, authState.user, authState.creatorProfiles, state.active, state.ended, state.endedRooms, state.feedbackPrompt, state.feedbackReceived]);
+	}, [ws, wsConnected, wsAuthReady, authState.user, authState.creatorProfiles, state.active, state.ended, state.endedRooms]);
 
 	// Spec: after reconnect/login, pull `/state` to restore outgoing/incoming/active bookings.
 	useEffect(() => {

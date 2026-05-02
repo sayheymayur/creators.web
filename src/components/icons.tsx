@@ -95,6 +95,7 @@ export const Volume2 = Fi.FiVolume2;
 export const VolumeX = Fi.FiVolumeX;
 export const RotateCcw = Fi.FiRotateCcw;
 export const Minimize2 = Fi.FiMinimize2;
+export const Maximize2 = Fi.FiMaximize2;
 
 export const PhoneIncoming = Fi.FiPhoneIncoming;
 export const PhoneMissed = Fi.FiPhoneMissed;

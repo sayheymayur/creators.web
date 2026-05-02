@@ -3,6 +3,7 @@ import { WsClient } from '../services/wsClient';
 import { useAuth } from './AuthContext';
 import { getSessionToken } from '../services/sessionToken';
 import { parseFrame } from '../services/wsProtocol';
+import { registerCreatorsWsTeardown } from '../services/wsLogoutRegistry';
 
 type WsContextValue = {
 	client: WsClient,
@@ -77,6 +78,21 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
 	const ensureAuth = useMemo(() => {
 		return () => authPromiseRef.current;
 	}, []);
+
+	useEffect(() => {
+		registerCreatorsWsTeardown(async () => {
+			client.resetAuthTracking();
+			if (client.isConnected) {
+				try {
+					await client.userLogout();
+				} catch {
+					/* ignore — still force a fresh socket */
+				}
+				client.reconnectSocket();
+			}
+		});
+		return () => registerCreatorsWsTeardown(null);
+	}, [client]);
 
 	useEffect(() => {
 		if (!import.meta.env.DEV) return;

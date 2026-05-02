@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useReducer, useCallback, useEffect, useMemo, useRef } from 'react';
 import type { Notification } from '../types';
 import { useAuth } from './AuthContext';
-import { useWs, useWsConnected } from './WsContext';
+import { useWs, useWsAuthReady, useWsConnected } from './WsContext';
 import {
 	notificationList,
 	notificationRead,
@@ -167,6 +167,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 	const { state: authState } = useAuth();
 	const ws = useWs();
 	const wsConnected = useWsConnected();
+	const wsAuthReady = useWsAuthReady();
 	const userId = authState.user?.id ?? null;
 	const fetchSeqRef = useRef(0);
 
@@ -235,7 +236,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 	}, []);
 
 	const refresh = useCallback((opts?: { unreadOnly?: boolean }): Promise<void> => {
-		if (!wsConnected || !userId) return Promise.resolve();
+		if (!wsConnected || !userId || !wsAuthReady) return Promise.resolve();
 		fetchSeqRef.current += 1;
 		const seq = fetchSeqRef.current;
 		dispatch({ type: 'SET_STATUS', payload: { status: 'loading' } });
@@ -255,10 +256,10 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 				dispatch({ type: 'SET_STATUS', payload: { status: 'error', error: msg } });
 			}
 		);
-	}, [applyListResponse, userId, ws, wsConnected]);
+	}, [applyListResponse, userId, ws, wsConnected, wsAuthReady]);
 
 	const loadMore = useCallback((): Promise<void> => {
-		if (!wsConnected || !userId) return Promise.resolve();
+		if (!wsConnected || !userId || !wsAuthReady) return Promise.resolve();
 		const cursor = state.nextCursor;
 		if (!cursor) return Promise.resolve();
 		return notificationList(ws, { limit: 30, beforeCursor: cursor }).then(
@@ -269,13 +270,13 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 				// ignore pagination failures
 			}
 		);
-	}, [applyListResponse, state.nextCursor, userId, ws, wsConnected]);
+	}, [applyListResponse, state.nextCursor, userId, ws, wsConnected, wsAuthReady]);
 
 	// Initial load + reload on login / reconnect.
 	useEffect(() => {
-		if (!userId || !wsConnected) return;
+		if (!userId || !wsConnected || !wsAuthReady) return;
 		void refresh({ unreadOnly: true });
-	}, [refresh, userId, wsConnected]);
+	}, [refresh, userId, wsConnected, wsAuthReady]);
 
 	// Push events: |notification|new|{...}
 	useEffect(() => {

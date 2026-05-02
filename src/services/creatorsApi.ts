@@ -255,11 +255,9 @@ export const creatorsApi = {
 		me(signal?: AbortSignal): Promise<MeResponse> {
 			return requestJson<MeResponse>('/me', { method: 'GET', auth: true, signal });
 		},
+		/** Caller must clear local session after this resolves (see AuthContext.logout). */
 		logout(): Promise<{ ok: true }> {
-			return requestJson<{ ok: true }>('/logout', { method: 'POST', auth: true })
-				.finally(() => {
-					clearSessionToken();
-				});
+			return requestJson<{ ok: true }>('/logout', { method: 'POST', auth: true });
 		},
 	},
 	me: {

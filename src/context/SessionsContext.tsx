@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useWs, useWsConnected } from './WsContext';
+import { useWs, useWsAuthReady, useWsConnected } from './WsContext';
 import { useAuth } from './AuthContext';
 import { useChat } from './ChatContext';
 import { useNotifications } from './NotificationContext';
@@ -263,6 +263,7 @@ const SessionsContext = createContext<SessionsContextValue | null>(null);
 export function SessionsProvider({ children }: { children: React.ReactNode }) {
 	const ws = useWs();
 	const wsConnected = useWsConnected();
+	const wsAuthReady = useWsAuthReady();
 	const navigate = useNavigate();
 	const { state: authState } = useAuth();
 	const { addConversation, addRoomMessage } = useChat();
@@ -494,7 +495,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 	};
 
 	const syncState = useCallback((reason: string) => {
-		if (!wsConnected) return;
+		if (!wsConnected || !wsAuthReady) return;
 		if (!authState.user) return;
 		const now = Date.now();
 		const prev = stateSyncRef.current;
@@ -557,12 +558,12 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 				});
 			})
 			.catch(() => {});
-	}, [ws, wsConnected, authState.user, state.ended, state.endedRooms, state.feedbackPrompt, state.feedbackReceived]);
+	}, [ws, wsConnected, wsAuthReady, authState.user, state.ended, state.endedRooms, state.feedbackPrompt, state.feedbackReceived]);
 
 	// Spec: after reconnect/login, pull `/state` to restore outgoing/incoming/active bookings.
 	useEffect(() => {
 		syncState('state');
-	}, [ws, wsConnected, authState.user?.id]);
+	}, [ws, wsConnected, wsAuthReady, authState.user?.id, syncState]);
 
 	// Spec: if timer expires, server should push `sessions|ended` + `sessions|feedbackprompt`.
 	// If a user reloads at the boundary and misses push frames, resync `/state` at ends_at and retry.

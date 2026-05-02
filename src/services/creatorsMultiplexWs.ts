@@ -302,7 +302,11 @@ export class CreatorsMultiplexWs {
 	}
 }
 
-/** Set by ContentProvider when the multiplex socket is active (for optional cross-context calls). */
+/**
+ * Optional second WebSocket stack for multiplex line-protocol chat (`useRoomChat` etc.).
+ * The app’s primary socket is `WsClient` via `WsProvider`; auth and logout use that path.
+ * Nothing calls `setCreatorsMultiplexSingleton` today unless you wire a `CreatorsMultiplexWs` instance.
+ */
 let multiplexSingleton: CreatorsMultiplexWs | null = null;
 
 export function setCreatorsMultiplexSingleton(client: CreatorsMultiplexWs | null) {

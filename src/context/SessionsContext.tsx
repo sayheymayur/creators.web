@@ -4,6 +4,7 @@ import { useWs, useWsAuthReady, useWsConnected } from './WsContext';
 import { useAuth } from './AuthContext';
 import { useChat } from './ChatContext';
 import { useNotifications } from './NotificationContext';
+import { mockCreators } from '../data/users';
 import { ensureMediaPermissions, isDeviceInUseError } from '../services/mediaPermissions';
 import {
 	sessionsAccept,
@@ -54,6 +55,8 @@ export type ActiveBookingState = {
 	 */
 	uiCallType?: SessionsUiCallType,
 	otherDisplay?: { name: string, avatar: string },
+	/** From server booking row when syncing `/state`; used for name fallbacks (e.g. ContentContext). */
+	peerIds?: { fan_user_id: string, creator_user_id: string },
 };
 
 export type FeedbackPromptState = {
@@ -228,10 +231,25 @@ function sessionsReducer(state: SessionsState, action: Action): SessionsState {
 		}
 		case 'HYDRATE_REMOTE': {
 			// Server `/state` is source-of-truth; keep locally persisted ended markers.
+			const p = action.payload;
+			let activeOut = p.active;
+			if (
+				p.active?.accepted?.request_id &&
+				state.active?.accepted?.request_id === p.active.accepted.request_id
+			) {
+				activeOut = {
+					...p.active,
+					otherDisplay: p.active.otherDisplay?.name ? p.active.otherDisplay : state.active.otherDisplay,
+					peerIds: p.active.peerIds ?? state.active.peerIds,
+					uiCallType: p.active.uiCallType ?? state.active.uiCallType,
+					minutes: p.active.minutes ?? state.active.minutes,
+				};
+			}
 			return {
 				...state,
-				...action.payload,
-				endedRooms: { ...state.endedRooms, ...(action.payload.endedRooms ?? {}) },
+				...p,
+				active: activeOut ?? p.active,
+				endedRooms: { ...state.endedRooms, ...(p.endedRooms ?? {}) },
 			};
 		}
 		default:
@@ -367,18 +385,20 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 						const row = state.incoming.find(r => r.request.request_id === res.request_id)?.request;
 						return row ? { userId: row.fan_user_id, name: row.fan_display } : undefined;
 					})();
+				const me = authState.user;
 				dispatch({
 					type: 'ACTIVE_SET',
 					payload: {
 						accepted: res,
 						uiCallType: uiCallTypeByRequestIdRef.current[res.request_id],
 						otherDisplay: fan ? { name: fan.name, avatar: '' } : undefined,
+						peerIds: fan && me?.role === 'creator' ? { fan_user_id: fan.userId, creator_user_id: me.id } : undefined,
 					},
 				});
 				return res;
 			});
 		},
-		[ws, state.incoming]
+		[ws, state.incoming, authState.user]
 	);
 
 	const rejectSession = useCallback(
@@ -528,15 +548,53 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 					}));
 
 				const activeAccepted = activeRows.find(r => r.status === 'accepted' && !!r.room_id) ?? null;
-				const nextActive: ActiveBookingState | null = activeAccepted ?
-					{
+				let nextActive: ActiveBookingState | null = null;
+				if (activeAccepted) {
+					const rid = activeAccepted.id;
+					const prevSame =
+						state.active?.accepted?.request_id === rid ?
+							state.active.otherDisplay :
+							undefined;
+					let otherDisplay: { name: string, avatar: string } | undefined;
+					if (prevSame?.name) {
+						otherDisplay = prevSame;
+					} else {
+						const me = authState.user;
+						const creatorMeta = creatorMetaByRequestIdRef.current[rid];
+						const fanMeta = fanMetaByRequestIdRef.current[rid];
+						if (me?.role === 'creator') {
+							otherDisplay = fanMeta?.name ?
+								{ name: fanMeta.name, avatar: '' } :
+								{ name: 'Fan', avatar: '' };
+						} else if (me) {
+							if (creatorMeta?.name) {
+								otherDisplay = { name: creatorMeta.name, avatar: creatorMeta.avatar };
+							} else {
+								const authProf = authState.creatorProfiles[activeAccepted.creator_user_id];
+								if (authProf?.name) {
+									otherDisplay = { name: authProf.name, avatar: authProf.avatar ?? '' };
+								} else {
+									const mock = mockCreators.find(c => c.id === activeAccepted.creator_user_id);
+									otherDisplay = mock ?
+										{ name: mock.name, avatar: mock.avatar } :
+										{ name: 'Creator', avatar: '' };
+								}
+							}
+						}
+					}
+					nextActive = {
 						accepted: bookingRowToAccepted(activeAccepted),
 						minutes: activeAccepted.duration_minutes,
 						uiCallType:
 							(state.active?.accepted?.request_id === activeAccepted.id ? state.active.uiCallType : undefined) ??
 							uiCallTypeByRequestIdRef.current[activeAccepted.id],
-					} :
-					null;
+						otherDisplay,
+						peerIds: {
+							fan_user_id: activeAccepted.fan_user_id,
+							creator_user_id: activeAccepted.creator_user_id,
+						},
+					};
+				}
 
 				const nextTimer =
 					activeAccepted ?
@@ -558,7 +616,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 				});
 			})
 			.catch(() => {});
-	}, [ws, wsConnected, wsAuthReady, authState.user, state.ended, state.endedRooms, state.feedbackPrompt, state.feedbackReceived]);
+	}, [ws, wsConnected, wsAuthReady, authState.user, authState.creatorProfiles, state.active, state.ended, state.endedRooms, state.feedbackPrompt, state.feedbackReceived]);
 
 	// Spec: after reconnect/login, pull `/state` to restore outgoing/incoming/active bookings.
 	useEffect(() => {
@@ -657,6 +715,12 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 				me?.role === 'creator' ?
 					(fanMeta ? { name: fanMeta.name, avatar: '' } : undefined) :
 					(creatorMeta ? { name: creatorMeta.name, avatar: creatorMeta.avatar } : undefined);
+			const peerIds =
+				me?.role === 'creator' && fanMeta && me ?
+					{ fan_user_id: fanMeta.userId, creator_user_id: me.id } :
+					me?.role === 'fan' && creatorMeta && me ?
+						{ fan_user_id: me.id, creator_user_id: creatorMeta.userId } :
+						undefined;
 			dispatch({ type: 'OUTGOING_ACCEPTED', payload });
 			dispatch({
 				type: 'ACTIVE_SET',
@@ -665,6 +729,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 					minutes: minutesByRequestIdRef.current[payload.request_id],
 					uiCallType: uiCallTypeByRequestIdRef.current[payload.request_id],
 					otherDisplay,
+					peerIds,
 				},
 			});
 			if (payload.kind === 'call') {

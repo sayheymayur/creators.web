@@ -2,10 +2,10 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AgoraRTC, { type IAgoraRTCClient, type ILocalAudioTrack, type ILocalVideoTrack } from 'agora-rtc-sdk-ng';
 import { Radio, Eye, Gift, DollarSign, ArrowLeft, Send, X, Users } from '../../components/icons';
-import { useLiveStream, VIRTUAL_GIFTS } from '../../context/LiveStreamContext';
+import { useLiveStream, useMyActiveLive, VIRTUAL_GIFTS } from '../../context/LiveStreamContext';
 import { useCurrentCreator } from '../../context/AuthContext';
 import { useEnsureWsAuth, useWs } from '../../context/WsContext';
-import type { LiveVisibility } from '../../services/liveWsTypes';
+import type { LiveVisibility, LiveWithAgora } from '../../services/liveWsTypes';
 import { formatINR } from '../../services/razorpay';
 
 function formatElapsed(startedAt: string): string {
@@ -28,6 +28,7 @@ export function GoLivePage() {
 	const ws = useWs();
 	const ensureAuth = useEnsureWsAuth();
 	const { goLive, endLive, getStream, state: lsState, ready: liveWsReady } = useLiveStream();
+	const myActiveLive = useMyActiveLive();
 	const [visibility, setVisibility] = useState<LiveVisibility>('everyone');
 	const [title, setTitle] = useState('');
 	const [isLive, setIsLive] = useState(false);
@@ -46,6 +47,17 @@ export function GoLivePage() {
 	const hostAudioTrackRef = useRef<ILocalAudioTrack | null>(null);
 	const hostVideoTrackRef = useRef<ILocalVideoTrack | null>(null);
 	const userEndedRef = useRef(false);
+	/** Bumps when a new host attach starts; stale async handlers must not set React state. */
+	const hostAttachGenRef = useRef(0);
+	/** Mirrors `isLive` for the host-attach effect without listing `isLive` in deps (that caused cleanup → leave() right after publish). */
+	const isLiveRef = useRef(false);
+	isLiveRef.current = isLive;
+
+	function isJoinAbortedError(err: unknown): boolean {
+		if (typeof err !== 'object' || err === null) return false;
+		const o = err as { code?: string, message?: string };
+		return o.code === 'OPERATION_ABORTED' || (typeof o.message === 'string' && o.message.includes('OPERATION_ABORTED'));
+	}
 
 	useEffect(() => {
 		return () => {
@@ -103,6 +115,30 @@ export function GoLivePage() {
 		void navigate('/creator-dashboard');
 	}, [isLive, lsState.myLive, navigate]);
 
+	// Single place for host Agora: when `myLive` is set (fresh goLive, hydrated creds, or
+	// Continue stream) and we are not yet `isLive`, attach once. `handleGoLive` must not
+	// call attachHostAgora too — goLive() dispatches myLive while isLive is still false,
+	// which would duplicate attach and bump hostAttachGenRef so the winning client leaves.
+	// Cleanup must cancel in-flight join (React Strict Mode remount leaves the channel and
+	// aborts join); a second mount retries.
+	// Do not depend on `isLive`: when publish succeeds we set `isLive` true and a dep on it
+	// would run this cleanup and call leave() while the host must stay in the channel.
+	useEffect(() => {
+		if (isLiveRef.current) return;
+		const live = myActiveLive.live;
+		if (!live) return;
+		if (myActiveLive.expired) {
+			setAgoraError('Host token expired. Please end this stream and start a new one.');
+			return;
+		}
+		const cancelledRef = { current: false };
+		void attachHostAgora(live, { getCancelled: () => cancelledRef.current });
+		return () => {
+			cancelledRef.current = true;
+			void hostClientRef.current?.leave().catch(() => undefined);
+		};
+	}, [myActiveLive.live?.live_id, myActiveLive.expired]);
+
 	if (!creator) {
 		return (
 			<div className="min-h-screen bg-background text-foreground flex items-center justify-center">
@@ -122,6 +158,97 @@ export function GoLivePage() {
 		hostClientRef.current = null;
 	}
 
+	function startTickers(live: LiveWithAgora) {
+		const s = getStream(live.live_id);
+		const startedAt = s?.startedAt ?? live.started_at;
+		setElapsed(formatElapsed(startedAt));
+		elapsedRef.current = setInterval(() => {
+			setElapsed(formatElapsed(startedAt));
+		}, 1000);
+		let viewers = s?.viewerCount ?? 0;
+		setViewerSimCount(viewers);
+		viewerRef.current = setInterval(() => {
+			const delta = Math.floor(Math.random() * 5) - 1;
+			viewers = Math.max(0, viewers + delta + 2);
+			setViewerSimCount(viewers);
+		}, 3000);
+	}
+
+	type AttachOpts = { getCancelled?: () => boolean };
+
+	function attachHostAgora(live: LiveWithAgora, opts?: AttachOpts) {
+		const getCancelled = opts?.getCancelled ?? (() => false);
+		hostAttachGenRef.current += 1;
+		const gen = hostAttachGenRef.current;
+		const stillCurrent = () => gen === hostAttachGenRef.current;
+
+		const client = AgoraRTC.createClient({ codec: 'vp8', mode: 'live' });
+		client.setClientRole('host');
+		hostClientRef.current = client;
+		setAgoraError('');
+		const { app_id, channel_name, uid, token } = live.agora;
+		// Token TTL is server-controlled (AGORA_LIVE_TOKEN_TTL_SEC). The spec has no refresh
+		// command, so on join failure we surface a clear error and let the creator end & restart.
+		return client.join(app_id, channel_name, token || null, uid).then(() => {
+			if (!stillCurrent()) return client.leave().catch(() => undefined);
+			if (getCancelled()) return client.leave().then(() => undefined);
+			return AgoraRTC.createMicrophoneAudioTrack().then(audioTrack => {
+				if (!stillCurrent()) {
+					audioTrack.close();
+					return client.leave().catch(() => undefined);
+				}
+				hostAudioTrackRef.current = audioTrack;
+				return AgoraRTC.createCameraVideoTrack().then(videoTrack => {
+					if (!stillCurrent()) {
+						audioTrack.close();
+						videoTrack.close();
+						return client.leave().catch(() => undefined);
+					}
+					hostVideoTrackRef.current = videoTrack;
+					setHasLocalVideo(true);
+					if (localVideoRef.current) videoTrack.play(localVideoRef.current);
+					return client.publish([audioTrack, videoTrack]);
+				}).catch(() => {
+					if (!stillCurrent()) {
+						audioTrack.close();
+						return client.leave().catch(() => undefined);
+					}
+					return client.publish([audioTrack]);
+				});
+			}).then(() => {
+				if (hostClientRef.current !== client || !stillCurrent()) return;
+				if (getCancelled()) {
+					hostAudioTrackRef.current?.close();
+					hostVideoTrackRef.current?.close();
+					hostAudioTrackRef.current = null;
+					hostVideoTrackRef.current = null;
+					setHasLocalVideo(false);
+					return client.leave().then(() => {
+						if (hostClientRef.current === client) hostClientRef.current = null;
+					});
+				}
+				setAgoraError('');
+				setActiveLiveId(live.live_id);
+				setIsLive(true);
+				startTickers(live);
+			});
+		}).catch((err: unknown) => {
+			if (!stillCurrent()) return;
+			if (getCancelled() || isJoinAbortedError(err)) return;
+			const expired =
+				live.agora?.expires_at && new Date(live.agora.expires_at).getTime() <= Date.now();
+			if (expired) {
+				setAgoraError('Host token expired. Please end this stream and start a new one.');
+			} else {
+				setAgoraError('Live media could not connect. Showing fallback preview.');
+			}
+			console.warn('[golive] Agora join failed', err);
+			setActiveLiveId(live.live_id);
+			setIsLive(true);
+			startTickers(live);
+		});
+	}
+
 	function handleGoLive() {
 		if (!title.trim()) return;
 		if (!liveWsReady) {
@@ -131,57 +258,6 @@ export function GoLivePage() {
 		setGoLiveError('');
 		void ensureAuth()
 			.then(() => goLive(visibility, title.trim()))
-			.then(live => {
-				const client = AgoraRTC.createClient({ codec: 'vp8', mode: 'live' });
-				client.setClientRole('host');
-				hostClientRef.current = client;
-				setAgoraError('');
-				const { app_id, channel_name, uid, token } = live.agora;
-				// Token TTL is server-controlled (AGORA_LIVE_TOKEN_TTL_SEC). Re-issue `/joinlive` or a future
-				// refresh endpoint before `expires_at` if sessions outlast the token.
-				return client.join(app_id, channel_name, token || null, uid).then(() => (
-					AgoraRTC.createMicrophoneAudioTrack().then(audioTrack => {
-						hostAudioTrackRef.current = audioTrack;
-						return AgoraRTC.createCameraVideoTrack().then(videoTrack => {
-							hostVideoTrackRef.current = videoTrack;
-							setHasLocalVideo(true);
-							if (localVideoRef.current) videoTrack.play(localVideoRef.current);
-							return client.publish([audioTrack, videoTrack]);
-						}).catch(() => client.publish([audioTrack]));
-					})
-				)).then(() => {
-					setActiveLiveId(live.live_id);
-					setIsLive(true);
-					const s = getStream(live.live_id);
-					const startedAt = s?.startedAt ?? live.started_at;
-					elapsedRef.current = setInterval(() => {
-						setElapsed(formatElapsed(startedAt));
-					}, 1000);
-					let viewers = s?.viewerCount ?? 0;
-					setViewerSimCount(viewers);
-					viewerRef.current = setInterval(() => {
-						const delta = Math.floor(Math.random() * 5) - 1;
-						viewers = Math.max(0, viewers + delta + 2);
-						setViewerSimCount(viewers);
-					}, 3000);
-				}).catch(() => {
-					setAgoraError('Live media could not connect. Showing fallback preview.');
-					setActiveLiveId(live.live_id);
-					setIsLive(true);
-					const s = getStream(live.live_id);
-					const startedAt = s?.startedAt ?? live.started_at;
-					elapsedRef.current = setInterval(() => {
-						setElapsed(formatElapsed(startedAt));
-					}, 1000);
-					let viewers = s?.viewerCount ?? 0;
-					setViewerSimCount(viewers);
-					viewerRef.current = setInterval(() => {
-						const delta = Math.floor(Math.random() * 5) - 1;
-						viewers = Math.max(0, viewers + delta + 2);
-						setViewerSimCount(viewers);
-					}, 3000);
-				});
-			})
 			.catch((e: unknown) => {
 				setGoLiveError(e instanceof Error ? e.message : 'Could not go live');
 			});

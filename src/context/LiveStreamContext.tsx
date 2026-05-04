@@ -260,6 +260,44 @@ interface LiveStreamContextValue {
 
 const LiveStreamContext = createContext<LiveStreamContextValue | null>(null);
 
+/**
+ * sessionStorage key for the host's `goLive` Agora response, scoped per user.
+ * The spec has no "re-mint host token" command, so reload-resume is best-effort:
+ * we re-attach using the cached creds while `agora.expires_at` holds and the live
+ * still appears in `/listlive`.
+ */
+const HOST_LIVE_CREDS_STORAGE_KEY = 'cw.live.myLiveCreds.v1';
+
+type HostLiveCredsByUser = Record<string, LiveWithAgora>;
+
+function loadHostLiveCredsByUser(): HostLiveCredsByUser {
+	try {
+		const raw = globalThis.sessionStorage?.getItem(HOST_LIVE_CREDS_STORAGE_KEY);
+		if (!raw) return {};
+		const parsed = JSON.parse(raw) as unknown;
+		if (!parsed || typeof parsed !== 'object') return {};
+		return parsed as HostLiveCredsByUser;
+	} catch {
+		return {};
+	}
+}
+
+function saveHostLiveCredsByUser(next: HostLiveCredsByUser) {
+	try {
+		globalThis.sessionStorage?.setItem(HOST_LIVE_CREDS_STORAGE_KEY, JSON.stringify(next));
+	} catch {
+		// ignore; sessionStorage may be disabled (private mode etc.)
+	}
+}
+
+function isLiveAgoraExpired(live: LiveWithAgora): boolean {
+	const exp = live.agora?.expires_at;
+	if (!exp) return false;
+	const ms = new Date(exp).getTime();
+	if (!Number.isFinite(ms)) return false;
+	return ms <= Date.now();
+}
+
 function pickCreatorDisplay(
 	creatorUserId: string,
 	creatorProfiles: Record<string, { name: string, avatar: string }>
@@ -302,6 +340,9 @@ export function LiveStreamProvider({ children }: { children: React.ReactNode }) 
 	const wsAuthReady = useWsAuthReady();
 	const { state: authState } = useAuth();
 	const [state, dispatch] = useReducer(liveReducer, initialState);
+	const hostCredsByUserRef = useRef<HostLiveCredsByUser>(loadHostLiveCredsByUser());
+	const hydratedForUserRef = useRef<string | null>(null);
+	const joinLiveInflightRef = useRef<Record<string, Promise<LiveWithAgora>>>({});
 
 	// Refs so event handlers always see the latest value without re-binding.
 	const myLiveRef = useRef<LiveWithAgora | null>(null);
@@ -310,6 +351,24 @@ export function LiveStreamProvider({ children }: { children: React.ReactNode }) 
 	joinedLiveRef.current = state.joinedLive;
 
 	const ready = wsConnected && wsAuthReady;
+
+	const persistHostCreds = useCallback((live: LiveWithAgora | null) => {
+		const uid = authState.user?.id ?? '';
+		if (!uid) return;
+		const next = { ...hostCredsByUserRef.current };
+		if (live) {
+			next[uid] = live;
+		} else {
+			delete next[uid];
+		}
+		hostCredsByUserRef.current = next;
+		saveHostLiveCredsByUser(next);
+	}, [authState.user?.id]);
+
+	// Re-arm hydration when the active user changes (logout/login on same tab).
+	useEffect(() => {
+		hydratedForUserRef.current = null;
+	}, [authState.user?.id]);
 
 	const refreshLives = useCallback((): Promise<void> => {
 		if (!ws.isConnected) return Promise.resolve();
@@ -327,6 +386,7 @@ export function LiveStreamProvider({ children }: { children: React.ReactNode }) 
 			return liveGoLive(ws, { visibility, title }).then(res => {
 				dispatch({ type: 'SET_MY_LIVE', payload: res });
 				dispatch({ type: 'UPSERT_DISCOVERY', payload: stripAgora(res) });
+				persistHostCreds(res);
 				// Creator joins the chat room so they receive `chat|c` for viewer messages.
 				if (res.room_id) {
 					void ws.request('chat', 'joinroom', [res.room_id]).catch(() => {});
@@ -334,18 +394,28 @@ export function LiveStreamProvider({ children }: { children: React.ReactNode }) 
 				return res;
 			});
 		},
-		[ws]
+		[ws, persistHostCreds]
 	);
 
 	const joinLive = useCallback(
 		(liveId: string): Promise<LiveWithAgora> => {
-			return liveJoinLive(ws, liveId).then(res => {
+			// In dev, React Strict Mode can run effects twice (mount → unmount → mount).
+			// If a viewer opens a live stream, the page effect may call joinLive twice.
+			// Deduplicate in-flight joins per liveId so we don't spam `/joinlive` and `/joinroom`.
+			const inflight = joinLiveInflightRef.current[liveId];
+			if (inflight !== undefined) return inflight;
+
+			const p = liveJoinLive(ws, liveId).then(res => {
 				dispatch({ type: 'SET_JOINED_LIVE', payload: res });
 				dispatch({ type: 'UPSERT_DISCOVERY', payload: stripAgora(res) });
 				if (res.room_id) {
 					void ws.request('chat', 'joinroom', [res.room_id]).catch(() => {});
 				}
 				return res;
+			});
+			joinLiveInflightRef.current[liveId] = p;
+			return p.finally(() => {
+				if (joinLiveInflightRef.current[liveId] === p) delete joinLiveInflightRef.current[liveId];
 			});
 		},
 		[ws]
@@ -364,13 +434,14 @@ export function LiveStreamProvider({ children }: { children: React.ReactNode }) 
 			const roomId = res.live?.room_id ?? myLiveRef.current?.room_id ?? '';
 			if (roomId) void ws.request('chat', 'leaveroom', [roomId]).catch(() => {});
 			dispatch({ type: 'SET_MY_LIVE', payload: null });
+			persistHostCreds(null);
 			if (liveId) {
 				dispatch({ type: 'REMOVE_DISCOVERY', payload: { live_id: liveId } });
 				dispatch({ type: 'CLEAR_OVERLAY', payload: { liveId } });
 			}
 			return res;
 		});
-	}, [ws]);
+	}, [ws, persistHostCreds]);
 
 	const appendLocalChat = useCallback((liveId: string, msg: LiveChatMessage) => {
 		dispatch({ type: 'APPEND_CHAT', payload: { liveId, message: msg } });
@@ -416,6 +487,7 @@ export function LiveStreamProvider({ children }: { children: React.ReactNode }) 
 			dispatch({ type: 'CLEAR_OVERLAY', payload: { liveId: payload.live_id } });
 			if (myLiveRef.current?.live_id === payload.live_id) {
 				dispatch({ type: 'SET_MY_LIVE', payload: null });
+				persistHostCreds(null);
 			}
 			if (joinedLiveRef.current?.live_id === payload.live_id) {
 				dispatch({ type: 'SET_JOINED_LIVE', payload: null });
@@ -445,13 +517,48 @@ export function LiveStreamProvider({ children }: { children: React.ReactNode }) 
 			offEnded();
 			offChat();
 		};
-	}, [ws, authState]);
+	}, [ws, authState, persistHostCreds]);
 
 	// Fetch initial discovery once auth is ready, and again on auth/connect changes.
+	// Also rehydrate the host's `myLive` from sessionStorage if the cached creds are still
+	// fresh (token not expired) AND the backend `public_lives` row is still active.
 	useEffect(() => {
 		if (!ready) return;
-		void refreshLives();
-	}, [ready, refreshLives]);
+		const uid = authState.user?.id ?? '';
+		void liveListLive(ws)
+			.then(res => {
+				const lives = res.lives ?? [];
+				dispatch({ type: 'SET_DISCOVERY', payload: lives });
+				if (!uid) return;
+				if (hydratedForUserRef.current === uid) return;
+				hydratedForUserRef.current = uid;
+
+				const cached = hostCredsByUserRef.current[uid];
+				if (!cached) return;
+
+				// Drop expired-token cache outright (no refresh command in spec).
+				if (isLiveAgoraExpired(cached)) {
+					persistHostCreds(null);
+					return;
+				}
+
+				const stillLive = lives.some(l => l.live_id === cached.live_id && l.status !== 'ended');
+				if (!stillLive) {
+					// Server already ended this row; clean up cache.
+					persistHostCreds(null);
+					return;
+				}
+				// Restore the host context. Re-attach to chat so the creator gets `chat|c`.
+				dispatch({ type: 'SET_MY_LIVE', payload: cached });
+				dispatch({ type: 'UPSERT_DISCOVERY', payload: stripAgora(cached) });
+				if (cached.room_id) {
+					void ws.request('chat', 'joinroom', [cached.room_id]).catch(() => {});
+				}
+			})
+			.catch(() => {
+				// Soft fail — Explore continues with mock fallback; resume can be retried on next ready.
+			});
+	}, [ready, ws, authState.user?.id, persistHostCreds]);
 
 	const getLiveStreams = useCallback((): LiveStream[] => {
 		// Spec is the source of truth when the socket is auth-ready; otherwise show fallbacks.
@@ -529,6 +636,47 @@ export function useLiveStream(): LiveStreamContextValue {
 	const ctx = useContext(LiveStreamContext);
 	if (!ctx) throw new Error('useLiveStream must be used within LiveStreamProvider');
 	return ctx;
+}
+
+export interface MyActiveLive {
+	/** Cached host creds (Agora) for the creator's active stream, if any. */
+	live: LiveWithAgora | null;
+	/** True if a backend `public_lives` row exists for this creator but the cached Agora token is expired. */
+	expired: boolean;
+	/**
+	 * True if discovery shows a row for the creator but no usable cached creds exist
+	 * (e.g. sessionStorage was cleared on a different device). Resume isn't possible;
+	 * the creator can only `endLive()` and start a fresh `/golive`.
+	 */
+	stale: boolean;
+}
+
+/**
+ * Selector for the creator's currently-active live. Combines:
+ * - `state.myLive` (cached host creds), and
+ * - any `state.discovery` row whose `creator_user_id` matches the logged-in user.
+ *
+ * The card in ContentManager uses this to render "Continue stream" / "End live".
+ */
+export function useMyActiveLive(): MyActiveLive {
+	const ctx = useContext(LiveStreamContext);
+	if (!ctx) throw new Error('useMyActiveLive must be used within LiveStreamProvider');
+	const { state: authState } = useAuth();
+	const uid = authState.user?.id ?? '';
+
+	if (!uid) return { live: null, expired: false, stale: false };
+
+	const myLive = ctx.state.myLive;
+	if (myLive?.creator_user_id === uid) {
+		return { live: myLive, expired: isLiveAgoraExpired(myLive), stale: false };
+	}
+
+	// Fallback: backend reports we have an active row, but local creds aren't loaded.
+	const row = ctx.state.discovery.find(l => l.creator_user_id === uid && l.status !== 'ended');
+	if (row) {
+		return { live: null, expired: false, stale: true };
+	}
+	return { live: null, expired: false, stale: false };
 }
 
 function stripAgora(row: LiveWithAgora): LivePublic {

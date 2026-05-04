@@ -106,6 +106,7 @@ export function LiveStreamRoom() {
 
 				const { app_id, channel_name, uid, token } = live.agora;
 				return client.join(app_id, channel_name, token || null, uid).catch(() => {
+					if (cancelled) return;
 					setAgoraError('Live media unavailable. Showing fallback preview.');
 				});
 			})

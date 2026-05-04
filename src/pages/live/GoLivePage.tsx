@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AgoraRTC, { type IAgoraRTCClient, type ILocalAudioTrack, type ILocalVideoTrack } from 'agora-rtc-sdk-ng';
-import { Radio, Eye, Gift, DollarSign, ArrowLeft, Send, X, Users } from '../../components/icons';
+import { Radio, Eye, Gift, DollarSign, ArrowLeft, Send, Users } from '../../components/icons';
 import { useLiveStream, useMyActiveLive, VIRTUAL_GIFTS } from '../../context/LiveStreamContext';
 import { useCurrentCreator } from '../../context/AuthContext';
 import { useEnsureWsAuth, useWs } from '../../context/WsContext';
@@ -39,6 +39,7 @@ export function GoLivePage() {
 	const [agoraError, setAgoraError] = useState('');
 	const [hasLocalVideo, setHasLocalVideo] = useState(false);
 	const [goLiveError, setGoLiveError] = useState('');
+	const [showEndConfirm, setShowEndConfirm] = useState(false);
 	const elapsedRef = useRef<ReturnType<typeof setInterval> | null>(null);
 	const viewerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 	const chatEndRef = useRef<HTMLDivElement>(null);
@@ -406,22 +407,69 @@ export function GoLivePage() {
 				)}
 
 				<div className="absolute top-0 left-0 right-0 p-4 pt-12 flex items-center gap-3">
-					<div className="flex items-center gap-2 bg-rose-500 rounded-xl px-3 py-1.5">
+					<div className="flex items-center gap-2 bg-rose-500 rounded-xl px-3 py-1.5 shrink-0">
 						<div className="w-2 h-2 bg-white rounded-full animate-pulse" />
 						<span className="text-white text-xs font-bold">LIVE</span>
 					</div>
-					<div className="flex items-center gap-1.5 bg-background/70 text-foreground dark:bg-black/40 dark:text-white backdrop-blur-sm rounded-xl px-3 py-1.5">
+					<div className="flex items-center gap-1.5 bg-background/70 text-foreground dark:bg-black/40 dark:text-white backdrop-blur-sm rounded-xl px-3 py-1.5 shrink-0">
 						<Eye className="w-3.5 h-3.5 text-muted dark:text-white/60" />
 						<span className="text-foreground dark:text-white text-xs font-semibold">{viewerSimCount}</span>
 					</div>
-					<div className="bg-background/70 text-foreground dark:bg-black/40 dark:text-white backdrop-blur-sm rounded-xl px-3 py-1.5">
+					<div className="bg-background/70 text-foreground dark:bg-black/40 dark:text-white backdrop-blur-sm rounded-xl px-3 py-1.5 shrink-0">
 						<span className="text-muted dark:text-white/50 text-xs font-mono">{elapsed}</span>
 					</div>
-					<div className="ml-auto flex items-center gap-1.5 bg-amber-500/20 backdrop-blur-sm border border-amber-500/30 rounded-xl px-3 py-1.5">
-						<DollarSign className="w-3.5 h-3.5 text-amber-400" />
-						<span className="text-amber-400 text-xs font-semibold">{formatINR(totalGiftValue)}</span>
+					<div className="ml-auto flex items-center gap-2 shrink-0">
+						<div className="flex items-center gap-1.5 bg-amber-500/20 backdrop-blur-sm border border-amber-500/30 rounded-xl px-3 py-1.5">
+							<DollarSign className="w-3.5 h-3.5 text-amber-400" />
+							<span className="text-amber-400 text-xs font-semibold">{formatINR(totalGiftValue)}</span>
+						</div>
+						<button
+							type="button"
+							onClick={() => { setShowEndConfirm(true); }}
+							className="px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-500/90 text-white border border-rose-400/40 hover:bg-rose-600 active:scale-[0.98] transition-all"
+						>
+							End
+						</button>
 					</div>
 				</div>
+
+				{showEndConfirm && (
+					<div
+						className="absolute inset-0 z-40 flex items-center justify-center p-6 bg-black/55 backdrop-blur-sm"
+						role="presentation"
+						onClick={() => { setShowEndConfirm(false); }}
+					>
+						<div
+							role="dialog"
+							aria-modal="true"
+							aria-labelledby="end-live-title"
+							className="w-full max-w-sm rounded-2xl border border-border/20 bg-background text-foreground shadow-xl p-5 space-y-4"
+							onClick={e => { e.stopPropagation(); }}
+						>
+							<h2 id="end-live-title" className="text-base font-bold text-foreground">End live stream?</h2>
+							<p className="text-sm text-muted">Viewers will be disconnected and this broadcast will stop.</p>
+							<div className="flex gap-2 justify-end pt-1">
+								<button
+									type="button"
+									onClick={() => { setShowEndConfirm(false); }}
+									className="px-4 py-2.5 rounded-xl text-sm font-semibold bg-foreground/10 text-foreground hover:bg-foreground/15 transition-colors"
+								>
+									Cancel
+								</button>
+								<button
+									type="button"
+									onClick={() => {
+										setShowEndConfirm(false);
+										handleEndLive();
+									}}
+									className="px-4 py-2.5 rounded-xl text-sm font-semibold bg-rose-500 text-white hover:bg-rose-600 transition-colors"
+								>
+									End stream
+								</button>
+							</div>
+						</div>
+					</div>
+				)}
 
 				<div className="absolute bottom-0 left-0 right-0">
 					<div className="px-4 pb-2 max-h-44 overflow-y-auto space-y-1.5">
@@ -448,8 +496,8 @@ export function GoLivePage() {
 						<div ref={chatEndRef} />
 					</div>
 
-					<div className="px-4 pb-4 flex items-center gap-2">
-						<form onSubmit={handleSendChat} className="flex-1 flex gap-2">
+					<div className="px-4 pb-4">
+						<form onSubmit={handleSendChat} className="flex gap-2">
 							<input
 								value={text}
 								onChange={e => setText(e.target.value)}
@@ -459,17 +507,11 @@ export function GoLivePage() {
 							<button
 								type="submit"
 								disabled={!text.trim()}
-								className="w-10 h-10 bg-rose-500 hover:bg-rose-600 disabled:opacity-40 rounded-xl flex items-center justify-center"
+								className="w-10 h-10 shrink-0 bg-rose-500 hover:bg-rose-600 disabled:opacity-40 rounded-xl flex items-center justify-center"
 							>
 								<Send className="w-4 h-4 text-white" />
 							</button>
 						</form>
-						<button
-							onClick={() => { handleEndLive(); }}
-							className="w-10 h-10 bg-background/70 text-foreground dark:bg-white/10 dark:text-white backdrop-blur-sm border border-border/30 dark:border-white/15 rounded-xl flex items-center justify-center text-rose-400 hover:bg-rose-500/20 transition-all"
-						>
-							<X className="w-5 h-5" />
-						</button>
 					</div>
 				</div>
 			</div>

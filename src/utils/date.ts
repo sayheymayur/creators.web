@@ -22,3 +22,10 @@ export function formatDate(dateString: string): string {
 export function formatCurrency(amount: number): string {
 	return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Math.abs(amount));
 }
+
+/** mm:ss for countdowns / call duration (non-negative seconds). */
+export function formatMmSsFromSeconds(secs: number): string {
+	const m = Math.floor(secs / 60).toString().padStart(2, '0');
+	const s = (secs % 60).toString().padStart(2, '0');
+	return `${m}:${s}`;
+}

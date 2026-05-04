@@ -10,8 +10,7 @@ import { creatorsApi, ApiError } from '../services/creatorsApi';
 import { clearSessionToken, getSessionToken } from '../services/sessionToken';
 import { clearStoredUser, getStoredUser, setStoredUser } from '../services/sessionUser';
 import { clearPaymentGatewayCache } from '../services/payments';
-import { getCreatorsMultiplexSingleton } from '../services/creatorsMultiplexWs';
-import { userWsLogout } from '../services/userWsService';
+import { runCreatorsWsTeardown } from '../services/wsLogoutRegistry';
 import { ZERO_MINOR } from '../utils/money';
 
 interface AuthState {
@@ -362,28 +361,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 	}, []);
 
 	const logout = useCallback(() => {
-		const ws = getCreatorsMultiplexSingleton();
-		if (ws?.isOpen()) {
-			void userWsLogout(ws).catch(() => {});
-		}
-		clearPaymentGatewayCache();
-		clearSessionToken();
-		clearStoredUser();
-		setAuthStatus('guest');
-		setSessionRestoreError(null);
-		void creatorsApi.auth.logout().catch(() => {});
-		if (isFirebaseConfigured) {
-			void signOut(getFirebaseAuth()).finally(() => {
+		void creatorsApi.auth.logout()
+			.catch(() => {})
+			.then(() => {
+				clearPaymentGatewayCache();
+				clearSessionToken();
+				clearStoredUser();
+				setAuthStatus('guest');
+				setSessionRestoreError(null);
+				return runCreatorsWsTeardown();
+			})
+			.then(() => {
+				if (isFirebaseConfigured) {
+					void signOut(getFirebaseAuth()).finally(() => {
+						dispatch({ type: 'LOGOUT' });
+					});
+					return;
+				}
 				dispatch({ type: 'LOGOUT' });
-			});
-			return;
-		}
-		dispatch({ type: 'LOGOUT' });
 
-		if (!isFirebaseConfigured) return;
-		void firebaseSignOut(getFirebaseAuth()).catch(() => {
-			// Keep logout resilient even if Firebase session clear fails.
-		});
+				if (!isFirebaseConfigured) return;
+				void firebaseSignOut(getFirebaseAuth()).catch(() => {
+					// Keep logout resilient even if Firebase session clear fails.
+				});
+			});
 	}, []);
 
 	const verifyAge = useCallback(() => {

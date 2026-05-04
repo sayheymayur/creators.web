@@ -1,5 +1,11 @@
 import type { CreatorsMultiplexWs } from './creatorsMultiplexWs';
+import type { WsClient } from './wsClient';
 import type { CreatorGetResponse, CreatorListResponse, CreatorUpsertResponse } from './creatorWsTypes';
+
+export interface CreatorFollowResponse {
+	ok: true;
+	creator_user_id: string;
+}
 
 const MAX_Q = 64;
 const MAX_CATEGORY = 32;
@@ -66,4 +72,19 @@ export function creatorWsUpsertProfile(
 	bio?: string
 ): Promise<CreatorUpsertResponse> {
 	return client.send('creator', buildCreatorUpsertCommand(username, name, bio)).then(json => json as CreatorUpsertResponse);
+}
+
+/**
+ * `> creator <rid>\n/follow <creatorUserId>` over the primary WsClient.
+ *
+ * Spec: maintains `creator_follows` rows that drive followers-only live visibility
+ * (`/golive followers …` then `live|started` is targeted at follower user ids).
+ */
+export function creatorFollow(ws: WsClient, creatorUserId: string, requestId?: string): Promise<CreatorFollowResponse> {
+	const id = String(creatorUserId).trim();
+	if (!id) throw new Error('creatorUserId is required');
+	if (/\s/.test(id)) throw new Error('creatorUserId must not contain whitespace');
+	const rid = requestId?.trim() || undefined;
+	if (rid && /\s/.test(rid)) throw new Error('requestId must not contain spaces');
+	return ws.request('creator', 'follow', [id], rid).then(json => json as CreatorFollowResponse);
 }

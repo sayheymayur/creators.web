@@ -4,8 +4,8 @@ import AgoraRTC, { type IAgoraRTCClient, type ILocalAudioTrack, type ILocalVideo
 import { Radio, Eye, Gift, DollarSign, ArrowLeft, Send, X, Users } from '../../components/icons';
 import { useLiveStream, VIRTUAL_GIFTS } from '../../context/LiveStreamContext';
 import { useCurrentCreator } from '../../context/AuthContext';
-import { buildLiveChannel, fetchAgoraRtcToken, getAgoraAppId, stringToAgoraUid } from '../../services/agoraRtc';
-import type { LiveStream } from '../../types';
+import { useEnsureWsAuth, useWs } from '../../context/WsContext';
+import type { LiveVisibility } from '../../services/liveWsTypes';
 import { formatINR } from '../../services/razorpay';
 
 function formatElapsed(startedAt: string): string {
@@ -16,18 +16,28 @@ function formatElapsed(startedAt: string): string {
 	return h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
 }
 
+const VIS_OPTIONS: { value: LiveVisibility, label: string }[] = [
+	{ value: 'everyone', label: 'Everyone' },
+	{ value: 'followers', label: 'Followers' },
+	{ value: 'subscribers', label: 'Subscribers' },
+];
+
 export function GoLivePage() {
 	const navigate = useNavigate();
 	const creator = useCurrentCreator();
-	const { goLive, endLive, sendChatMessage, getStream } = useLiveStream();
+	const ws = useWs();
+	const ensureAuth = useEnsureWsAuth();
+	const { goLive, endLive, getStream, state: lsState, ready: liveWsReady } = useLiveStream();
+	const [visibility, setVisibility] = useState<LiveVisibility>('everyone');
 	const [title, setTitle] = useState('');
 	const [isLive, setIsLive] = useState(false);
-	const [activeStream, setActiveStream] = useState<LiveStream | null>(null);
+	const [activeLiveId, setActiveLiveId] = useState<string | null>(null);
 	const [elapsed, setElapsed] = useState('00:00');
 	const [text, setText] = useState('');
 	const [viewerSimCount, setViewerSimCount] = useState(0);
 	const [agoraError, setAgoraError] = useState('');
 	const [hasLocalVideo, setHasLocalVideo] = useState(false);
+	const [goLiveError, setGoLiveError] = useState('');
 	const elapsedRef = useRef<ReturnType<typeof setInterval> | null>(null);
 	const viewerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 	const chatEndRef = useRef<HTMLDivElement>(null);
@@ -35,6 +45,7 @@ export function GoLivePage() {
 	const hostClientRef = useRef<IAgoraRTCClient | null>(null);
 	const hostAudioTrackRef = useRef<ILocalAudioTrack | null>(null);
 	const hostVideoTrackRef = useRef<ILocalVideoTrack | null>(null);
+	const userEndedRef = useRef(false);
 
 	useEffect(() => {
 		return () => {
@@ -51,15 +62,20 @@ export function GoLivePage() {
 	}, []);
 
 	useEffect(() => {
-		chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-	}, [activeStream?.chatMessages.length]);
+		const id = activeLiveId;
+		if (!id) return;
+		const latest = getStream(id);
+		const n = latest?.viewerCount ?? 0;
+		setViewerSimCount(n);
+	}, [activeLiveId, getStream]);
 
 	useEffect(() => {
-		if (activeStream) {
-			const latest = getStream(activeStream.id);
-			if (latest) setActiveStream(latest);
-		}
-	}, [activeStream?.id]);
+		const id = activeLiveId;
+		if (!id) return;
+		chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+		const s = getStream(id);
+		if (s) setElapsed(formatElapsed(s.startedAt));
+	}, [activeLiveId, getStream]);
 
 	useEffect(() => {
 		if (!isLive) return;
@@ -67,7 +83,25 @@ export function GoLivePage() {
 		const localContainer = localVideoRef.current;
 		if (!localTrack || !localContainer) return;
 		localTrack.play(localContainer);
-	}, [isLive, activeStream?.id]);
+	}, [isLive, activeLiveId]);
+
+	// If the host row is cleared remotely (`live|ended` from another device), tear down Agora.
+	useEffect(() => {
+		if (!isLive || userEndedRef.current) return;
+		if (lsState.myLive !== null) return;
+		if (elapsedRef.current) clearInterval(elapsedRef.current);
+		if (viewerRef.current) clearInterval(viewerRef.current);
+		hostAudioTrackRef.current?.close();
+		hostVideoTrackRef.current?.close();
+		hostAudioTrackRef.current = null;
+		hostVideoTrackRef.current = null;
+		setHasLocalVideo(false);
+		void hostClientRef.current?.leave().catch(() => undefined);
+		hostClientRef.current = null;
+		setIsLive(false);
+		setActiveLiveId(null);
+		void navigate('/creator-dashboard');
+	}, [isLive, lsState.myLive, navigate]);
 
 	if (!creator) {
 		return (
@@ -78,52 +112,7 @@ export function GoLivePage() {
 	}
 	const activeCreator = creator;
 
-	function handleGoLive() {
-		if (!title.trim()) return;
-		const stream = goLive(activeCreator.id, activeCreator.name, activeCreator.avatar, title.trim());
-		const channelName = buildLiveChannel(stream.id);
-		const uid = stringToAgoraUid(activeCreator.id);
-		const client = AgoraRTC.createClient({ codec: 'vp8', mode: 'live' });
-		client.setClientRole('host');
-		hostClientRef.current = client;
-		setAgoraError('');
-
-		void fetchAgoraRtcToken(channelName, uid, 'host').then(token => (
-			client.join(getAgoraAppId(), channelName, token, uid).then(() => (
-				AgoraRTC.createMicrophoneAudioTrack().then(audioTrack => {
-					hostAudioTrackRef.current = audioTrack;
-					return AgoraRTC.createCameraVideoTrack().then(videoTrack => {
-						hostVideoTrackRef.current = videoTrack;
-						setHasLocalVideo(true);
-						if (localVideoRef.current) videoTrack.play(localVideoRef.current);
-						return client.publish([audioTrack, videoTrack]);
-					}).catch(() => (
-						client.publish([audioTrack])
-					));
-				})
-			))
-		)).catch(() => {
-			setAgoraError('Live media could not connect. Showing fallback preview.');
-		}).finally(() => {
-			setActiveStream(stream);
-			setIsLive(true);
-
-			elapsedRef.current = setInterval(() => {
-				setElapsed(formatElapsed(stream.startedAt));
-			}, 1000);
-
-			let viewers = 0;
-			viewerRef.current = setInterval(() => {
-				const delta = Math.floor(Math.random() * 5) - 1;
-				viewers = Math.max(0, viewers + delta + 2);
-				setViewerSimCount(viewers);
-			}, 3000);
-		});
-	}
-
-	function handleEndLive() {
-		if (!activeStream) return;
-		endLive(activeStream.id);
+	function cleanupHostMedia() {
 		hostAudioTrackRef.current?.close();
 		hostVideoTrackRef.current?.close();
 		hostAudioTrackRef.current = null;
@@ -131,22 +120,102 @@ export function GoLivePage() {
 		setHasLocalVideo(false);
 		void hostClientRef.current?.leave().catch(() => undefined);
 		hostClientRef.current = null;
+	}
+
+	function handleGoLive() {
+		if (!title.trim()) return;
+		if (!liveWsReady) {
+			setGoLiveError('Connect and sign in before going live.');
+			return;
+		}
+		setGoLiveError('');
+		void ensureAuth()
+			.then(() => goLive(visibility, title.trim()))
+			.then(live => {
+				const client = AgoraRTC.createClient({ codec: 'vp8', mode: 'live' });
+				client.setClientRole('host');
+				hostClientRef.current = client;
+				setAgoraError('');
+				const { app_id, channel_name, uid, token } = live.agora;
+				// Token TTL is server-controlled (AGORA_LIVE_TOKEN_TTL_SEC). Re-issue `/joinlive` or a future
+				// refresh endpoint before `expires_at` if sessions outlast the token.
+				return client.join(app_id, channel_name, token || null, uid).then(() => (
+					AgoraRTC.createMicrophoneAudioTrack().then(audioTrack => {
+						hostAudioTrackRef.current = audioTrack;
+						return AgoraRTC.createCameraVideoTrack().then(videoTrack => {
+							hostVideoTrackRef.current = videoTrack;
+							setHasLocalVideo(true);
+							if (localVideoRef.current) videoTrack.play(localVideoRef.current);
+							return client.publish([audioTrack, videoTrack]);
+						}).catch(() => client.publish([audioTrack]));
+					})
+				)).then(() => {
+					setActiveLiveId(live.live_id);
+					setIsLive(true);
+					const s = getStream(live.live_id);
+					const startedAt = s?.startedAt ?? live.started_at;
+					elapsedRef.current = setInterval(() => {
+						setElapsed(formatElapsed(startedAt));
+					}, 1000);
+					let viewers = s?.viewerCount ?? 0;
+					setViewerSimCount(viewers);
+					viewerRef.current = setInterval(() => {
+						const delta = Math.floor(Math.random() * 5) - 1;
+						viewers = Math.max(0, viewers + delta + 2);
+						setViewerSimCount(viewers);
+					}, 3000);
+				}).catch(() => {
+					setAgoraError('Live media could not connect. Showing fallback preview.');
+					setActiveLiveId(live.live_id);
+					setIsLive(true);
+					const s = getStream(live.live_id);
+					const startedAt = s?.startedAt ?? live.started_at;
+					elapsedRef.current = setInterval(() => {
+						setElapsed(formatElapsed(startedAt));
+					}, 1000);
+					let viewers = s?.viewerCount ?? 0;
+					setViewerSimCount(viewers);
+					viewerRef.current = setInterval(() => {
+						const delta = Math.floor(Math.random() * 5) - 1;
+						viewers = Math.max(0, viewers + delta + 2);
+						setViewerSimCount(viewers);
+					}, 3000);
+				});
+			})
+			.catch((e: unknown) => {
+				setGoLiveError(e instanceof Error ? e.message : 'Could not go live');
+			});
+	}
+
+	function handleEndLive() {
+		userEndedRef.current = true;
 		if (elapsedRef.current) clearInterval(elapsedRef.current);
 		if (viewerRef.current) clearInterval(viewerRef.current);
+		cleanupHostMedia();
 		setIsLive(false);
-		navigate('/creator-dashboard');
+		setActiveLiveId(null);
+		void endLive()
+			.catch(() => {})
+			.finally(() => {
+				userEndedRef.current = false;
+				void navigate('/creator-dashboard');
+			});
 	}
 
 	function handleSendChat(e: React.FormEvent) {
 		e.preventDefault();
-		if (!text.trim() || !activeStream) return;
-		sendChatMessage(activeStream.id, creator!.id, creator!.name, creator!.avatar, text.trim());
-		setText('');
-		const latest = getStream(activeStream.id);
-		if (latest) setActiveStream(latest);
+		if (!text.trim() || !activeLiveId || !ws.isConnected) return;
+		const roomId = lsState.myLive?.room_id;
+		if (!roomId) return;
+		const body = text.trim();
+		void ws.request('chat', 'sendmsg', [roomId, body])
+			.then(() => { setText(''); })
+			.catch((err: unknown) => {
+				setGoLiveError(err instanceof Error ? err.message : 'Could not send message');
+			});
 	}
 
-	const currentStream = activeStream ? getStream(activeStream.id) ?? activeStream : null;
+	const currentStream = activeLiveId ? getStream(activeLiveId) ?? null : null;
 	const totalGiftValue = currentStream?.totalGiftValue ?? 0;
 
 	if (!isLive) {
@@ -178,6 +247,27 @@ export function GoLivePage() {
 
 					<div className="w-full max-w-sm space-y-4">
 						<div>
+							<label className="text-xs font-semibold text-muted uppercase tracking-widest mb-2 block">Who can watch</label>
+							<div className="grid grid-cols-3 gap-2">
+								{VIS_OPTIONS.map(opt => (
+									<button
+										key={opt.value}
+										type="button"
+										onClick={() => { setVisibility(opt.value); }}
+										className={
+											'py-2.5 px-2 rounded-xl text-xs font-semibold transition-all border ' +
+											(visibility === opt.value ?
+												'bg-rose-500 text-white border-rose-500' :
+												'bg-foreground/5 text-muted border-border/20 hover:bg-foreground/10')
+										}
+									>
+										{opt.label}
+									</button>
+								))}
+							</div>
+						</div>
+
+						<div>
 							<label className="text-xs font-semibold text-muted uppercase tracking-widest mb-2 block">Stream Title</label>
 							<input
 								value={title}
@@ -187,6 +277,13 @@ export function GoLivePage() {
 								maxLength={60}
 							/>
 						</div>
+
+						{goLiveError && (
+							<p className="text-xs text-rose-400">{goLiveError}</p>
+						)}
+						{!liveWsReady && (
+							<p className="text-xs text-muted">Waiting for WebSocket…</p>
+						)}
 
 						<div className="grid grid-cols-3 gap-3">
 							{[
@@ -202,8 +299,8 @@ export function GoLivePage() {
 						</div>
 
 						<button
-							onClick={handleGoLive}
-							disabled={!title.trim()}
+							onClick={() => { handleGoLive(); }}
+							disabled={!title.trim() || !liveWsReady}
 							className="w-full py-4 bg-rose-500 hover:bg-rose-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold rounded-2xl transition-all active:scale-98 shadow-lg shadow-rose-500/25 flex items-center justify-center gap-2"
 						>
 							<div className="w-2 h-2 bg-white rounded-full animate-pulse" />
@@ -292,7 +389,7 @@ export function GoLivePage() {
 							</button>
 						</form>
 						<button
-							onClick={handleEndLive}
+							onClick={() => { handleEndLive(); }}
 							className="w-10 h-10 bg-background/70 text-foreground dark:bg-white/10 dark:text-white backdrop-blur-sm border border-border/30 dark:border-white/15 rounded-xl flex items-center justify-center text-rose-400 hover:bg-rose-500/20 transition-all"
 						>
 							<X className="w-5 h-5" />

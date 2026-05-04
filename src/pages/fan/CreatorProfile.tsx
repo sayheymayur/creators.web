@@ -20,6 +20,8 @@ import { creatorProfileDtoToCreator } from '../../services/creatorWsMap';
 import { randomUuid } from '../../utils/isUuid';
 import { formatINR } from '../../services/razorpay';
 import { useSessions } from '../../context/SessionsContext';
+import { useWs, useWsConnected } from '../../context/WsContext';
+import { creatorFollow } from '../../services/creatorWsService';
 
 export function CreatorProfile() {
 	const { id } = useParams<{ id: string }>();
@@ -31,12 +33,15 @@ export function CreatorProfile() {
 	const { startCall } = useCall();
 	useSession();
 	const { requestSession, state: sessionsState, clearOutgoing } = useSessions();
+	const ws = useWs();
+	const wsConnected = useWsConnected();
 	const [showTipModal, setShowTipModal] = useState(false);
 	const [showSubscribeModal, setShowSubscribeModal] = useState(false);
 	const [showSessionModal, setShowSessionModal] = useState(false);
 	const [postFilter, setPostFilter] = useState<'all' | 'free' | 'locked'>('all');
 	const [remoteCreator, setRemoteCreator] = useState<Creator | null>(null);
 	const [isLoadingCreator, setIsLoadingCreator] = useState(false);
+	const [followBusy, setFollowBusy] = useState(false);
 	const hasLoadedCreatorRef = useRef(false);
 
 	const maybeCreator = useMemo(() => mockCreators.find(c => c.id === id), [id]);
@@ -207,6 +212,28 @@ export function CreatorProfile() {
 		};
 	}, [sessionsState.outgoing.state]);
 
+	function handleWsFollow() {
+		if (!authState.user) {
+			void navigate('/login');
+			return;
+		}
+		if (!wsConnected) {
+			showToast('Connect to the server before following.', 'error');
+			return;
+		}
+		setFollowBusy(true);
+		void creatorFollow(ws, creatorForDisplay.id)
+			.then(() => {
+				showToast('You are now following this creator.');
+			})
+			.catch((err: unknown) => {
+				showToast(err instanceof Error ? err.message : 'Follow failed', 'error');
+			})
+			.finally(() => {
+				setFollowBusy(false);
+			});
+	}
+
 	function handleMessage() {
 		if (!authState.user) { navigate('/login'); return; }
 		const existing = getConversationForUser(creatorForDisplay.id);
@@ -321,6 +348,18 @@ export function CreatorProfile() {
 									className="flex items-center gap-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 text-sm font-semibold px-3 py-2 rounded-xl transition-all border border-rose-500/20"
 								>
 									Book Session
+								</button>
+								<button
+									type="button"
+									onClick={() => { handleWsFollow(); }}
+									disabled={followBusy}
+									className={
+										'flex items-center gap-1.5 bg-foreground/10 hover:bg-foreground/15 text-foreground ' +
+										'text-sm font-semibold px-3 py-2 rounded-xl transition-all border border-border/20 ' +
+										'disabled:opacity-50'
+									}
+								>
+									Follow
 								</button>
 							</div>
 						)}

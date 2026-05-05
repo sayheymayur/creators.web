@@ -13,6 +13,7 @@ export function Login() {
 	const [password, setPassword] = useState('');
 	const [showPassword, setShowPassword] = useState(false);
 	const [isLoading, setIsLoading] = useState(false);
+	const [googleRole, setGoogleRole] = useState<'fan' | 'creator'>('fan');
 
 	function handleLogin(e: React.FormEvent) {
 		e.preventDefault();
@@ -40,7 +41,7 @@ export function Login() {
 
 	function handleGoogleLogin() {
 		setIsLoading(true);
-		void loginWithGoogle('fan').then(user => {
+		void loginWithGoogle(googleRole).then(user => {
 			setIsLoading(false);
 			if (user) {
 				void navigate(user.role === 'admin' ? '/admin' : user.role === 'creator' ? '/creator-dashboard' : '/feed');
@@ -155,6 +156,28 @@ export function Login() {
 						<div className="flex-1 h-px bg-border/40" />
 						<span className="text-xs text-muted">or</span>
 						<div className="flex-1 h-px bg-border/40" />
+					</div>
+
+					<div className="mb-2">
+						<p className="text-xs text-muted font-medium mb-2 uppercase tracking-wide">Continue as</p>
+						<div className="grid grid-cols-2 gap-2">
+							{(['fan', 'creator'] as const).map(r => (
+								<button
+									key={r}
+									type="button"
+									onClick={() => setGoogleRole(r)}
+									disabled={isLoading}
+									className={
+										'rounded-xl border px-3 py-2 text-xs font-semibold transition-all ' +
+										(googleRole === r ?
+											'border-rose-500 bg-rose-500/10 text-foreground' :
+											'border-border/20 bg-foreground/5 text-muted hover:text-foreground hover:bg-foreground/10')
+									}
+								>
+									{r === 'fan' ? 'Fan' : 'Creator'}
+								</button>
+							))}
+						</div>
 					</div>
 
 					<button

@@ -341,7 +341,6 @@ export function LiveStreamProvider({ children }: { children: React.ReactNode }) 
 	const { state: authState } = useAuth();
 	const [state, dispatch] = useReducer(liveReducer, initialState);
 	const hostCredsByUserRef = useRef<HostLiveCredsByUser>(loadHostLiveCredsByUser());
-	const hydratedForUserRef = useRef<string | null>(null);
 	const joinLiveInflightRef = useRef<Record<string, Promise<LiveWithAgora>>>({});
 
 	// Refs so event handlers always see the latest value without re-binding.
@@ -363,11 +362,6 @@ export function LiveStreamProvider({ children }: { children: React.ReactNode }) 
 		}
 		hostCredsByUserRef.current = next;
 		saveHostLiveCredsByUser(next);
-	}, [authState.user?.id]);
-
-	// Re-arm hydration when the active user changes (logout/login on same tab).
-	useEffect(() => {
-		hydratedForUserRef.current = null;
 	}, [authState.user?.id]);
 
 	const refreshLives = useCallback((): Promise<void> => {
@@ -530,8 +524,6 @@ export function LiveStreamProvider({ children }: { children: React.ReactNode }) 
 				const lives = res.lives ?? [];
 				dispatch({ type: 'SET_DISCOVERY', payload: lives });
 				if (!uid) return;
-				if (hydratedForUserRef.current === uid) return;
-				hydratedForUserRef.current = uid;
 
 				const cached = hostCredsByUserRef.current[uid];
 				if (!cached) return;
@@ -548,9 +540,12 @@ export function LiveStreamProvider({ children }: { children: React.ReactNode }) 
 					persistHostCreds(null);
 					return;
 				}
-				// Restore the host context. Re-attach to chat so the creator gets `chat|c`.
-				dispatch({ type: 'SET_MY_LIVE', payload: cached });
-				dispatch({ type: 'UPSERT_DISCOVERY', payload: stripAgora(cached) });
+
+				if (myLiveRef.current?.live_id !== cached.live_id) {
+					dispatch({ type: 'SET_MY_LIVE', payload: cached });
+					dispatch({ type: 'UPSERT_DISCOVERY', payload: stripAgora(cached) });
+				}
+				// Idempotent-ish: server tolerates duplicate join or we ignore failures.
 				if (cached.room_id) {
 					void ws.request('chat', 'joinroom', [cached.room_id]).catch(() => {});
 				}

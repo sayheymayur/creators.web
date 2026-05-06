@@ -92,11 +92,7 @@ export function ActiveCallScreen() {
 					<div className="flex items-start justify-between gap-3">
 						<div className="min-w-0">
 							<div className="flex items-center gap-2">
-								<span className="inline-block h-2 w-2 rounded-full bg-rose-500" />
 								<p className="truncate text-sm font-semibold text-white/95">{cs.participantName}</p>
-								{!cs.isConnecting && (
-									<p className="shrink-0 font-mono text-xs tabular-nums text-white/60">{timerLabel}</p>
-								)}
 							</div>
 							{cs.isConnecting && (
 								<p className="mt-1 text-xs text-white/50 animate-pulse">
@@ -106,9 +102,9 @@ export function ActiveCallScreen() {
 						</div>
 
 						<div className="shrink-0 flex items-center gap-2">
-							<div className="flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold tracking-wide text-white/70 backdrop-blur">
-								<span className="inline-block h-2 w-2 rounded-full bg-emerald-400/90" />
-								STABLE CONNECTION
+							<div className="flex items-center gap-2 rounded-full bg-rose-500/25 border border-rose-500/25 px-3 py-1 text-[11px] font-semibold tracking-wide text-rose-100 backdrop-blur">
+								<span className="inline-block h-2 w-2 rounded-full bg-rose-400" />
+								{timerLabel}
 							</div>
 						</div>
 					</div>
@@ -149,55 +145,49 @@ export function ActiveCallScreen() {
 
 				<div className={`mt-auto pb-8 px-6 transition-opacity duration-300 ${hideControls ? 'opacity-0' : 'opacity-100'}`}>
 					<div className="flex justify-center">
-						<div className="flex items-center gap-6 rounded-[28px] bg-black/60 backdrop-blur border border-white/10 px-6 py-4 shadow-2xl">
-							<button
-								type="button"
-								onClick={cs.toggleMute}
-								className="flex flex-col items-center gap-1 text-white/80 hover:text-white"
-							>
-								<div className="h-12 w-12 rounded-full bg-white/10 hover:bg-white/15 flex items-center justify-center">
-									{cs.isMuted ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
-								</div>
-								<span className="text-[10px] font-semibold">{cs.isMuted ? 'Unmute' : 'Mute'}</span>
-							</button>
-
-							{cs.isVideo && (
+						<div className="flex items-center rounded-[28px] bg-black/60 backdrop-blur border border-white/10 px-3 py-3 shadow-2xl">
+							<div className="flex items-center gap-3 pr-3">
 								<button
 									type="button"
-									onClick={cs.toggleCamera}
-									className="flex flex-col items-center gap-1 text-white/80 hover:text-white"
+									onClick={cs.toggleMute}
+									className="h-12 w-12 rounded-full bg-white/10 hover:bg-white/15 text-white/80 hover:text-white flex items-center justify-center"
+									aria-label={cs.isMuted ? 'Unmute' : 'Mute'}
 								>
-									<div className="h-12 w-12 rounded-full bg-white/10 hover:bg-white/15 flex items-center justify-center">
-										{cs.isCameraOff ? <VideoOff className="h-6 w-6" /> : <Video className="h-6 w-6" />}
-									</div>
-									<span className="text-[10px] font-semibold">{cs.isCameraOff ? 'Start' : 'Stop'}</span>
+									{cs.isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
 								</button>
-							)}
+
+								{cs.isVideo && (
+									<button
+										type="button"
+										onClick={cs.toggleCamera}
+										className="h-12 w-12 rounded-full bg-white/10 hover:bg-white/15 text-white/80 hover:text-white flex items-center justify-center"
+										aria-label={cs.isCameraOff ? 'Start camera' : 'Stop camera'}
+									>
+										{cs.isCameraOff ? <VideoOff className="h-5 w-5" /> : <Video className="h-5 w-5" />}
+									</button>
+								)}
+
+								<button
+									type="button"
+									onClick={onMinimize}
+									className="h-12 w-12 rounded-full bg-white/10 hover:bg-white/15 text-white/70 hover:text-white flex items-center justify-center"
+									aria-label="Minimize"
+								>
+									<Minimize2 className="h-5 w-5" />
+								</button>
+							</div>
 
 							<div className="h-10 w-px bg-white/15" />
 
 							<button
 								type="button"
 								onClick={() => { cs.completeEndCall(); }}
-								className="flex flex-col items-center gap-1 text-white/90"
+								className="ml-3 inline-flex items-center gap-2 rounded-full bg-rose-500 hover:bg-rose-600 px-6 py-3 text-sm font-semibold text-white shadow-xl shadow-rose-500/20 transition-transform active:scale-[0.99]"
 							>
-								<div className="h-12 w-12 rounded-full bg-rose-500 hover:bg-rose-600 flex items-center justify-center shadow-xl shadow-rose-500/30 transition-transform active:scale-95">
-									<Phone className="h-6 w-6 rotate-[135deg]" />
-								</div>
-								<span className="text-[10px] font-semibold">END CALL</span>
+								<Phone className="h-5 w-5 rotate-[135deg]" />
+								Leave Session
 							</button>
 						</div>
-					</div>
-
-					<div className="flex justify-center mt-5">
-						<button
-							type="button"
-							onClick={onMinimize}
-							className="flex items-center gap-1.5 text-white/40 hover:text-white/70 text-xs transition-colors"
-						>
-							<Minimize2 className="w-3.5 h-3.5" />
-							Minimize
-						</button>
 					</div>
 				</div>
 			</div>

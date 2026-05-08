@@ -5,7 +5,6 @@ import { mockCreators } from '../data/users';
 import { delayMs } from '../utils/delay';
 import { isFirebaseConfigured, firebaseMissingConfigKeys } from '../config/firebase';
 import { getFirebaseAuth, getGoogleProvider } from '../lib/firebaseClient';
-import { exchangeFirebaseToken } from '../services/authApi';
 import { creatorsApi, ApiError } from '../services/creatorsApi';
 import { clearSessionToken, getSessionToken } from '../services/sessionToken';
 import { clearStoredUser, getStoredUser, setStoredUser } from '../services/sessionUser';
@@ -329,30 +328,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 			.then(result => result.user.getIdToken().then(idToken => ({ firebaseUser: result.user, idToken })))
 			.then(({ firebaseUser, idToken }) =>
 				creatorsApi.auth.firebaseExchange({ idToken, preferredRole: role })
-					.then(res => ({ firebaseUser, apiUser: res.user ?? null }))
-					.catch(() => exchangeFirebaseToken(idToken, role).then(apiUser => ({ firebaseUser, apiUser })))
+					.then(() => ({ firebaseUser }))
 			)
-			.then(({ firebaseUser, apiUser }) => {
-				const fallbackUser: User = {
-					id: firebaseUser.uid,
-					email: firebaseUser.email ?? '',
-					name: firebaseUser.displayName ?? 'New user',
-					username: (firebaseUser.email ?? `user_${firebaseUser.uid.slice(0, 6)}`).split('@')[0],
-					avatar: firebaseUser.photoURL ?? 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg',
-					role,
-					createdAt: new Date().toISOString(),
-					isAgeVerified: true,
-					status: 'active',
-					walletBalanceMinor: ZERO_MINOR,
-				};
-
-				const user = apiUser ?? fallbackUser;
+			.then(({ firebaseUser }) => {
+				// Backend exchange is responsible for issuing our app JWT.
+				// If it didn't mint/store a JWT, treat the session as unauthenticated.
+				const token = getSessionToken();
+				if (!token) {
+					throw new Error('Google sign-in succeeded, but backend session token was missing.');
+				}
+				return creatorsApi.auth.me()
+					.then(({ user }) => {
+						if (!user) {
+							throw new Error('Google sign-in succeeded, but user profile was missing.');
+						}
+						return user;
+					})
+					.catch(err => {
+						// If backend rejects the token, clear local auth and surface a friendly error.
+						if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+							throw new Error('Account not found. Please sign up first.');
+						}
+						throw err;
+					})
+					.finally(() => {
+						// If backend exchange failed but Firebase session exists, we handle cleanup in catch below.
+						void firebaseUser; // keep param used for potential debugging; no-op
+					});
+			})
+			.then(user => {
 				dispatch({ type: 'LOGIN', payload: user });
 				setStoredUser(user);
 				setAuthStatus('authenticated');
 				return user;
 			})
 			.catch(error => {
+				clearSessionToken();
+				clearStoredUser();
+				// Keep Firebase auth session aligned with backend auth.
+				try {
+					void signOut(getFirebaseAuth());
+				} catch {
+					// ignore
+				}
 				const errorMessage = error instanceof Error ? error.message : 'Google sign-in failed';
 				dispatch({ type: 'SET_ERROR', payload: errorMessage });
 				setAuthStatus('guest');

@@ -6,10 +6,11 @@ import { useLiveStream, VIRTUAL_GIFTS } from '../../context/LiveStreamContext';
 import { useAuth } from '../../context/AuthContext';
 import { useWallet } from '../../context/WalletContext';
 import { useNotifications } from '../../context/NotificationContext';
-import { buildLiveChannel, fetchAgoraRtcToken, getAgoraAppId, stringToAgoraUid } from '../../services/agoraRtc';
+import { useEnsureWsAuth, useWs } from '../../context/WsContext';
+import { formatINR } from '../../services/razorpay';
 import { compareMinor, inrRupeesToMinor } from '../../utils/money';
 import type { VirtualGift } from '../../types';
-import { LiveGiftsTray } from '../../components/live/LiveGiftsTray';
+import type { LiveWithAgora } from '../../services/liveWsTypes';
 
 function formatElapsed(startedAt: string): string {
 	const diff = Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000);
@@ -19,10 +20,17 @@ function formatElapsed(startedAt: string): string {
 	return h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
 }
 
+function isJoinEligibilityError(message: string): boolean {
+	const m = message.toLowerCase();
+	return m.includes('followers only') || m.includes('subscribers only');
+}
+
 export function LiveStreamRoom() {
 	const { streamId } = useParams<{ streamId: string }>();
 	const navigate = useNavigate();
-	const { getStream, sendChatMessage, sendGift } = useLiveStream();
+	const ws = useWs();
+	const ensureAuth = useEnsureWsAuth();
+	const { getStream, joinLive, leaveLiveViewer, sendGift, ready: liveWsReady } = useLiveStream();
 	const { state: authState } = useAuth();
 	const { deductFunds, payViaRazorpay } = useWallet();
 	const { showToast } = useNotifications();
@@ -34,75 +42,113 @@ export function LiveStreamRoom() {
 	const [floatingGift, setFloatingGift] = useState<{ emoji: string, name: string } | null>(null);
 	const [hasRemoteVideo, setHasRemoteVideo] = useState(false);
 	const [agoraError, setAgoraError] = useState('');
-	const [showControls, setShowControls] = useState(true);
-	const controlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const [joinError, setJoinError] = useState('');
+	const [livePayload, setLivePayload] = useState<LiveWithAgora | null>(null);
+	const [joining, setJoining] = useState(true);
+	const [giftLoading, setGiftLoading] = useState(false);
 	const chatEndRef = useRef<HTMLDivElement>(null);
 	const elapsedRef = useRef<ReturnType<typeof setInterval> | null>(null);
 	const remoteVideoRef = useRef<HTMLDivElement | null>(null);
 	const remoteAudioTrackRef = useRef<IRemoteAudioTrack | null>(null);
 	const remoteVideoTrackRef = useRef<IRemoteVideoTrack | null>(null);
+	const clientRef = useRef<ReturnType<typeof AgoraRTC.createClient> | null>(null);
 
-	const stream = getStream(streamId ?? '');
+	const stream = streamId ? getStream(streamId) : undefined;
 
 	useEffect(() => {
-		if (stream?.status !== 'live') {
-			navigate(-1);
+		if (!streamId || !authState.user) {
+			setJoining(false);
+			return;
 		}
-	}, [stream, navigate]);
+		if (!liveWsReady) return;
 
-	useEffect(() => {
-		if (!stream || !authState.user) return;
+		let cancelled = false;
+		setJoining(true);
+		setJoinError('');
+		setLivePayload(null);
 
-		const client = AgoraRTC.createClient({ codec: 'vp8', mode: 'live' });
-		client.setClientRole('audience');
-		setAgoraError('');
-		setHasRemoteVideo(false);
-
-		client.on('user-published', (user, mediaType) => {
-			void client.subscribe(user, mediaType).then(() => {
-				if (mediaType === 'video' && user.videoTrack) {
-					remoteVideoTrackRef.current = user.videoTrack;
-					setHasRemoteVideo(true);
-					if (remoteVideoRef.current) user.videoTrack.play(remoteVideoRef.current);
-				}
-				if (mediaType === 'audio' && user.audioTrack) {
-					remoteAudioTrackRef.current = user.audioTrack;
-					user.audioTrack.play();
-				}
-			}).catch(() => {
-				setAgoraError('Could not subscribe to live media.');
-			});
-		});
-
-		client.on('user-unpublished', (_user, mediaType) => {
-			if (mediaType === 'video') {
+		void ensureAuth()
+			.then(() => joinLive(streamId))
+			.then(live => {
+				if (cancelled) return;
+				setLivePayload(live);
+				const client = AgoraRTC.createClient({ codec: 'vp8', mode: 'live' });
+				client.setClientRole('audience');
+				clientRef.current = client;
+				setAgoraError('');
 				setHasRemoteVideo(false);
-				remoteVideoTrackRef.current = null;
-			}
-			if (mediaType === 'audio') {
-				remoteAudioTrackRef.current?.stop();
-				remoteAudioTrackRef.current = null;
-			}
-		});
 
-		const uid = stringToAgoraUid(authState.user.id);
-		const channelName = buildLiveChannel(stream.id);
+				client.on('user-published', (user, mediaType) => {
+					void client.subscribe(user, mediaType).then(() => {
+						if (mediaType === 'video' && user.videoTrack) {
+							remoteVideoTrackRef.current = user.videoTrack;
+							setHasRemoteVideo(true);
+							if (remoteVideoRef.current) user.videoTrack.play(remoteVideoRef.current);
+						}
+						if (mediaType === 'audio' && user.audioTrack) {
+							remoteAudioTrackRef.current = user.audioTrack;
+							user.audioTrack.play();
+						}
+					}).catch(() => {
+						setAgoraError('Could not subscribe to live media.');
+					});
+				});
 
-		void fetchAgoraRtcToken(channelName, uid, 'audience').then(token => (
-			client.join(getAgoraAppId(), channelName, token, uid)
-		)).catch(() => {
-			setAgoraError('Live media unavailable. Showing fallback preview.');
-		});
+				client.on('user-unpublished', (_user, mediaType) => {
+					if (mediaType === 'video') {
+						setHasRemoteVideo(false);
+						remoteVideoTrackRef.current = null;
+					}
+					if (mediaType === 'audio') {
+						remoteAudioTrackRef.current?.stop();
+						remoteAudioTrackRef.current = null;
+					}
+				});
+
+				const { app_id, channel_name, uid, token } = live.agora;
+				return client.join(app_id, channel_name, token || null, uid).catch(() => {
+					if (cancelled) return;
+					setAgoraError('Live media unavailable. Showing fallback preview.');
+				});
+			})
+			.catch((err: unknown) => {
+				if (cancelled) return;
+				const msg = err instanceof Error ? err.message : String(err);
+				setJoinError(msg);
+				if (isJoinEligibilityError(msg)) {
+					showToast(msg, 'error');
+				} else {
+					showToast(msg || 'Could not join live', 'error');
+				}
+				void navigate(-1);
+			})
+			.finally(() => {
+				if (!cancelled) setJoining(false);
+			});
 
 		return () => {
+			cancelled = true;
 			remoteAudioTrackRef.current?.stop();
 			remoteAudioTrackRef.current = null;
 			remoteVideoTrackRef.current?.stop();
 			remoteVideoTrackRef.current = null;
 			setHasRemoteVideo(false);
-			void client.leave().catch(() => undefined);
+			void clientRef.current?.leave().catch(() => undefined);
+			clientRef.current = null;
+			leaveLiveViewer(streamId);
 		};
-	}, [authState.user, stream?.id, stream?.status]);
+	}, [streamId, authState.user?.id, liveWsReady, ensureAuth, joinLive, leaveLiveViewer, navigate, showToast]);
+
+	useEffect(() => {
+		if (!streamId) return;
+		const off = ws.on('live', 'ended', data => {
+			const pl = data as { live_id?: string };
+			if (pl?.live_id !== streamId) return;
+			showToast('Live ended', 'info');
+			void navigate(-1);
+		});
+		return off;
+	}, [ws, streamId, navigate, showToast]);
 
 	useEffect(() => {
 		if (!stream) return;
@@ -115,6 +161,18 @@ export function LiveStreamRoom() {
 	useEffect(() => {
 		chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
 	}, [stream?.chatMessages.length]);
+
+	if (!streamId) return null;
+
+	if (joining && !stream && !joinError) {
+		return (
+			<div className="fixed inset-0 z-[150] bg-overlay flex items-center justify-center">
+				<p className="text-muted text-sm">Joining live…</p>
+			</div>
+		);
+	}
+
+	if (joinError && !stream) return null;
 
 	if (!stream) return null;
 
@@ -133,16 +191,20 @@ export function LiveStreamRoom() {
 
 	function handleSend(e: React.FormEvent) {
 		e.preventDefault();
-		if (!text.trim() || !authState.user) return;
-		sendChatMessage(stream!.id, authState.user.id, authState.user.name, authState.user.avatar, text.trim());
-		setText('');
+		if (!text.trim() || !authState.user || !livePayload?.room_id) return;
+		const roomId = livePayload.room_id;
+		const body = text.trim();
+		void ws.request('chat', 'sendmsg', [roomId, body])
+			.then(() => { setText(''); })
+			.catch((err: unknown) => {
+				const msg = err instanceof Error ? err.message : String(err);
+				showToast(msg, 'error');
+			});
 	}
-
-	const [giftLoading, setGiftLoading] = useState(false);
 
 	function handleGift(gift: VirtualGift) {
 		const user = authState.user;
-		if (!user || giftLoading) return;
+		if (!user || giftLoading || !streamId) return;
 		setGiftLoading(true);
 
 		const giftMinor = inrRupeesToMinor(gift.value);
@@ -151,7 +213,7 @@ export function LiveStreamRoom() {
 		if (canAffordGift) {
 			const ok = deductFunds(gift.value, 'gift', `Gift "${gift.name}" to ${stream!.creatorName}`, stream!.creatorId, stream!.creatorName);
 			if (ok) {
-				sendGift(stream!.id, user.id, user.name, user.avatar, gift);
+				sendGift(streamId, user.id, user.name, user.avatar, gift);
 				setShowGifts(false);
 				setFloatingGift({ emoji: gift.emoji, name: gift.name });
 				setTimeout(() => setFloatingGift(null), 2500);
@@ -169,7 +231,7 @@ export function LiveStreamRoom() {
 			}
 
 			if (result.ok) {
-				sendGift(stream!.id, user.id, user.name, user.avatar, gift);
+				sendGift(streamId, user.id, user.name, user.avatar, gift);
 				setShowGifts(false);
 				setFloatingGift({ emoji: gift.emoji, name: gift.name });
 				setTimeout(() => setFloatingGift(null), 2500);

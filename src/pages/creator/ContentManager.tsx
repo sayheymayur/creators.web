@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Lock, Trash2, Image, Type, MessageCircle, Sparkles } from '../../components/icons';
+import { useNavigate } from 'react-router-dom';
+import { Plus, Lock, Trash2, Image, Type, MessageCircle, Sparkles, Radio, X } from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';
 import { Modal } from '../../components/ui/Toast';
 import { Button } from '../../components/ui/Button';
 import { useAuth, useCurrentCreator } from '../../context/AuthContext';
 import { useContent } from '../../context/ContentContext';
+import { useLiveStream, useMyActiveLive } from '../../context/LiveStreamContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { mockCreators } from '../../data/users';
 import { uploadPostMediaFile } from '../../services/uploadPostMedia';
@@ -12,13 +14,29 @@ import { formatINR } from '../../services/razorpay';
 import { PostCard } from '../../components/ui/PostCard';
 import { RichTextarea } from '../../components/ui/RichTextarea';
 
+function formatStartedRelative(startedAt: string): string {
+	const ms = new Date(startedAt).getTime();
+	if (!Number.isFinite(ms)) return '';
+	const diffSec = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+	if (diffSec < 60) return 'just now';
+	const m = Math.floor(diffSec / 60);
+	if (m < 60) return `${m}m ago`;
+	const h = Math.floor(m / 60);
+	if (h < 24) return `${h}h ago`;
+	return `${Math.floor(h / 24)}d ago`;
+}
+
 export function ContentManager() {
+	const navigate = useNavigate();
 	const creator = useCurrentCreator();
 	const { state: contentState, createPost, deletePost, loadCreatorPosts } = useContent();
 	const { showToast } = useNotifications();
 	const { state: authState } = useAuth();
+	const { endLive } = useLiveStream();
+	const myActiveLive = useMyActiveLive();
 	const [showNewPost, setShowNewPost] = useState(false);
 	const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+	const [endingLive, setEndingLive] = useState(false);
 
 	const [newPostText, setNewPostText] = useState('');
 	const [newPostType, setNewPostType] = useState<'text' | 'image'>('text');
@@ -123,6 +141,27 @@ export function ContentManager() {
 			});
 	}
 
+	function handleEndLive() {
+		if (endingLive) return;
+		setEndingLive(true);
+		void endLive()
+			.then(() => {
+				showToast('Live ended.');
+			})
+			.catch((err: unknown) => {
+				showToast(err instanceof Error ? err.message : 'Could not end live', 'error');
+			})
+			.finally(() => {
+				setEndingLive(false);
+			});
+	}
+
+	const showLiveCard = !!myActiveLive.live || myActiveLive.stale;
+	const liveTitle = myActiveLive.live?.title ?? 'You are live';
+	const liveStartedAt = myActiveLive.live?.started_at;
+	const liveStartedRel = liveStartedAt ? formatStartedRelative(liveStartedAt) : '';
+	const continueDisabled = !myActiveLive.live || myActiveLive.expired || myActiveLive.stale;
+
 	return (
 		<Layout>
 			<div className="max-w-4xl mx-auto px-4 py-6">
@@ -139,6 +178,63 @@ export function ContentManager() {
 						New Post
 					</Button>
 				</div>
+
+				{showLiveCard && (
+					<div className="mb-6 bg-rose-500/10 border border-rose-500/30 rounded-2xl p-4">
+						<div className="flex items-start gap-3">
+							<div className="w-10 h-10 rounded-xl bg-rose-500/20 flex items-center justify-center shrink-0">
+								<Radio className="w-5 h-5 text-rose-400" />
+							</div>
+							<div className="min-w-0 flex-1">
+								<div className="flex items-center gap-2 mb-1">
+									<span className="bg-rose-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">LIVE</span>
+									<p className="text-sm font-semibold text-foreground truncate">{liveTitle}</p>
+								</div>
+								{liveStartedRel && (
+									<p className="text-xs text-muted">Started {liveStartedRel}</p>
+								)}
+								{myActiveLive.expired && (
+									<p className="text-xs text-amber-400 mt-1">
+										Host token expired. End this stream and start a new one to continue broadcasting.
+									</p>
+								)}
+								{myActiveLive.stale && !myActiveLive.live && (
+									<p className="text-xs text-amber-400 mt-1">
+										Host credentials are no longer available on this device. End this stream to start fresh.
+									</p>
+								)}
+							</div>
+						</div>
+						<div className="flex flex-wrap gap-2 mt-3">
+							<button
+								type="button"
+								onClick={() => { void navigate('/go-live'); }}
+								disabled={continueDisabled}
+								title={continueDisabled ? 'Token expired — please end and start again' : ''}
+								className={
+									'flex items-center gap-1.5 bg-rose-500 hover:bg-rose-600 text-white ' +
+									'text-sm font-semibold px-4 py-2 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed'
+								}
+							>
+								<Radio className="w-4 h-4" />
+								Continue stream
+							</button>
+							<button
+								type="button"
+								onClick={() => { handleEndLive(); }}
+								disabled={endingLive}
+								className={
+									'flex items-center gap-1.5 bg-foreground/10 hover:bg-foreground/15 text-foreground ' +
+									'text-sm font-semibold px-3 py-2 rounded-xl transition-all border border-border/20 ' +
+									'disabled:opacity-50'
+								}
+							>
+								<X className="w-4 h-4" />
+								End live
+							</button>
+						</div>
+					</div>
+				)}
 
 				<div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
 					<div className="bg-surface border border-border/20 rounded-2xl p-4">

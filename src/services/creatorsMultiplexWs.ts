@@ -272,7 +272,7 @@ export class CreatorsMultiplexWs {
 				timer,
 			};
 
-			const lines = `> ${service} ${requestId}\n${commandLine}\n`;
+			const lines = `>${service} ${requestId}\n${commandLine}\n`;
 			if (service === 'posts' && import.meta.env.DEV) {
 				// Helpful to correlate which backend commands time out.
 				console.debug(`[MUX] >> posts ${requestId}: ${commandLine}`);
@@ -286,7 +286,7 @@ export class CreatorsMultiplexWs {
 	 * `> chat` with no requestId — for commands that do not return success JSON (`/sendmsg` broadcast-only, `/typing`).
 	 */
 	sendChatFireAndForget(commandLine: string): void {
-		const lines = `> chat\n${commandLine}\n`;
+		const lines = `>chat\n${commandLine}\n`;
 		this.rawSend(lines);
 		this.flushQueue();
 	}

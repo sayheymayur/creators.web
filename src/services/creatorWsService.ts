@@ -7,6 +7,11 @@ export interface CreatorFollowResponse {
 	creator_user_id: string;
 }
 
+export interface CreatorUnfollowResponse {
+	ok: true;
+	creator_user_id: string;
+}
+
 const MAX_Q = 64;
 const MAX_CATEGORY = 32;
 
@@ -87,4 +92,14 @@ export function creatorFollow(ws: WsClient, creatorUserId: string, requestId?: s
 	const rid = requestId?.trim() || undefined;
 	if (rid && /\s/.test(rid)) throw new Error('requestId must not contain spaces');
 	return ws.request('creator', 'follow', [id], rid).then(json => json as CreatorFollowResponse);
+}
+
+/** Best-effort unfollow (if backend supports `/unfollow`). */
+export function creatorUnfollow(ws: WsClient, creatorUserId: string, requestId?: string): Promise<CreatorUnfollowResponse> {
+	const id = String(creatorUserId).trim();
+	if (!id) throw new Error('creatorUserId is required');
+	if (/\s/.test(id)) throw new Error('creatorUserId must not contain whitespace');
+	const rid = requestId?.trim() || undefined;
+	if (rid && /\s/.test(rid)) throw new Error('requestId must not contain spaces');
+	return ws.request('creator', 'unfollow', [id], rid).then(json => json as CreatorUnfollowResponse);
 }

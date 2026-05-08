@@ -46,6 +46,8 @@ export interface PaymentConfirmResponse {
 	ok: true;
 	balance_after_cents: string;
 	alreadyConfirmed?: true;
+	/** Present when `purpose=subscription` flow is confirmed. */
+	subscription?: Record<string, unknown>;
 }
 
 const SVC = 'payment';
@@ -67,8 +69,19 @@ export function createPaymentWs(client: WsClient) {
 			if (beforeCursor != null) args.push(beforeCursor);
 			return client.request(SVC, 'transactions', args) as Promise<PaymentHistoryResponse>;
 		},
-		createOrder(amountMinor: string, currency?: string): Promise<PaymentCreateOrderResponse> {
-			const args = currency ? [amountMinor, currency] : [amountMinor];
+		createOrder(
+			amountMinor: string,
+			currency?: string,
+			extraArgs?: Record<string, string | number | boolean | null | undefined>
+		): Promise<PaymentCreateOrderResponse> {
+			const args: string[] = currency ? [amountMinor, currency] : [amountMinor];
+			if (extraArgs) {
+				for (const [k, v] of Object.entries(extraArgs)) {
+					if (v === undefined) continue;
+					if (v === null) args.push(`${k}=`);
+					else args.push(`${k}=${String(v)}`);
+				}
+			}
 			return client.request(SVC, 'createorder', args) as Promise<PaymentCreateOrderResponse>;
 		},
 		confirm(razorpayOrderId: string, razorpayPaymentId: string, razorpaySignature: string): Promise<PaymentConfirmResponse> {

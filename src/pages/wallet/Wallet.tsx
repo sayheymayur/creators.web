@@ -10,6 +10,8 @@ import { delayMs } from '../../utils/delay';
 import type { Transaction } from '../../types';
 import { formatINRFromMinor } from '../../utils/money';
 import type { RazorpayOrderRow } from '../../services/paymentWs';
+import { useSubscriptions } from '../../context/SubscriptionContext';
+import { useContent } from '../../context/ContentContext';
 
 const ADD_FUND_PRESETS_INR = [100, 250, 500, 1000, 2000, 5000];
 
@@ -92,15 +94,14 @@ export function Wallet() {
 	const {
 		addFundsViaRazorpay,
 		getUserTransactions,
-		getUserSubscriptions,
-		cancelSubscription,
-		toggleAutoRenew,
 		razorpayOrders,
 		historyNextCursor,
 		loadMoreLedger,
 		refreshWalletData,
 		state: walletState,
 	} = useWallet();
+	const { activeByCreatorUserId, cancel: cancelWsSubscription, loading: subsLoading, error: subsError } = useSubscriptions();
+	const { creatorWsGetByUserId } = useContent();
 	const [showAddFunds, setShowAddFunds] = useState(false);
 	const [addAmount, setAddAmount] = useState(500);
 	const [customAmount, setCustomAmount] = useState('');
@@ -108,12 +109,20 @@ export function Wallet() {
 	const [addSuccess, setAddSuccess] = useState(false);
 	const [payError, setPayError] = useState('');
 	const [activeTab, setActiveTab] = useState<'transactions' | 'subscriptions' | 'orders'>('transactions');
+	const [creatorDisplay, setCreatorDisplay] = useState<Record<string, { name: string, avatar: string }>>({});
 
 	const user = authState.user;
 	const userId = user?.id ?? '';
 	const transactions = getUserTransactions(userId);
-	const subscriptions = getUserSubscriptions(userId);
-	const activeSubscriptions = subscriptions.filter(s => s.isActive);
+	const creatorIds = Object.keys(activeByCreatorUserId);
+
+	const getSubscriptionId = (dto: unknown): string | null => {
+		const raw = dto as Record<string, unknown>;
+		const cand = raw?.id ?? raw?.subscription_id ?? raw?.subscriptionId;
+		if (typeof cand === 'string') return cand;
+		if (typeof cand === 'number') return String(cand);
+		return null;
+	};
 
 	const balanceMinor = user?.walletBalanceMinor ?? '0';
 
@@ -123,6 +132,32 @@ export function Wallet() {
 	useEffect(() => {
 		setPayError(walletState.walletError ?? '');
 	}, [walletState.walletError]);
+
+	useEffect(() => {
+		if (activeTab !== 'subscriptions') return;
+		if (creatorIds.length === 0) return;
+		let cancelled = false;
+		const missing = creatorIds.filter(id => !creatorDisplay[id]);
+		if (missing.length === 0) return;
+
+		void Promise.all(missing.map(id =>
+			creatorWsGetByUserId(id)
+				.then(r => {
+					if (cancelled) return;
+					const c = r.creator;
+					if (!c) return;
+					setCreatorDisplay(prev => ({
+						...prev,
+						[id]: {
+							name: c.name,
+							avatar: c.avatar_url ?? '',
+						},
+					}));
+				})
+				.catch(() => {})
+		));
+		return () => { cancelled = true; };
+	}, [activeTab, creatorIds.join(','), creatorDisplay, creatorWsGetByUserId]);
 
 	function handleAddFunds() {
 		const amount = customAmount ? parseFloat(customAmount) : addAmount;
@@ -241,45 +276,57 @@ export function Wallet() {
 
 				{activeTab === 'subscriptions' && (
 					<div className="space-y-3">
-						{activeSubscriptions.length === 0 ? (
+						{creatorIds.length === 0 ? (
 							<div className="bg-surface border border-border/20 rounded-2xl p-8 text-center">
 								<TrendingUp className="w-8 h-8 text-muted/50 mx-auto mb-2" />
 								<p className="text-muted text-sm">No active subscriptions</p>
 							</div>
 						) : (
-							activeSubscriptions.map(sub => (
-								<div key={sub.id} className="bg-surface border border-border/20 rounded-2xl p-4">
-									<div className="flex items-center gap-3 mb-3">
-										<img src={sub.creatorAvatar} alt={sub.creatorName} className="w-10 h-10 rounded-full object-cover" />
-										<div className="flex-1">
-											<p className="text-sm font-semibold text-foreground">{sub.creatorName}</p>
-											<p className="text-xs text-muted">Renews {formatDate(sub.endDate)}</p>
+							creatorIds.map(creatorUserId => {
+								const dto = activeByCreatorUserId[creatorUserId] ?? {};
+								const subId = getSubscriptionId(dto);
+								const display = creatorDisplay[creatorUserId];
+								return (
+									<div key={creatorUserId} className="bg-surface border border-border/20 rounded-2xl p-4">
+										<div className="flex items-center gap-3 mb-3">
+											{display?.avatar ? (
+												<img src={display.avatar} alt={display.name} className="w-10 h-10 rounded-full object-cover" />
+											) : (
+												<div className="w-10 h-10 rounded-full bg-foreground/10" />
+											)}
+											<div className="flex-1">
+												<p className="text-sm font-semibold text-foreground">{display?.name ?? `Creator ${creatorUserId}`}</p>
+												<p className="text-xs text-muted font-mono truncate">{subId ? `sub ${subId}` : 'Subscription'}</p>
+											</div>
+											<span className="text-sm font-bold text-rose-400">{(() => {
+												const amount =
+													typeof dto.amount_cents === 'string' ? dto.amount_cents :
+													typeof dto.amount_minor === 'string' ? dto.amount_minor :
+													'';
+												return amount && /^\d+$/.test(amount) ? `${formatINRFromMinor(amount)}/mo` : '—';
+											})()}</span>
 										</div>
-										<span className="text-sm font-bold text-rose-400">
-											{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(sub.price)}/mo
-										</span>
+										<div className="flex gap-2">
+											<button
+												disabled={!subId}
+												onClick={() => {
+													if (!subId) return;
+													void cancelWsSubscription(subId);
+												}}
+												className="flex-1 text-xs py-1.5 rounded-xl font-medium border border-rose-500/20 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition-colors"
+											>
+												Cancel
+											</button>
+										</div>
 									</div>
-									<div className="flex gap-2">
-										<button
-											onClick={() => toggleAutoRenew(sub.id)}
-											className={`flex-1 text-xs py-1.5 rounded-xl font-medium transition-all border ${
-												sub.autoRenew ?
-													'border-emerald-500/30 bg-emerald-500/10 text-emerald-400' :
-													'border-border/20 bg-foreground/5 text-muted'
-											}`}
-										>
-											<RefreshCw className="w-3 h-3 inline mr-1" />
-											Auto-renew {sub.autoRenew ? 'ON' : 'OFF'}
-										</button>
-										<button
-											onClick={() => cancelSubscription(sub.id)}
-											className="flex-1 text-xs py-1.5 rounded-xl font-medium border border-rose-500/20 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition-colors"
-										>
-											Cancel
-										</button>
-									</div>
-								</div>
-							))
+								);
+							})
+						)}
+						{(subsLoading || subsError) && (
+							<div className="px-1">
+								{subsLoading && <p className="text-xs text-muted">Syncing subscriptions…</p>}
+								{subsError && <p className="text-xs text-rose-400">{subsError}</p>}
+							</div>
 						)}
 					</div>
 				)}

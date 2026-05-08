@@ -10,6 +10,7 @@ import { SessionProvider } from './context/SessionContext';
 import { LiveStreamProvider } from './context/LiveStreamContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { WsProvider } from './context/WsContext';
+import { SubscriptionProvider } from './context/SubscriptionContext';
 import { SessionsProvider } from './context/SessionsContext';
 import { CallSessionProvider } from './context/CallSessionContext';
 import { MinimizedCallWindow } from './components/call/MinimizedCallWindow';
@@ -41,6 +42,7 @@ import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { CreatorApproval } from './pages/admin/CreatorApproval';
 import { UserManagement } from './pages/admin/UserManagement';
 import { ContentModeration } from './pages/admin/ContentModeration';
+import { SubscriptionWsSimulation } from './pages/admin/SubscriptionWsSimulation';
 
 import { Settings } from './pages/Settings';
 import { ActiveCallScreen } from './pages/call/ActiveCallScreen';
@@ -188,6 +190,7 @@ function AppRoutes() {
 			<Route path="/admin/creators" element={<ProtectedRoute roles={['admin']}><CreatorApproval /></ProtectedRoute>} />
 			<Route path="/admin/users" element={<ProtectedRoute roles={['admin']}><UserManagement /></ProtectedRoute>} />
 			<Route path="/admin/moderation" element={<ProtectedRoute roles={['admin']}><ContentModeration /></ProtectedRoute>} />
+			<Route path="/admin/subscription-ws" element={<ProtectedRoute roles={['admin']}><SubscriptionWsSimulation /></ProtectedRoute>} />
 			<Route path="/admin/reports" element={<ProtectedRoute roles={['admin']}><AdminDashboard /></ProtectedRoute>} />
 
 			<Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
@@ -216,25 +219,27 @@ function Providers({ children }: { children: React.ReactNode }) {
 			<ThemeProvider>
 				<AuthProvider>
 					<WsProvider>
-						<NotificationProvider>
-							<ContentProvider>
-								<ChatProvider>
-									<WalletProvider>
-										<CallProvider>
-											<SessionProvider>
-												<SessionsProvider>
-													<CallSessionProvider>
-														<LiveStreamProvider>
-															{children}
-														</LiveStreamProvider>
-													</CallSessionProvider>
-												</SessionsProvider>
-											</SessionProvider>
-										</CallProvider>
-									</WalletProvider>
-								</ChatProvider>
-							</ContentProvider>
-						</NotificationProvider>
+						<SubscriptionProvider>
+							<NotificationProvider>
+								<ContentProvider>
+									<ChatProvider>
+										<WalletProvider>
+											<CallProvider>
+												<SessionProvider>
+													<SessionsProvider>
+														<CallSessionProvider>
+															<LiveStreamProvider>
+																{children}
+															</LiveStreamProvider>
+														</CallSessionProvider>
+													</SessionsProvider>
+												</SessionProvider>
+											</CallProvider>
+										</WalletProvider>
+									</ChatProvider>
+								</ContentProvider>
+							</NotificationProvider>
+						</SubscriptionProvider>
 					</WsProvider>
 				</AuthProvider>
 			</ThemeProvider>

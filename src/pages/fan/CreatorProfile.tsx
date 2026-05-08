@@ -21,7 +21,7 @@ import { randomUuid } from '../../utils/isUuid';
 import { formatINR } from '../../services/razorpay';
 import { useSessions } from '../../context/SessionsContext';
 import { useWs, useWsConnected } from '../../context/WsContext';
-import { creatorFollow } from '../../services/creatorWsService';
+import { creatorFollow, creatorUnfollow } from '../../services/creatorWsService';
 
 export function CreatorProfile() {
 	const { id } = useParams<{ id: string }>();
@@ -42,6 +42,7 @@ export function CreatorProfile() {
 	const [remoteCreator, setRemoteCreator] = useState<Creator | null>(null);
 	const [isLoadingCreator, setIsLoadingCreator] = useState(false);
 	const [followBusy, setFollowBusy] = useState(false);
+	const [isFollowed, setIsFollowed] = useState<boolean>(false);
 	const hasLoadedCreatorRef = useRef(false);
 
 	const maybeCreator = useMemo(() => mockCreators.find(c => c.id === id), [id]);
@@ -77,6 +78,7 @@ export function CreatorProfile() {
 				if (ac.signal.aborted) return;
 				if (r.creator) {
 					hasLoadedCreatorRef.current = true;
+					setIsFollowed(Boolean((r.creator as unknown as { is_followed?: boolean | null }).is_followed));
 					setRemoteCreator(creatorProfileDtoToCreator(r.creator, base));
 					return;
 				}
@@ -222,12 +224,14 @@ export function CreatorProfile() {
 			return;
 		}
 		setFollowBusy(true);
-		void creatorFollow(ws, creatorForDisplay.id)
+		const op = isFollowed ? creatorUnfollow : creatorFollow;
+		void op(ws, creatorForDisplay.id)
 			.then(() => {
-				showToast('You are now following this creator.');
+				setIsFollowed(prev => !prev);
+				showToast(isFollowed ? 'Unfollowed.' : 'You are now following this creator.');
 			})
 			.catch((err: unknown) => {
-				showToast(err instanceof Error ? err.message : 'Follow failed', 'error');
+				showToast(err instanceof Error ? err.message : (isFollowed ? 'Unfollow failed' : 'Follow failed'), 'error');
 			})
 			.finally(() => {
 				setFollowBusy(false);
@@ -354,12 +358,13 @@ export function CreatorProfile() {
 									onClick={() => { handleWsFollow(); }}
 									disabled={followBusy}
 									className={
-										'flex items-center gap-1.5 bg-foreground/10 hover:bg-foreground/15 text-foreground ' +
+										'flex items-center gap-1.5 ' +
+										(isFollowed ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/20 ' : 'bg-foreground/10 hover:bg-foreground/15 text-foreground border-border/20 ') +
 										'text-sm font-semibold px-3 py-2 rounded-xl transition-all border border-border/20 ' +
 										'disabled:opacity-50'
 									}
 								>
-									Follow
+									{isFollowed ? 'Following' : 'Follow'}
 								</button>
 							</div>
 						)}

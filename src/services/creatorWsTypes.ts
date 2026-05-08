@@ -12,6 +12,9 @@ export interface CreatorProfileDTO extends CreatorSummaryDTO {
 	banner_url: string | null;
 	socials: Record<string, unknown> | null;
 	created_at: string;
+	/** Optional extra fields present on some backends (used for follow UI). */
+	follower_count?: number | string | null;
+	is_followed?: boolean | null;
 }
 
 export interface CreatorListResponse {

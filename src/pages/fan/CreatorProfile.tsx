@@ -22,6 +22,8 @@ import { formatINR } from '../../services/razorpay';
 import { useSessions } from '../../context/SessionsContext';
 import { useWs, useWsConnected } from '../../context/WsContext';
 import { creatorFollow, creatorUnfollow } from '../../services/creatorWsService';
+import { useSubscriptions } from '../../context/SubscriptionContext';
+import { subscriptionId, subscriptionUiStatus } from '../../services/subscriptionUi';
 
 export function CreatorProfile() {
 	const { id } = useParams<{ id: string }>();
@@ -35,6 +37,7 @@ export function CreatorProfile() {
 	const { requestSession, state: sessionsState, clearOutgoing } = useSessions();
 	const ws = useWs();
 	const wsConnected = useWsConnected();
+	const { getSubscriptionForCreator, cancel: cancelWsSubscription } = useSubscriptions();
 	const [showTipModal, setShowTipModal] = useState(false);
 	const [showSubscribeModal, setShowSubscribeModal] = useState(false);
 	const [showSessionModal, setShowSessionModal] = useState(false);
@@ -145,7 +148,10 @@ export function CreatorProfile() {
 		);
 	}
 
-	const subscribed = isSubscribed(creator.id);
+	const subDto = getSubscriptionForCreator(creator.id);
+	const subStatus = subDto ? subscriptionUiStatus(subDto) : null;
+	const subscribed = subStatus === 'active' || isSubscribed(creator.id);
+	const subId = subDto ? subscriptionId(subDto) : null;
 	const isOwner = authState.user?.id === creator.id;
 	const creatorForDisplay: Creator = isOwner && authState.user ? {
 		...creator,
@@ -238,6 +244,20 @@ export function CreatorProfile() {
 			});
 	}
 
+	const [cancelBusy, setCancelBusy] = useState(false);
+	function handleCancelSubscription() {
+		if (!subId) return;
+		setCancelBusy(true);
+		void cancelWsSubscription(subId)
+			.then(() => {
+				showToast('Subscription cancelled.');
+			})
+			.catch(err => {
+				showToast(err instanceof Error ? err.message : 'Cancel failed', 'error');
+			})
+			.finally(() => setCancelBusy(false));
+	}
+
 	function handleMessage() {
 		if (!authState.user) { navigate('/login'); return; }
 		const existing = getConversationForUser(creatorForDisplay.id);
@@ -328,6 +348,14 @@ export function CreatorProfile() {
 										>
 											<MessageCircle className="w-4 h-4" />
 											Message
+										</button>
+										<button
+											type="button"
+											disabled={!subId || cancelBusy}
+											onClick={handleCancelSubscription}
+											className="flex items-center gap-1.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 text-sm font-semibold px-3 py-2 rounded-xl transition-all border border-rose-500/20 disabled:opacity-50"
+										>
+											Cancel
 										</button>
 										<button
 											onClick={() => setShowTipModal(true)}

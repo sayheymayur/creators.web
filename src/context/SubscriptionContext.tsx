@@ -2,38 +2,17 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { useAuth } from './AuthContext';
 import { useEnsureWsAuth, useWs, useWsAuthReady, useWsConnected } from './WsContext';
 import { createPaymentWs } from '../services/paymentWs';
-import { createSubscriptionWs, type SubscriptionDTO, type SubscriptionListMineResponse } from '../services/subscriptionWs';
+import { createSubscriptionWs, type SubscriptionListMineResponse } from '../services/subscriptionWs';
 import { openRazorpayCheckout, isPaymentCancelled } from '../services/razorpay';
 import { inrRupeesToMinor } from '../utils/money';
+import {
+	type SubscriptionDTO,
+	subscriptionCreatorUserId,
+	subscriptionId,
+	subscriptionUiStatus,
+} from '../services/subscriptionUi';
 
 type SubscriptionByCreator = Record<string, SubscriptionDTO>;
-
-function guessCreatorUserId(dto: SubscriptionDTO): string | null {
-	const cand =
-		dto.creatorUserId ??
-		dto.creator_user_id ??
-		dto.creator_userId ??
-		dto.creator_id ??
-		dto.creatorId;
-	if (typeof cand === 'string') return cand;
-	if (typeof cand === 'number') return String(cand);
-	return null;
-}
-
-function guessSubscriptionId(dto: SubscriptionDTO): string | null {
-	const cand = dto.id ?? dto.subscription_id ?? dto.subscriptionId;
-	if (typeof cand === 'string') return cand;
-	if (typeof cand === 'number') return String(cand);
-	return null;
-}
-
-function isProbablyActive(dto: SubscriptionDTO): boolean {
-	if (typeof dto.is_active === 'boolean') return dto.is_active;
-	if (typeof dto.isActive === 'boolean') return dto.isActive;
-	const status = typeof dto.status === 'string' ? dto.status.toLowerCase() : '';
-	if (!status) return true;
-	return status !== 'cancelled' && status !== 'canceled' && status !== 'ended' && status !== 'expired';
-}
 
 export interface CheckoutResult {
 	ok: boolean;
@@ -47,12 +26,16 @@ interface SubscriptionContextValue {
 	ready: boolean;
 	loading: boolean;
 	error: string | null;
+	/** Latest subscription DTO per creator user id (may be active or cancelled). */
+	byCreatorUserId: SubscriptionByCreator;
+	/** Convenience: active-only view derived from `byCreatorUserId`. */
 	activeByCreatorUserId: SubscriptionByCreator;
 	listMine: () => Promise<void>;
 	isSubscribed: (creatorUserId: string) => boolean;
 	subscribeWallet: (creatorUserId: string, autoRenew: boolean) => Promise<SubscriptionDTO>;
 	subscribeViaCheckout: (creatorUserId: string, amountInrRupees: number) => Promise<CheckoutResult>;
 	cancel: (subscriptionId: string) => Promise<void>;
+	getSubscriptionForCreator: (creatorUserId: string) => SubscriptionDTO | null;
 }
 
 const SubscriptionContext = createContext<SubscriptionContextValue | null>(null);
@@ -69,7 +52,7 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
 
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
-	const [activeByCreatorUserId, setActiveByCreatorUserId] = useState<SubscriptionByCreator>({});
+	const [byCreatorUserId, setByCreatorUserId] = useState<SubscriptionByCreator>({});
 	const [ready, setReady] = useState(false);
 
 	const lastHydratedUserRef = useRef<string | null>(null);
@@ -78,12 +61,11 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
 		const next: SubscriptionByCreator = {};
 		for (const dto of resp.subscriptions ?? []) {
 			if (!dto || typeof dto !== 'object') continue;
-			if (!isProbablyActive(dto)) continue;
-			const creatorUserId = guessCreatorUserId(dto);
+			const creatorUserId = subscriptionCreatorUserId(dto);
 			if (!creatorUserId) continue;
 			next[creatorUserId] = dto;
 		}
-		setActiveByCreatorUserId(next);
+		setByCreatorUserId(next);
 	}, []);
 
 	const listMine = useCallback(() => {
@@ -108,7 +90,7 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
 		if (!u || !wsConnected || !wsAuthReady) {
 			setReady(false);
 			lastHydratedUserRef.current = null;
-			setActiveByCreatorUserId({});
+			setByCreatorUserId({});
 			return;
 		}
 		if (lastHydratedUserRef.current === key) return;
@@ -125,19 +107,21 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
 		const offCreated = createdServices.map(svc => ws.on(svc, 'created', data => {
 			const dto = (data && typeof data === 'object' ? data : null) as SubscriptionDTO | null;
 			if (!dto) return;
-			const creatorUserId = guessCreatorUserId(dto);
+			const creatorUserId = subscriptionCreatorUserId(dto);
 			if (!creatorUserId) return;
-			if (!isProbablyActive(dto)) return;
-			setActiveByCreatorUserId(prev => ({ ...prev, [creatorUserId]: dto }));
+			setByCreatorUserId(prev => ({ ...prev, [creatorUserId]: dto }));
 		}));
 
 		const offCancelled = cancelledServices.map(svc => ws.on(svc, 'cancelled', data => {
 			const dto = (data && typeof data === 'object' ? data : null) as SubscriptionDTO | null;
-			const creatorUserId = dto ? guessCreatorUserId(dto) : null;
+			const creatorUserId = dto ? subscriptionCreatorUserId(dto) : null;
 			if (!creatorUserId) return;
-			setActiveByCreatorUserId(prev => {
-				const { [creatorUserId]: _rm, ...rest } = prev;
-				return rest;
+			setByCreatorUserId(prev => {
+				const cur = prev[creatorUserId];
+				if (dto) return { ...prev, [creatorUserId]: dto };
+				// If server didn't send DTO, mark existing as cancelled best-effort.
+				if (!cur) return prev;
+				return { ...prev, [creatorUserId]: { ...cur, status: 'cancelled', is_active: false } };
 			});
 		}));
 
@@ -147,11 +131,25 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
 		};
 	}, [ws, wsConnected]);
 
+	const activeByCreatorUserId = useMemo(() => {
+		const out: SubscriptionByCreator = {};
+		for (const [k, dto] of Object.entries(byCreatorUserId)) {
+			if (dto && subscriptionUiStatus(dto) === 'active') out[k] = dto;
+		}
+		return out;
+	}, [byCreatorUserId]);
+
 	const isSubscribed = useCallback((creatorUserId: string) => {
 		const id = String(creatorUserId ?? '').trim();
 		if (!id) return false;
 		return Boolean(activeByCreatorUserId[id]);
 	}, [activeByCreatorUserId]);
+
+	const getSubscriptionForCreator = useCallback((creatorUserId: string) => {
+		const id = String(creatorUserId ?? '').trim();
+		if (!id) return null;
+		return byCreatorUserId[id] ?? null;
+	}, [byCreatorUserId]);
 
 	const subscribeWallet = useCallback((creatorUserId: string, autoRenew: boolean) => {
 		return ensureWsAuth()
@@ -159,8 +157,8 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
 			.then(resp => {
 				if (resp.balance_after_cents) updateWalletMinor(resp.balance_after_cents);
 				const dto = resp.subscription;
-				const id = guessCreatorUserId(dto);
-				if (id) setActiveByCreatorUserId(prev => ({ ...prev, [id]: dto }));
+				const id = subscriptionCreatorUserId(dto);
+				if (id) setByCreatorUserId(prev => ({ ...prev, [id]: dto }));
 				return dto;
 			});
 	}, [ensureWsAuth, subscription, updateWalletMinor]);
@@ -184,8 +182,8 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
 							if (conf.balance_after_cents) updateWalletMinor(conf.balance_after_cents);
 							const sub = conf.subscription;
 							if (sub) {
-								const id = guessCreatorUserId(sub);
-								if (id) setActiveByCreatorUserId(prev => ({ ...prev, [id]: sub }));
+								const id = subscriptionCreatorUserId(sub);
+								if (id) setByCreatorUserId(prev => ({ ...prev, [id]: sub }));
 							}
 							return { ok: true, subscription: sub, balance_after_cents: conf.balance_after_cents } satisfies CheckoutResult;
 						});
@@ -212,8 +210,8 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
 						if (conf.balance_after_cents) updateWalletMinor(conf.balance_after_cents);
 						const sub = conf.subscription;
 						if (sub) {
-							const id = guessCreatorUserId(sub);
-							if (id) setActiveByCreatorUserId(prev => ({ ...prev, [id]: sub }));
+							const id = subscriptionCreatorUserId(sub);
+							if (id) setByCreatorUserId(prev => ({ ...prev, [id]: sub }));
 						}
 						return { ok: true, subscription: sub, balance_after_cents: conf.balance_after_cents } satisfies CheckoutResult;
 					});
@@ -225,17 +223,14 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
 			});
 	}, [authState.user, ensureWsAuth, payment, updateWalletMinor]);
 
-	const cancel = useCallback((subscriptionId: string) => {
+	const cancel = useCallback((subId: string) => {
 		return ensureWsAuth()
-			.then(() => subscription.cancel(subscriptionId))
+			.then(() => subscription.cancel(subId))
 			.then(resp => {
 				const dto = resp.subscription;
-				const creatorUserId = guessCreatorUserId(dto);
+				const creatorUserId = subscriptionCreatorUserId(dto);
 				if (!creatorUserId) return;
-				setActiveByCreatorUserId(prev => {
-					const { [creatorUserId]: _rm, ...rest } = prev;
-					return rest;
-				});
+				setByCreatorUserId(prev => ({ ...prev, [creatorUserId]: dto }));
 			});
 	}, [ensureWsAuth, subscription]);
 
@@ -243,13 +238,15 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
 		ready,
 		loading,
 		error,
+		byCreatorUserId,
 		activeByCreatorUserId,
 		listMine,
 		isSubscribed,
 		subscribeWallet,
 		subscribeViaCheckout,
 		cancel,
-	}), [ready, loading, error, activeByCreatorUserId, listMine, isSubscribed, subscribeWallet, subscribeViaCheckout, cancel]);
+		getSubscriptionForCreator,
+	}), [ready, loading, error, byCreatorUserId, activeByCreatorUserId, listMine, isSubscribed, subscribeWallet, subscribeViaCheckout, cancel, getSubscriptionForCreator]);
 
 	return (
 		<SubscriptionContext.Provider value={value}>
@@ -268,5 +265,5 @@ export function useSubscriptionIdForCreator(creatorUserId: string): string | nul
 	const { activeByCreatorUserId } = useSubscriptions();
 	const dto = activeByCreatorUserId[String(creatorUserId ?? '').trim()];
 	if (!dto) return null;
-	return guessSubscriptionId(dto);
+	return subscriptionId(dto);
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Plus, ArrowUpRight, ArrowDownLeft, Wallet as WalletIcon, CreditCard, TrendingUp, RefreshCw, CheckCircle } from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';
 import { Modal } from '../../components/ui/Toast';
@@ -12,6 +12,7 @@ import { formatINRFromMinor } from '../../utils/money';
 import type { RazorpayOrderRow } from '../../services/paymentWs';
 import { useSubscriptions } from '../../context/SubscriptionContext';
 import { useContent } from '../../context/ContentContext';
+import { subscriptionAmountMinor, subscriptionId, subscriptionUiStatus } from '../../services/subscriptionUi';
 
 const ADD_FUND_PRESETS_INR = [100, 250, 500, 1000, 2000, 5000];
 
@@ -100,7 +101,7 @@ export function Wallet() {
 		refreshWalletData,
 		state: walletState,
 	} = useWallet();
-	const { activeByCreatorUserId, cancel: cancelWsSubscription, loading: subsLoading, error: subsError } = useSubscriptions();
+	const { byCreatorUserId, cancel: cancelWsSubscription, loading: subsLoading, error: subsError } = useSubscriptions();
 	const { creatorWsGetByUserId } = useContent();
 	const [showAddFunds, setShowAddFunds] = useState(false);
 	const [addAmount, setAddAmount] = useState(500);
@@ -114,15 +115,28 @@ export function Wallet() {
 	const user = authState.user;
 	const userId = user?.id ?? '';
 	const transactions = getUserTransactions(userId);
-	const creatorIds = Object.keys(activeByCreatorUserId);
-
-	const getSubscriptionId = (dto: unknown): string | null => {
-		const raw = dto as Record<string, unknown>;
-		const cand = raw?.id ?? raw?.subscription_id ?? raw?.subscriptionId;
-		if (typeof cand === 'string') return cand;
-		if (typeof cand === 'number') return String(cand);
-		return null;
+	type WalletSubRow = {
+		creatorUserId: string,
+		dto: Record<string, unknown>,
+		status: 'active' | 'cancelled',
+		subscriptionId: string | null,
+		amountMinor: string | null,
 	};
+
+	const subs = useMemo<WalletSubRow[]>(() => {
+		return Object.entries(byCreatorUserId).map(([creatorUserId, dto]) => ({
+			creatorUserId,
+			dto,
+			status: subscriptionUiStatus(dto),
+			subscriptionId: subscriptionId(dto),
+			amountMinor: subscriptionAmountMinor(dto),
+		}));
+	}, [byCreatorUserId]);
+
+	const activeSubs = useMemo(() => subs.filter((s: WalletSubRow) => s.status === 'active'), [subs]);
+	const cancelledSubs = useMemo(() => subs.filter((s: WalletSubRow) => s.status === 'cancelled'), [subs]);
+
+	const creatorIds = useMemo(() => subs.map((s: WalletSubRow) => s.creatorUserId), [subs]);
 
 	const balanceMinor = user?.walletBalanceMinor ?? '0';
 
@@ -276,51 +290,79 @@ export function Wallet() {
 
 				{activeTab === 'subscriptions' && (
 					<div className="space-y-3">
-						{creatorIds.length === 0 ? (
+						{subs.length === 0 ? (
 							<div className="bg-surface border border-border/20 rounded-2xl p-8 text-center">
 								<TrendingUp className="w-8 h-8 text-muted/50 mx-auto mb-2" />
 								<p className="text-muted text-sm">No active subscriptions</p>
 							</div>
 						) : (
-							creatorIds.map(creatorUserId => {
-								const dto = activeByCreatorUserId[creatorUserId] ?? {};
-								const subId = getSubscriptionId(dto);
-								const display = creatorDisplay[creatorUserId];
-								return (
-									<div key={creatorUserId} className="bg-surface border border-border/20 rounded-2xl p-4">
-										<div className="flex items-center gap-3 mb-3">
-											{display?.avatar ? (
-												<img src={display.avatar} alt={display.name} className="w-10 h-10 rounded-full object-cover" />
-											) : (
-												<div className="w-10 h-10 rounded-full bg-foreground/10" />
-											)}
-											<div className="flex-1">
-												<p className="text-sm font-semibold text-foreground">{display?.name ?? `Creator ${creatorUserId}`}</p>
-												<p className="text-xs text-muted font-mono truncate">{subId ? `sub ${subId}` : 'Subscription'}</p>
-											</div>
-											<span className="text-sm font-bold text-rose-400">{(() => {
-												const amount =
-													typeof dto.amount_cents === 'string' ? dto.amount_cents :
-													typeof dto.amount_minor === 'string' ? dto.amount_minor :
-													'';
-												return amount && /^\d+$/.test(amount) ? `${formatINRFromMinor(amount)}/mo` : '—';
-											})()}</span>
-										</div>
-										<div className="flex gap-2">
-											<button
-												disabled={!subId}
-												onClick={() => {
-													if (!subId) return;
-													void cancelWsSubscription(subId);
-												}}
-												className="flex-1 text-xs py-1.5 rounded-xl font-medium border border-rose-500/20 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition-colors"
-											>
-												Cancel
-											</button>
+							<div className="space-y-3">
+								{activeSubs.length > 0 && (
+									<div className="px-1">
+										<p className="text-xs font-semibold text-muted uppercase tracking-wide mb-2">Active</p>
+										<div className="space-y-3">
+											{activeSubs.map(s => {
+												const display = creatorDisplay[s.creatorUserId];
+												return (
+													<div key={s.creatorUserId} className="bg-surface border border-border/20 rounded-2xl p-4">
+														<div className="flex items-center gap-3 mb-3">
+															{display?.avatar ? (
+																<img src={display.avatar} alt={display.name} className="w-10 h-10 rounded-full object-cover" />
+															) : (
+																<div className="w-10 h-10 rounded-full bg-foreground/10" />
+															)}
+															<div className="flex-1">
+																<p className="text-sm font-semibold text-foreground">{display?.name ?? `Creator ${s.creatorUserId}`}</p>
+																<p className="text-xs text-emerald-300/80">Active subscription</p>
+															</div>
+															<span className="text-sm font-bold text-rose-400">{s.amountMinor ? `${formatINRFromMinor(s.amountMinor)}/mo` : '—'}</span>
+														</div>
+														<div className="flex gap-2">
+															<button
+																disabled={!s.subscriptionId}
+																onClick={() => {
+																	if (!s.subscriptionId) return;
+																	void cancelWsSubscription(s.subscriptionId);
+																}}
+																className="flex-1 text-xs py-1.5 rounded-xl font-medium border border-rose-500/20 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition-colors disabled:opacity-50"
+															>
+																Cancel subscription
+															</button>
+														</div>
+													</div>
+												);
+											})}
 										</div>
 									</div>
-								);
-							})
+								)}
+
+								{cancelledSubs.length > 0 && (
+									<div className="px-1">
+										<p className="text-xs font-semibold text-muted uppercase tracking-wide mb-2">Cancelled</p>
+										<div className="space-y-3">
+											{cancelledSubs.map(s => {
+												const display = creatorDisplay[s.creatorUserId];
+												return (
+													<div key={s.creatorUserId} className="bg-surface border border-border/20 rounded-2xl p-4 opacity-90">
+														<div className="flex items-center gap-3">
+															{display?.avatar ? (
+																<img src={display.avatar} alt={display.name} className="w-10 h-10 rounded-full object-cover" />
+															) : (
+																<div className="w-10 h-10 rounded-full bg-foreground/10" />
+															)}
+															<div className="flex-1">
+																<p className="text-sm font-semibold text-foreground">{display?.name ?? `Creator ${s.creatorUserId}`}</p>
+																<p className="text-xs text-muted">Cancelled</p>
+															</div>
+															<span className="text-xs px-2 py-1 rounded-full bg-foreground/5 text-muted">Cancelled</span>
+														</div>
+													</div>
+												);
+											})}
+										</div>
+									</div>
+								)}
+							</div>
 						)}
 						{(subsLoading || subsError) && (
 							<div className="px-1">

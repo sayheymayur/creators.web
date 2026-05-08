@@ -8,7 +8,7 @@ import { useChat } from '../../context/ChatContext';
 import { randomUuid } from '../../utils/isUuid';
 import { createSubscriptionWs, type SubscriptionSubscriberRow } from '../../services/subscriptionWs';
 import { useEnsureWsAuth, useWs, useWsAuthReady, useWsConnected } from '../../context/WsContext';
-import { formatINRFromMinor } from '../../utils/money';
+import { subscriptionUiStatus } from '../../services/subscriptionUi';
 
 export function Subscribers() {
 	const creator = useCurrentCreator();
@@ -19,6 +19,7 @@ export function Subscribers() {
 	const wsAuthReady = useWsAuthReady();
 	const ensureWsAuth = useEnsureWsAuth();
 	const [search, setSearch] = useState('');
+	const [filter, setFilter] = useState<'all' | 'active' | 'cancelled'>('active');
 	const [rows, setRows] = useState<SubscriptionSubscriberRow[]>([]);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -59,30 +60,27 @@ export function Subscribers() {
 		};
 	}, [ws, wsConnected, refresh]);
 
+	const filteredRows = useMemo(() => {
+		if (filter === 'all') return rows;
+		return rows.filter(r => {
+			const st = subscriptionUiStatus(r.subscription);
+			return filter === 'active' ? st === 'active' : st === 'cancelled';
+		});
+	}, [rows, filter]);
+
 	const subscribers = useMemo(() => {
 		const q = search.trim().toLowerCase();
 		const filtered = q ?
-			rows.filter(r =>
+			filteredRows.filter(r =>
 				r.fan?.name?.toLowerCase().includes(q) ||
 				r.fan?.username?.toLowerCase().includes(q)
 			) :
-			rows;
+			filteredRows;
 		return filtered;
-	}, [rows, search]);
+	}, [filteredRows, search]);
 
-	const mrrMinor = useMemo(() => {
-		let sum = 0;
-		for (const r of rows) {
-			const dto = r.subscription;
-			const amount =
-				typeof dto.amount_cents === 'string' ? dto.amount_cents :
-				typeof dto.amountMinor === 'number' ? String(dto.amountMinor) :
-				typeof dto.amount_minor === 'string' ? dto.amount_minor :
-				'';
-			if (amount && /^\d+$/.test(amount)) sum += Number(amount);
-		}
-		return sum > 0 ? String(sum) : null;
-	}, [rows]);
+	const activeCount = useMemo(() => rows.filter(r => subscriptionUiStatus(r.subscription) === 'active').length, [rows]);
+	const cancelledCount = useMemo(() => rows.filter(r => subscriptionUiStatus(r.subscription) === 'cancelled').length, [rows]);
 
 	function handleMessage(userId: string, userName: string, userAvatar: string) {
 		const existing = chatState.conversations.find(c =>
@@ -122,13 +120,27 @@ export function Subscribers() {
 						<p className="text-xs text-muted">Total Subscribers</p>
 					</div>
 					<div className="bg-surface border border-border/20 rounded-2xl p-4 text-center">
-						<p className="text-2xl font-black text-emerald-400">{rows.length}</p>
+						<p className="text-2xl font-black text-emerald-400">{activeCount}</p>
 						<p className="text-xs text-muted">Active</p>
 					</div>
 					<div className="bg-surface border border-border/20 rounded-2xl p-4 text-center">
-						<p className="text-2xl font-black text-rose-400">{mrrMinor ? formatINRFromMinor(mrrMinor) : '—'}</p>
-						<p className="text-xs text-muted">MRR</p>
+						<p className="text-2xl font-black text-rose-400">{cancelledCount}</p>
+						<p className="text-xs text-muted">Cancelled</p>
 					</div>
+				</div>
+
+				<div className="flex gap-1 bg-foreground/5 p-0.5 rounded-xl mb-4 overflow-x-auto">
+					{(['all', 'active', 'cancelled'] as const).map(k => (
+						<button
+							key={k}
+							onClick={() => setFilter(k)}
+							className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all capitalize whitespace-nowrap px-2 ${
+								filter === k ? 'bg-foreground/10 text-foreground' : 'text-muted'
+							}`}
+						>
+							{k}
+						</button>
+					))}
 				</div>
 
 				<div className="relative mb-4">
@@ -164,7 +176,9 @@ export function Subscribers() {
 								) : <div className="w-10 h-10 rounded-full bg-foreground/10 shrink-0" />}
 								<div className="flex-1 min-w-0">
 									<p className="text-sm font-medium text-foreground truncate">{row.fan?.name ?? 'Unknown'}</p>
-									<p className="text-xs text-muted truncate">@{row.fan?.username ?? '—'}</p>
+									<p className="text-xs text-muted truncate">
+										@{row.fan?.username ?? '—'} · <span className={subscriptionUiStatus(row.subscription) === 'active' ? 'text-emerald-300' : 'text-muted'}>{subscriptionUiStatus(row.subscription)}</span>
+									</p>
 								</div>
 								<button
 									onClick={() => handleMessage(String(row.fan.id), row.fan.name, row.fan.avatar_url ?? '')}

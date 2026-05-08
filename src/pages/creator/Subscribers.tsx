@@ -83,6 +83,16 @@ export function Subscribers() {
 	const activeCount = useMemo(() => rows.filter(r => subscriptionUiStatus(r.subscription) === 'active').length, [rows]);
 	const cancelledCount = useMemo(() => rows.filter(r => subscriptionUiStatus(r.subscription) === 'cancelled').length, [rows]);
 
+	const rowKey = useMemo(() => {
+		return (row: SubscriptionSubscriberRow, idx: number) => {
+			const rawSubId = (row.subscription as unknown as { id?: unknown } | undefined)?.id;
+			const rawFanId = (row.fan as unknown as { id?: unknown } | undefined)?.id;
+			const subId = typeof rawSubId === 'string' || typeof rawSubId === 'number' ? String(rawSubId) : 'sub';
+			const fanId = typeof rawFanId === 'string' || typeof rawFanId === 'number' ? String(rawFanId) : 'fan';
+			return `${subId}-${fanId}-${idx}`;
+		};
+	}, []);
+
 	function handleMessage(userId: string, userName: string, userAvatar: string) {
 		const existing = chatState.conversations.find(c =>
 			c.participantIds.includes(creatorData.id) && c.participantIds.includes(userId)
@@ -171,7 +181,10 @@ export function Subscribers() {
 						</div>
 					) : (
 						subscribers.map((row, idx) => (
-							<div key={`${row.fan?.id ?? idx}`} className={`flex items-center gap-3 px-4 py-3 ${idx < subscribers.length - 1 ? 'border-b border-border/10' : ''}`}>
+							<div
+								key={rowKey(row, idx)}
+								className={`flex items-center gap-3 px-4 py-3 ${idx < subscribers.length - 1 ? 'border-b border-border/10' : ''}`}
+							>
 								{row.fan?.avatar_url ? (
 									<img src={row.fan.avatar_url} alt={row.fan.name} className="w-10 h-10 rounded-full object-cover shrink-0" />
 								) : <div className="w-10 h-10 rounded-full bg-foreground/10 shrink-0" />}

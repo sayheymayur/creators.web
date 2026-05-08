@@ -28,7 +28,10 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
 	}), []);
 
 	useEffect(() => {
-		client.connect();
+		// React.StrictMode (dev) runs effect setup+cleanup+setup.
+		// Since we intentionally don't disconnect during the dev-only test-unmount,
+		// guard against double-connect to avoid duplicate sockets + duplicate requests.
+		if (!client.isConnected) client.connect();
 		setIsConnected(client.isConnected);
 		return () => {
 			// React.StrictMode mounts/unmounts effects twice in dev.

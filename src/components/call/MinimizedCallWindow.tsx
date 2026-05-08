@@ -182,7 +182,7 @@ export function MinimizedCallWindow() {
 					<>
 						<div
 							ref={el => { cs.attachRemoteVideo(el); }}
-							className="absolute inset-0 bg-black [&>video]:h-full [&>video]:w-full [&>video]:object-cover"
+							className="absolute inset-0 bg-black [&>video]:h-full [&>video]:w-full [&>video]:object-contain"
 						/>
 						{!cs.hasRemoteVideo && (
 							<div className="absolute inset-0">
@@ -198,7 +198,7 @@ export function MinimizedCallWindow() {
 							<div className="absolute bottom-10 right-1.5 z-10 h-14 w-11 overflow-hidden rounded-lg border border-white/20 bg-black/40">
 								<div
 									ref={el => { cs.attachLocalVideo(el); }}
-									className="h-full w-full [&>video]:h-full [&>video]:w-full [&>video]:object-cover"
+									className="h-full w-full bg-black [&>video]:h-full [&>video]:w-full [&>video]:object-contain"
 								/>
 							</div>
 						)}

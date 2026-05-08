@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Mic, MicOff, Video, VideoOff, Volume2, VolumeX, Phone, RotateCcw, Minimize2, Clock, AlertTriangle } from '../../components/icons';
+import { Mic, MicOff, Video, VideoOff, Phone, Minimize2, AlertTriangle } from '../../components/icons';
 import { useCallSession } from '../../context/CallSessionContext';
 import { formatINR } from '../../services/razorpay';
 
@@ -42,17 +42,22 @@ export function ActiveCallScreen() {
 		void navigate(-1);
 	};
 
+	const timerLabel =
+		(cs.isBookedCall && typeof cs.bookedRemainingSec === 'number') || cs.isTimedSession ?
+			`${cs.timerDisplay} left` :
+			cs.timerDisplay;
+
 	return (
 		<div
-			className="fixed inset-0 z-[300] bg-overlay flex flex-col"
+			className="fixed inset-0 z-[300] bg-black flex flex-col"
 			onTouchStart={resetControlsTimer}
 			onClick={resetControlsTimer}
 		>
 			{cs.isVideo ? (
-				<div className="absolute inset-0 pointer-events-none">
+				<div className="absolute inset-0">
 					<div
 						ref={el => { cs.attachRemoteVideo(el); }}
-						className="absolute inset-0 pointer-events-none [&>video]:w-full [&>video]:h-full [&>video]:object-cover"
+						className="absolute inset-0 bg-black pointer-events-none [&>video]:w-full [&>video]:h-full [&>video]:object-contain"
 					/>
 
 					{!cs.hasRemoteVideo && (
@@ -83,122 +88,109 @@ export function ActiveCallScreen() {
 			)}
 
 			<div className="relative z-10 flex flex-col h-full">
-				<div className={`pt-14 pb-4 px-6 text-center transition-opacity duration-300 ${hideControls ? 'opacity-0' : 'opacity-100'}`}>
-					<h1 className="text-2xl font-bold text-foreground dark:text-white drop-shadow-lg">{cs.participantName}</h1>
-					{cs.isConnecting ? (
-						<p className="text-muted dark:text-white/60 text-sm mt-1 animate-pulse">
-							{cs.callStatus === 'ringing' ? 'Ringing…' : 'Connecting…'}
-						</p>
-					) : (
-						<div className="flex items-center justify-center gap-2 mt-1">
-							{(isTimedSession || (cs.isBookedCall && typeof cs.bookedRemainingSec === 'number')) && (
-								<div className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-mono font-bold ${
-									(cs.isWarning || cs.isBookedWarning) ? 'bg-rose-500/30 text-rose-300 animate-pulse' : 'bg-background/70 text-foreground/80 dark:bg-white/10 dark:text-white/70'
-								}`}
-								>
-									{(cs.isWarning || cs.isBookedWarning) && <AlertTriangle className="w-3 h-3" />}
-									<Clock className="w-3 h-3" />
-									{cs.timerDisplay} left
-								</div>
+				<div className={`px-5 pt-4 transition-opacity duration-300 ${hideControls ? 'opacity-0' : 'opacity-100'}`}>
+					<div className="flex items-start justify-between gap-3">
+						<div className="min-w-0">
+							<div className="flex items-center gap-2">
+								<p className="truncate text-sm font-semibold text-white/95">{cs.participantName}</p>
+							</div>
+							{cs.isConnecting && (
+								<p className="mt-1 text-xs text-white/50 animate-pulse">
+									{cs.callStatus === 'ringing' ? 'Ringing…' : 'Connecting…'}
+								</p>
 							)}
-							{!isTimedSession && !(cs.isBookedCall && typeof cs.bookedRemainingSec === 'number') && (
-								<p className="text-muted dark:text-white/60 text-sm tabular-nums">{cs.timerDisplay}</p>
-							)}
+						</div>
+
+						<div className="shrink-0 flex items-center gap-2">
+							<div className="flex items-center gap-2 rounded-full bg-rose-500/25 border border-rose-500/25 px-3 py-1 text-[11px] font-semibold tracking-wide text-rose-100 backdrop-blur">
+								<span className="inline-block h-2 w-2 rounded-full bg-rose-400" />
+								{timerLabel}
+							</div>
+						</div>
+					</div>
+
+					{(cs.isWarning || cs.isBookedWarning) && (
+						<div className="mt-3 inline-flex items-center gap-2 rounded-2xl bg-rose-500/20 border border-rose-500/30 px-3 py-2">
+							<AlertTriangle className="w-4 h-4 text-rose-300 shrink-0" />
+							<p className="text-xs text-rose-200 font-medium">1 minute remaining</p>
 						</div>
 					)}
 
 					{isTimedSession && session && (
-						<p className="text-xs text-muted/70 dark:text-white/30 mt-1">
+						<p className="mt-2 text-xs text-white/35">
 							{formatINR(session.ratePerMinute)}/min · {formatINR(session.totalCost)} total
 						</p>
 					)}
 				</div>
 
-				{(cs.isWarning || cs.isBookedWarning) && (
-					<div className={`mx-6 bg-rose-500/20 border border-rose-500/30 rounded-2xl px-4 py-3 flex items-center gap-2 transition-opacity duration-300 ${hideControls ? 'opacity-0' : 'opacity-100'}`}>
-						<AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-						<p className="text-sm text-rose-300 font-medium">1 minute remaining</p>
-					</div>
-				)}
-
 				{cs.isVideo && !cs.isCameraOff && (
-					<div className="absolute top-16 right-4 z-20">
-						<div className="w-24 h-32 sm:w-28 sm:h-36 rounded-2xl overflow-hidden border-2 border-border/20 shadow-xl bg-surface2">
+					<div className="absolute top-16 right-5 z-20">
+						<div className="relative w-56 max-w-[38vw] aspect-video rounded-2xl overflow-hidden border border-white/15 shadow-2xl bg-black/60 backdrop-blur">
 							<div
 								ref={el => { cs.attachLocalVideo(el); }}
-								className="w-full h-full bg-gradient-to-br from-rose-900/40 to-surface2"
+								className="absolute inset-0 bg-black [&>video]:w-full [&>video]:h-full [&>video]:object-contain"
 							/>
+							<div className="absolute bottom-2 left-2 rounded-md bg-black/50 px-2 py-1 text-[10px] font-semibold text-white/80 border border-white/10">
+								you
+							</div>
 						</div>
 					</div>
 				)}
 
 				{cs.agoraError && (
-					<div className="absolute top-16 left-1/2 -translate-x-1/2 z-30 bg-rose-500/20 border border-rose-500/30 rounded-xl px-3 py-1.5">
+					<div className={`absolute top-16 left-1/2 -translate-x-1/2 z-30 bg-rose-500/20 border border-rose-500/30 rounded-xl px-3 py-1.5 transition-opacity duration-300 ${hideControls ? 'opacity-0' : 'opacity-100'}`}>
 						<p className="text-xs text-rose-300">{cs.agoraError}</p>
 					</div>
 				)}
 
-				<div className={`mt-auto pb-14 px-8 transition-opacity duration-300 ${hideControls ? 'opacity-0' : 'opacity-100'}`}>
-					<div className="flex items-center justify-center gap-5 mb-8">
-						<ControlBtn active={!cs.isMuted} onPress={cs.toggleMute} icon={cs.isMuted ? MicOff : Mic} label={cs.isMuted ? 'Unmute' : 'Mute'} />
-						{cs.isVideo && (
-							<ControlBtn active={!cs.isCameraOff} onPress={cs.toggleCamera} icon={cs.isCameraOff ? VideoOff : Video} label={cs.isCameraOff ? 'Camera off' : 'Camera'} />
-						)}
-						<ControlBtn active={cs.isSpeakerOn} onPress={cs.toggleSpeaker} icon={cs.isSpeakerOn ? Volume2 : VolumeX} label="Speaker" />
-						{cs.isVideo && (
-							<ControlBtn active={false} onPress={() => {}} icon={RotateCcw} label="Flip" />
-						)}
-					</div>
-
+				<div className={`mt-auto pb-8 px-6 transition-opacity duration-300 ${hideControls ? 'opacity-0' : 'opacity-100'}`}>
 					<div className="flex justify-center">
-						<button
-							onClick={() => { cs.completeEndCall(); }}
-							className="w-16 h-16 bg-rose-500 hover:bg-rose-600 rounded-full flex items-center justify-center shadow-xl shadow-rose-500/40 transition-all active:scale-90"
-						>
-							<Phone className="w-7 h-7 text-white rotate-[135deg]" />
-						</button>
-					</div>
+						<div className="flex items-center rounded-[28px] bg-black/60 backdrop-blur border border-white/10 px-3 py-3 shadow-2xl">
+							<div className="flex items-center gap-3 pr-3">
+								<button
+									type="button"
+									onClick={cs.toggleMute}
+									className="h-12 w-12 rounded-full bg-white/10 hover:bg-white/15 text-white/80 hover:text-white flex items-center justify-center"
+									aria-label={cs.isMuted ? 'Unmute' : 'Mute'}
+								>
+									{cs.isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+								</button>
 
-					<div className="flex justify-center mt-6">
-						<button
-							type="button"
-							onClick={onMinimize}
-							className="flex items-center gap-1.5 text-muted dark:text-white/40 hover:text-foreground dark:hover:text-white/70 text-xs transition-colors"
-						>
-							<Minimize2 className="w-3.5 h-3.5" />
-							Minimize
-						</button>
+								{cs.isVideo && (
+									<button
+										type="button"
+										onClick={cs.toggleCamera}
+										className="h-12 w-12 rounded-full bg-white/10 hover:bg-white/15 text-white/80 hover:text-white flex items-center justify-center"
+										aria-label={cs.isCameraOff ? 'Start camera' : 'Stop camera'}
+									>
+										{cs.isCameraOff ? <VideoOff className="h-5 w-5" /> : <Video className="h-5 w-5" />}
+									</button>
+								)}
+
+								<button
+									type="button"
+									onClick={onMinimize}
+									className="h-12 w-12 rounded-full bg-white/10 hover:bg-white/15 text-white/70 hover:text-white flex items-center justify-center"
+									aria-label="Minimize"
+								>
+									<Minimize2 className="h-5 w-5" />
+								</button>
+							</div>
+
+							<div className="h-10 w-px bg-white/15" />
+
+							<button
+								type="button"
+								onClick={() => { cs.completeEndCall(); }}
+								className="ml-3 inline-flex items-center gap-2 rounded-full bg-rose-500 hover:bg-rose-600 px-6 py-3 text-sm font-semibold text-white shadow-xl shadow-rose-500/20 transition-transform active:scale-[0.99]"
+							>
+								<Phone className="h-5 w-5 rotate-[135deg]" />
+								Leave Session
+							</button>
+						</div>
 					</div>
 				</div>
 			</div>
-		</div>
-	);
-}
-
-function ControlBtn({
-	active,
-	onPress,
-	icon: Icon,
-	label,
-}: {
-	active: boolean,
-	onPress: () => void,
-	icon: React.ElementType,
-	label: string,
-}) {
-	return (
-		<div className="flex flex-col items-center gap-2">
-			<button
-				onClick={onPress}
-				className={`w-14 h-14 rounded-full flex items-center justify-center transition-all active:scale-90 ${
-					active ?
-						'bg-background/70 hover:bg-background/90 text-foreground dark:bg-white/15 dark:hover:bg-white/20 dark:text-white' :
-						'bg-background/50 hover:bg-background/70 text-foreground/70 dark:bg-white/8 dark:hover:bg-white/12 dark:text-white opacity-60'
-				}`}
-			>
-				<Icon className="w-6 h-6 text-foreground dark:text-white" />
-			</button>
-			<span className="text-[10px] text-muted dark:text-white/40">{label}</span>
 		</div>
 	);
 }

@@ -1,6 +1,6 @@
 export type SubscriptionDTO = Record<string, unknown>;
 
-export type SubscriptionUiStatus = 'active' | 'cancelled';
+export type SubscriptionUiStatus = 'active' | 'cancelled' | 'expired';
 
 function toStringId(v: unknown): string | null {
 	if (typeof v === 'string') return v.trim() ? v.trim() : null;
@@ -31,7 +31,8 @@ export function subscriptionUiStatus(dto: SubscriptionDTO): SubscriptionUiStatus
 
 	const status = typeof dto.status === 'string' ? dto.status.toLowerCase() : '';
 	if (!status) return 'active';
-	if (status === 'cancelled' || status === 'canceled' || status === 'ended' || status === 'expired') return 'cancelled';
+	if (status === 'cancelled' || status === 'canceled') return 'cancelled';
+	if (status === 'expired' || status === 'ended') return 'expired';
 	return 'active';
 }
 

@@ -64,7 +64,8 @@ export function Subscribers() {
 		if (filter === 'all') return rows;
 		return rows.filter(r => {
 			const st = subscriptionUiStatus(r.subscription);
-			return filter === 'active' ? st === 'active' : st === 'cancelled';
+			// Treat any non-active subscription (cancelled/expired) as \"cancelled\" for filtering.
+			return filter === 'active' ? st === 'active' : st !== 'active';
 		});
 	}, [rows, filter]);
 

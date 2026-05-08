@@ -118,25 +118,36 @@ export function Wallet() {
 	type WalletSubRow = {
 		creatorUserId: string,
 		dto: Record<string, unknown>,
-		status: 'active' | 'cancelled',
+		status: 'active' | 'cancelled' | 'expired',
 		subscriptionId: string | null,
 		amountMinor: string | null,
 	};
 
 	const subs = useMemo<WalletSubRow[]>(() => {
-		return Object.entries(byCreatorUserId).map(([creatorUserId, dto]) => ({
-			creatorUserId,
-			dto,
-			status: subscriptionUiStatus(dto),
-			subscriptionId: subscriptionId(dto),
-			amountMinor: subscriptionAmountMinor(dto),
-		}));
+		const out: WalletSubRow[] = [];
+		for (const [creatorUserId, list] of Object.entries(byCreatorUserId)) {
+			for (const dto of list ?? []) {
+				out.push({
+					creatorUserId,
+					dto,
+					status: subscriptionUiStatus(dto),
+					subscriptionId: subscriptionId(dto),
+					amountMinor: subscriptionAmountMinor(dto),
+				});
+			}
+		}
+		return out;
 	}, [byCreatorUserId]);
 
 	const activeSubs = useMemo(() => subs.filter((s: WalletSubRow) => s.status === 'active'), [subs]);
 	const cancelledSubs = useMemo(() => subs.filter((s: WalletSubRow) => s.status === 'cancelled'), [subs]);
+	const expiredSubs = useMemo(() => subs.filter((s: WalletSubRow) => s.status === 'expired'), [subs]);
 
-	const creatorIds = useMemo(() => subs.map((s: WalletSubRow) => s.creatorUserId), [subs]);
+	const creatorIds = useMemo(() => {
+		const ids: Record<string, true> = {};
+		for (const s of subs) ids[s.creatorUserId] = true;
+		return Object.keys(ids);
+	}, [subs]);
 
 	const balanceMinor = user?.walletBalanceMinor ?? '0';
 
@@ -355,6 +366,33 @@ export function Wallet() {
 																<p className="text-xs text-muted">Cancelled</p>
 															</div>
 															<span className="text-xs px-2 py-1 rounded-full bg-foreground/5 text-muted">Cancelled</span>
+														</div>
+													</div>
+												);
+											})}
+										</div>
+									</div>
+								)}
+
+								{expiredSubs.length > 0 && (
+									<div className="px-1">
+										<p className="text-xs font-semibold text-muted uppercase tracking-wide mb-2">Past (Expired)</p>
+										<div className="space-y-3">
+											{expiredSubs.map(s => {
+												const display = creatorDisplay[s.creatorUserId];
+												return (
+													<div key={`${s.creatorUserId}:${s.subscriptionId ?? ''}`} className="bg-surface border border-border/20 rounded-2xl p-4 opacity-90">
+														<div className="flex items-center gap-3">
+															{display?.avatar ? (
+																<img src={display.avatar} alt={display.name} className="w-10 h-10 rounded-full object-cover" />
+															) : (
+																<div className="w-10 h-10 rounded-full bg-foreground/10" />
+															)}
+															<div className="flex-1">
+																<p className="text-sm font-semibold text-foreground">{display?.name ?? `Creator ${s.creatorUserId}`}</p>
+																<p className="text-xs text-muted">Expired</p>
+															</div>
+															<span className="text-xs px-2 py-1 rounded-full bg-foreground/5 text-muted">Expired</span>
 														</div>
 													</div>
 												);

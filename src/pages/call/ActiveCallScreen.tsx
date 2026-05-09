@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Mic, MicOff, Video, VideoOff, Phone, Minimize2, AlertTriangle } from '../../components/icons';
 import { useCallSession } from '../../context/CallSessionContext';
 import { formatINR } from '../../services/razorpay';
+import { AvatarBackdrop, UserAvatarMedia } from '../../components/ui/Avatar';
 
 export function ActiveCallScreen() {
 	const navigate = useNavigate();
@@ -62,7 +63,7 @@ export function ActiveCallScreen() {
 
 					{!cs.hasRemoteVideo && (
 						<div className="absolute inset-0 pointer-events-none">
-							<img
+							<AvatarBackdrop
 								src={cs.participantAvatar}
 								alt={cs.participantName}
 								className="w-full h-full object-cover scale-105"
@@ -77,7 +78,7 @@ export function ActiveCallScreen() {
 					<div className="relative flex flex-col items-center gap-5">
 						<div className="relative">
 							<div className="absolute inset-0 rounded-full bg-rose-500/10 animate-ping scale-150" />
-							<img
+							<UserAvatarMedia
 								src={cs.participantAvatar}
 								alt={cs.participantName}
 								className="relative w-28 h-28 rounded-full object-cover border-4 border-border/20"

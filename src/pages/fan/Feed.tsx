@@ -5,6 +5,7 @@ import { Layout } from '../../components/layout/Layout';
 import { PostCard } from '../../components/ui/PostCard';
 import { useContent } from '../../context/ContentContext';
 import { useDragScroll } from '../../hooks/useDragScroll';
+import { UserAvatarMedia } from '../../components/ui/Avatar';
 
 export function Feed() {
 	const { state: contentState, isSubscribed, loadMoreFeed, refreshFeed } = useContent();
@@ -40,7 +41,7 @@ export function Feed() {
 								>
 									<div className="relative">
 										<div className={`w-14 h-14 rounded-full p-0.5 ${creator.isOnline ? 'bg-gradient-to-tr from-rose-500 to-amber-400' : 'bg-foreground/10'}`}>
-											<img
+											<UserAvatarMedia
 												src={creator.avatar}
 												alt={creator.name}
 												className="w-full h-full rounded-full object-cover border-2 border-background"

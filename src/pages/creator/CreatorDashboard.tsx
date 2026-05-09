@@ -19,6 +19,7 @@ import { useAuth, useCurrentCreator } from '../../context/AuthContext';
 import { useContent } from '../../context/ContentContext';
 import { useSession } from '../../context/SessionContext';
 import { mockCreators } from '../../data/users';
+import { minimalCreatorFromUser } from '../../utils/creatorShell';
 import { formatINR } from '../../services/razorpay';
 
 function StatCard({ label, value, sub, icon, color, onClick }: {
@@ -64,14 +65,9 @@ export function CreatorDashboard() {
 	const [rateInput, setRateInput] = useState('');
 
 	const authedCreatorId = authState.user?.id ?? '';
-	const creatorData = creator ?? (authState.user?.role === 'creator' ? {
-		...mockCreators[0],
-		id: authState.user.id,
-		name: authState.user.name,
-		email: authState.user.email,
-		username: authState.user.username,
-		avatar: authState.user.avatar,
-	} : mockCreators[0]);
+	const creatorData = creator ?? (authState.user?.role === 'creator' ?
+		minimalCreatorFromUser(authState.user) :
+		mockCreators[0]);
 	const creatorUserIdForPosts = authedCreatorId || creatorData.id;
 
 	useEffect(() => {

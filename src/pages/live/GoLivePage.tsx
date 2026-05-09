@@ -22,6 +22,7 @@ import { useCurrentCreator } from '../../context/AuthContext';
 import { useEnsureWsAuth, useWs } from '../../context/WsContext';
 import type { LiveVisibility, LiveWithAgora } from '../../services/liveWsTypes';
 import { formatINR } from '../../services/razorpay';
+import { AvatarBackdrop, UserAvatarMedia } from '../../components/ui/Avatar';
 
 function formatElapsed(startedAt: string): string {
 	const diff = Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000);
@@ -504,7 +505,7 @@ export function GoLivePage() {
 								<div ref={previewContainerRef} className="absolute inset-0 z-0 [&_video]:h-full [&_video]:w-full [&_video]:object-cover" />
 								{!hasLocalVideo && (
 									<div className="absolute inset-0 z-[1] flex items-center justify-center bg-zinc-950">
-										<img
+										<UserAvatarMedia
 											src={creator.avatar}
 											alt={creator.name}
 											className="h-24 w-24 rounded-2xl object-cover opacity-50"
@@ -717,7 +718,7 @@ export function GoLivePage() {
 		<div className="fixed inset-0 z-[100] bg-overlay flex flex-col">
 			<div className="relative flex-1 overflow-hidden">
 				<div ref={localVideoRef} className="absolute inset-0 z-0" />
-				<img
+				<AvatarBackdrop
 					src={activeCreator.avatar}
 					alt={activeCreator.name}
 					className={`w-full h-full object-cover scale-110 blur-sm brightness-40 ${hasLocalVideo ? 'opacity-0' : 'opacity-100'}`}
@@ -799,7 +800,7 @@ export function GoLivePage() {
 					<div className="px-4 pb-2 max-h-44 overflow-y-auto space-y-1.5">
 						{(currentStream?.chatMessages ?? []).map(msg => (
 							<div key={msg.id} className="flex items-start gap-2">
-								<img src={msg.userAvatar} alt={msg.userName} className="w-5 h-5 rounded-full object-cover shrink-0 mt-0.5" />
+								<UserAvatarMedia src={msg.userAvatar} alt={msg.userName} className="w-5 h-5 rounded-full object-cover shrink-0 mt-0.5" />
 								{msg.isGift ? (
 									<div className="flex items-center gap-1.5 bg-amber-500/20 backdrop-blur-sm border border-amber-500/30 rounded-xl px-2.5 py-1">
 										<span className="text-base">{VIRTUAL_GIFTS.find(g => g.name === msg.giftName)?.emoji ?? '🎁'}</span>

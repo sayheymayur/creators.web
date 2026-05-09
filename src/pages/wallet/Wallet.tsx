@@ -13,6 +13,7 @@ import type { RazorpayOrderRow } from '../../services/paymentWs';
 import { useSubscriptions } from '../../context/SubscriptionContext';
 import { useContent } from '../../context/ContentContext';
 import { subscriptionAmountMinor, subscriptionId, subscriptionUiStatus } from '../../services/subscriptionUi';
+import { UserAvatarMedia } from '../../components/ui/Avatar';
 
 const ADD_FUND_PRESETS_INR = [100, 250, 500, 1000, 2000, 5000];
 const SHOW_MORE_STEP = 12;
@@ -377,11 +378,11 @@ export function Wallet() {
 												return (
 													<div key={subscriptionListKey(s, i)} className="bg-surface border border-border/20 rounded-2xl p-4">
 														<div className="flex items-center gap-3 mb-3">
-															{display?.avatar ? (
-																<img src={display.avatar} alt={display.name} className="w-10 h-10 rounded-full object-cover" />
-															) : (
-																<div className="w-10 h-10 rounded-full bg-foreground/10" />
-															)}
+															<UserAvatarMedia
+																src={display?.avatar}
+																alt={display?.name ?? `Creator ${s.creatorUserId}`}
+																className="w-10 h-10 rounded-full object-cover"
+															/>
 															<div className="flex-1">
 																<p className="text-sm font-semibold text-foreground">{display?.name ?? `Creator ${s.creatorUserId}`}</p>
 																<p className="text-xs text-emerald-300/80">Active subscription</p>
@@ -427,11 +428,11 @@ export function Wallet() {
 												return (
 													<div key={subscriptionListKey(s, i)} className="bg-surface border border-border/20 rounded-2xl p-4 opacity-90">
 														<div className="flex items-center gap-3">
-															{display?.avatar ? (
-																<img src={display.avatar} alt={display.name} className="w-10 h-10 rounded-full object-cover" />
-															) : (
-																<div className="w-10 h-10 rounded-full bg-foreground/10" />
-															)}
+															<UserAvatarMedia
+																src={display?.avatar}
+																alt={display?.name ?? `Creator ${s.creatorUserId}`}
+																className="w-10 h-10 rounded-full object-cover"
+															/>
 															<div className="flex-1">
 																<p className="text-sm font-semibold text-foreground">{display?.name ?? `Creator ${s.creatorUserId}`}</p>
 																<p className="text-xs text-muted">Cancelled</p>
@@ -465,11 +466,11 @@ export function Wallet() {
 												return (
 													<div key={subscriptionListKey(s, i)} className="bg-surface border border-border/20 rounded-2xl p-4 opacity-90">
 														<div className="flex items-center gap-3">
-															{display?.avatar ? (
-																<img src={display.avatar} alt={display.name} className="w-10 h-10 rounded-full object-cover" />
-															) : (
-																<div className="w-10 h-10 rounded-full bg-foreground/10" />
-															)}
+															<UserAvatarMedia
+																src={display?.avatar}
+																alt={display?.name ?? `Creator ${s.creatorUserId}`}
+																className="w-10 h-10 rounded-full object-cover"
+															/>
 															<div className="flex-1">
 																<p className="text-sm font-semibold text-foreground">{display?.name ?? `Creator ${s.creatorUserId}`}</p>
 																<p className="text-xs text-muted">Expired</p>

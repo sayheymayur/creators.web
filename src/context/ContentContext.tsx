@@ -34,7 +34,6 @@ import {
 import { useAuth } from './AuthContext';
 import { useSubscriptions } from './SubscriptionContext';
 import { creatorSummaryToCardCreator } from '../services/creatorWsMap';
-import { mockCreators } from '../data/users';
 
 export type PostsWsStatus = 'idle' | 'connecting' | 'ready' | 'error';
 
@@ -465,8 +464,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 		return ensureWsAuth()
 			.then(() => creatorWsListFollowing(ws, 30))
 			.then(resp => {
-				const base = { ...mockCreators[0] } as Partial<Creator>;
-				const creators = (resp.creators ?? []).map(dto => creatorSummaryToCardCreator(dto, base));
+				const creators = (resp.creators ?? []).map(dto => creatorSummaryToCardCreator(dto, {}));
 				dispatch({ type: 'SET_FOLLOWING_CREATORS', payload: creators });
 			})
 			.catch(() => {});

@@ -9,6 +9,7 @@ import { useContent } from '../../context/ContentContext';
 import { useLiveStream, useMyActiveLive } from '../../context/LiveStreamContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { mockCreators } from '../../data/users';
+import { minimalCreatorFromUser } from '../../utils/creatorShell';
 import { uploadPostMediaFile } from '../../services/uploadPostMedia';
 import { formatINR } from '../../services/razorpay';
 import { PostCard } from '../../components/ui/PostCard';
@@ -48,14 +49,9 @@ export function ContentManager() {
 	const [uploadError, setUploadError] = useState<string>('');
 
 	const authedCreatorUserId = authState.user?.id ?? '';
-	const creatorData = creator ?? (authState.user?.role === 'creator' ? {
-		...mockCreators[0],
-		id: authState.user.id,
-		name: authState.user.name,
-		email: authState.user.email,
-		username: authState.user.username,
-		avatar: authState.user.avatar,
-	} : mockCreators[0]);
+	const creatorData = creator ?? (authState.user?.role === 'creator' ?
+		minimalCreatorFromUser(authState.user) :
+		mockCreators[0]);
 	const myPosts = contentState.posts.filter(p =>
 		String(p.creatorId) === String(authedCreatorUserId || creatorData.id)
 	);

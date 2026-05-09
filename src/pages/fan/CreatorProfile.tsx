@@ -7,7 +7,6 @@ import { TipModal } from '../../components/modals/TipModal';
 import { SubscribeModal } from '../../components/modals/SubscribeModal';
 import { useAuth } from '../../context/AuthContext';
 import { useContent } from '../../context/ContentContext';
-import { mockCreators } from '../../data/users';
 import { useNotifications } from '../../context/NotificationContext';
 import { ensureMediaPermissions, isDeviceInUseError } from '../../services/mediaPermissions';
 import { useSession } from '../../context/SessionContext';
@@ -21,6 +20,8 @@ import { useWs, useWsConnected } from '../../context/WsContext';
 import { creatorFollow, creatorUnfollow } from '../../services/creatorWsService';
 import { useSubscriptions } from '../../context/SubscriptionContext';
 import { subscriptionId, subscriptionUiStatus } from '../../services/subscriptionUi';
+import { ProfileBannerMedia, UserAvatarMedia } from '../../components/ui/Avatar';
+import { minimalCreatorFromDisplay } from '../../utils/creatorShell';
 
 export function CreatorProfile() {
 	const { id: creatorUserId } = useParams<{ id: string }>();
@@ -45,29 +46,25 @@ export function CreatorProfile() {
 	const overflowRef = useRef<HTMLDivElement | null>(null);
 	const hasLoadedCreatorRef = useRef(false);
 
-	const maybeCreator = useMemo(() => mockCreators.find(c => c.id === creatorUserId), [creatorUserId]);
 	const cachedDisplay = useMemo(() => (creatorUserId ? contentState.creatorProfiles[creatorUserId] : undefined), [creatorUserId, contentState.creatorProfiles]);
 	const fallbackCreator = useMemo<Creator | null>(() => {
-		if (!creatorUserId) return null;
-		if (!cachedDisplay) return null;
-		const base = mockCreators[0];
-		return {
-			...base,
-			id: creatorUserId,
-			name: cachedDisplay.name || base.name,
-			username: cachedDisplay.username || base.username,
-			avatar: cachedDisplay.avatar || base.avatar,
-		};
+		if (!creatorUserId || !cachedDisplay) return null;
+		return minimalCreatorFromDisplay(creatorUserId, cachedDisplay);
 	}, [creatorUserId, cachedDisplay]);
+
+	useEffect(() => {
+		hasLoadedCreatorRef.current = false;
+		setRemoteCreator(null);
+		setIsFollowed(false);
+	}, [creatorUserId]);
 
 	useEffect(() => {
 		if (!creatorUserId) return;
 		const ac = new AbortController();
-		const base = maybeCreator ?? mockCreators[0];
 
 		// creator WS commands are multiplexed over the posts socket; wait until it is ready.
 		if (contentState.postsWsStatus !== 'ready') {
-			setIsLoadingCreator(false);
+			setIsLoadingCreator(true);
 			return () => ac.abort();
 		}
 
@@ -79,16 +76,10 @@ export function CreatorProfile() {
 				if (r.creator) {
 					hasLoadedCreatorRef.current = true;
 					setIsFollowed(Boolean((r.creator as unknown as { is_followed?: boolean | null }).is_followed));
-					setRemoteCreator(creatorProfileDtoToCreator(r.creator, base));
+					setRemoteCreator(creatorProfileDtoToCreator(r.creator, {}));
 					return;
 				}
-				if (!hasLoadedCreatorRef.current && !fallbackCreator) {
-					showToast('Creator profile not found for this user.', 'error');
-				}
-				// Fall back to cached display from posts directory so the user can still view creator posts.
-				if (!hasLoadedCreatorRef.current && fallbackCreator) {
-					setRemoteCreator(fallbackCreator);
-				}
+				hasLoadedCreatorRef.current = true;
 			})
 			.catch((err: unknown) => {
 				if (ac.signal.aborted) return;
@@ -106,7 +97,7 @@ export function CreatorProfile() {
 			});
 
 		return () => ac.abort();
-	}, [creatorUserId, maybeCreator, creatorWsGetByUserId, contentState.postsWsStatus]);
+	}, [creatorUserId, creatorWsGetByUserId, contentState.postsWsStatus, showToast]);
 
 	useEffect(() => {
 		if (!creatorUserId) return;
@@ -123,7 +114,7 @@ export function CreatorProfile() {
 		);
 	}
 
-	const creator = remoteCreator ?? fallbackCreator ?? maybeCreator ?? null;
+	const creator = remoteCreator ?? fallbackCreator ?? null;
 
 	if (!creator && !isLoadingCreator) {
 		return (
@@ -271,9 +262,13 @@ export function CreatorProfile() {
 		<Layout>
 			<div className="max-w-2xl mx-auto">
 				<div className="relative z-0">
-					<div className="h-40 sm:h-52">
-						<img src={creatorForDisplay.banner} alt="" className="w-full h-full object-cover" />
-						<div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-background" />
+					<div className="relative h-40 sm:h-52 overflow-hidden">
+						<ProfileBannerMedia
+							src={creatorForDisplay.banner}
+							alt={`${creatorForDisplay.name} cover`}
+							className="w-full h-full object-cover"
+						/>
+						<div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-background pointer-events-none" />
 					</div>
 
 					<div className="absolute top-3 left-3 z-20">
@@ -328,7 +323,7 @@ export function CreatorProfile() {
 				<div className="px-4 -mt-12 pb-4 relative z-10">
 					<div className="flex items-end justify-between mb-3">
 						<div className="relative">
-							<img
+							<UserAvatarMedia
 								src={creatorForDisplay.avatar}
 								alt={creatorForDisplay.name}
 								className="w-20 h-20 rounded-2xl border-4 border-background object-cover"

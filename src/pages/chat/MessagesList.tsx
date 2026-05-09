@@ -8,7 +8,7 @@ import { useChat } from '../../context/ChatContext';
 import { useSessions } from '../../context/SessionsContext';
 import { useWs, useWsConnected } from '../../context/WsContext';
 import { formatDistanceToNow } from '../../utils/date';
-import { mockCreators } from '../../data/users';
+import { minimalCreatorFromDisplay } from '../../utils/creatorShell';
 import { useContent } from '../../context/ContentContext';
 import { isUuid } from '../../utils/isUuid';
 import { useSubscriptions } from '../../context/SubscriptionContext';
@@ -107,16 +107,13 @@ export function MessagesList() {
 	}, [showNewChat, subscribedCreatorIds.join(','), creatorDisplay, creatorWsGetByUserId]);
 
 	function openBookingForCreator(creatorUserId: string) {
-		const base = mockCreators.find(c => c.id === creatorUserId) ?? mockCreators[0];
 		const cached = contentState.creatorProfiles?.[creatorUserId];
 		const display = creatorDisplay[creatorUserId];
-		const creator: Creator = {
-			...base,
-			id: creatorUserId,
-			name: display?.name ?? cached?.name ?? base.name,
-			avatar: display?.avatar ?? cached?.avatar ?? base.avatar,
-			username: cached?.username ?? base.username,
-		};
+		const creator: Creator = minimalCreatorFromDisplay(creatorUserId, {
+			name: display?.name ?? cached?.name ?? 'Creator',
+			username: cached?.username ?? 'creator',
+			avatar: display?.avatar ?? cached?.avatar ?? '',
+		});
 		setSelectedCreator(creator);
 		setShowSessionModal(true);
 		setShowNewChat(false);
@@ -172,19 +169,18 @@ export function MessagesList() {
 								{subscribedCreatorIds.map(creatorUserId => {
 									const display = creatorDisplay[creatorUserId];
 									const cached = contentState.creatorProfiles?.[creatorUserId];
-									const base = mockCreators.find(c => c.id === creatorUserId) ?? mockCreators[0];
-									const name = display?.name ?? cached?.name ?? base.name ?? 'Creator';
-									const avatar = display?.avatar ?? cached?.avatar ?? base.avatar ?? '';
+									const name = display?.name ?? cached?.name ?? 'Creator';
+									const avatar = display?.avatar ?? cached?.avatar ?? '';
 									return (
 										<button
 											key={creatorUserId}
 											onClick={() => openBookingForCreator(creatorUserId)}
 											className="w-full flex items-center gap-3 hover:bg-foreground/5 rounded-xl p-2 transition-colors"
 										>
-											<Avatar src={avatar} alt={name} size="md" isOnline={base.isOnline} />
+											<Avatar src={avatar} alt={name} size="md" />
 											<div className="text-left">
 												<p className="text-sm font-medium text-foreground">{name}</p>
-												<p className="text-xs text-muted">{base.category}</p>
+												<p className="text-xs text-muted">Book session</p>
 											</div>
 										</button>
 									);

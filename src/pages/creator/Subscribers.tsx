@@ -2,16 +2,19 @@ import { useEffect, useMemo, useState } from 'react';
 import { Search, Users, MessageCircle } from '../../components/icons';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '../../components/layout/Layout';
-import { useCurrentCreator } from '../../context/AuthContext';
+import { useAuth, useCurrentCreator } from '../../context/AuthContext';
 import { mockCreators } from '../../data/users';
+import { minimalCreatorFromUser } from '../../utils/creatorShell';
 import { useChat } from '../../context/ChatContext';
 import { randomUuid } from '../../utils/isUuid';
 import { createSubscriptionWs, type SubscriptionSubscriberRow } from '../../services/subscriptionWs';
 import { useEnsureWsAuth, useWs, useWsAuthReady, useWsConnected } from '../../context/WsContext';
 import { subscriptionUiStatus } from '../../services/subscriptionUi';
+import { UserAvatarMedia } from '../../components/ui/Avatar';
 
 export function Subscribers() {
 	const creator = useCurrentCreator();
+	const { state: authState } = useAuth();
 	const navigate = useNavigate();
 	const { addConversation, state: chatState } = useChat();
 	const ws = useWs();
@@ -24,7 +27,7 @@ export function Subscribers() {
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
-	const creatorData = creator ?? mockCreators[0];
+	const creatorData = creator ?? (authState.user?.role === 'creator' ? minimalCreatorFromUser(authState.user) : mockCreators[0]);
 
 	const subscriptionWs = useMemo(() => createSubscriptionWs(ws), [ws]);
 
@@ -185,9 +188,11 @@ export function Subscribers() {
 								key={rowKey(row, idx)}
 								className={`flex items-center gap-3 px-4 py-3 ${idx < subscribers.length - 1 ? 'border-b border-border/10' : ''}`}
 							>
-								{row.fan?.avatar_url ? (
-									<img src={row.fan.avatar_url} alt={row.fan.name} className="w-10 h-10 rounded-full object-cover shrink-0" />
-								) : <div className="w-10 h-10 rounded-full bg-foreground/10 shrink-0" />}
+								<UserAvatarMedia
+									src={row.fan?.avatar_url}
+									alt={row.fan?.name ?? 'Subscriber'}
+									className="w-10 h-10 rounded-full object-cover shrink-0"
+								/>
 								<div className="flex-1 min-w-0">
 									<p className="text-sm font-medium text-foreground truncate">{row.fan?.name ?? 'Unknown'}</p>
 									<p className="text-xs text-muted truncate">

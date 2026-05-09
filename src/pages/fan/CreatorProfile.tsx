@@ -26,7 +26,7 @@ import { useSubscriptions } from '../../context/SubscriptionContext';
 import { subscriptionId, subscriptionUiStatus } from '../../services/subscriptionUi';
 
 export function CreatorProfile() {
-	const { id } = useParams<{ id: string }>();
+	const { id: creatorUserId } = useParams<{ id: string }>();
 	const navigate = useNavigate();
 	const { state: authState } = useAuth();
 	const { state: contentState, isSubscribed, loadCreatorPosts, creatorWsGetByUserId } = useContent();
@@ -48,23 +48,23 @@ export function CreatorProfile() {
 	const [isFollowed, setIsFollowed] = useState<boolean>(false);
 	const hasLoadedCreatorRef = useRef(false);
 
-	const maybeCreator = useMemo(() => mockCreators.find(c => c.id === id), [id]);
-	const cachedDisplay = useMemo(() => (id ? contentState.creatorProfiles[id] : undefined), [id, contentState.creatorProfiles]);
+	const maybeCreator = useMemo(() => mockCreators.find(c => c.id === creatorUserId), [creatorUserId]);
+	const cachedDisplay = useMemo(() => (creatorUserId ? contentState.creatorProfiles[creatorUserId] : undefined), [creatorUserId, contentState.creatorProfiles]);
 	const fallbackCreator = useMemo<Creator | null>(() => {
-		if (!id) return null;
+		if (!creatorUserId) return null;
 		if (!cachedDisplay) return null;
 		const base = mockCreators[0];
 		return {
 			...base,
-			id,
+			id: creatorUserId,
 			name: cachedDisplay.name || base.name,
 			username: cachedDisplay.username || base.username,
 			avatar: cachedDisplay.avatar || base.avatar,
 		};
-	}, [id, cachedDisplay]);
+	}, [creatorUserId, cachedDisplay]);
 
 	useEffect(() => {
-		if (!id) return;
+		if (!creatorUserId) return;
 		const ac = new AbortController();
 		const base = maybeCreator ?? mockCreators[0];
 
@@ -76,7 +76,7 @@ export function CreatorProfile() {
 
 		setIsLoadingCreator(true);
 
-		void creatorWsGetByUserId(id)
+		void creatorWsGetByUserId(creatorUserId)
 			.then(r => {
 				if (ac.signal.aborted) return;
 				if (r.creator) {
@@ -96,9 +96,9 @@ export function CreatorProfile() {
 			.catch((err: unknown) => {
 				if (ac.signal.aborted) return;
 				if (err instanceof ApiError) {
-					console.error('[creator-profile] ws getByUserId failed', { id, status: err.status, body: err.body });
+					console.error('[creator-profile] ws getByUserId failed', { creatorUserId, status: err.status, body: err.body });
 				} else {
-					console.error('[creator-profile] ws getByUserId failed', { id, err });
+					console.error('[creator-profile] ws getByUserId failed', { creatorUserId, err });
 				}
 				if (!hasLoadedCreatorRef.current) {
 					showToast('Could not load creator profile. Please try again.', 'error');
@@ -109,14 +109,14 @@ export function CreatorProfile() {
 			});
 
 		return () => ac.abort();
-	}, [id, maybeCreator, creatorWsGetByUserId, contentState.postsWsStatus]);
+	}, [creatorUserId, maybeCreator, creatorWsGetByUserId, contentState.postsWsStatus]);
 
 	useEffect(() => {
-		if (!id) return;
-		void loadCreatorPosts(id, true);
-	}, [id, loadCreatorPosts]);
+		if (!creatorUserId) return;
+		void loadCreatorPosts(creatorUserId, true);
+	}, [creatorUserId, loadCreatorPosts]);
 
-	if (!id) {
+	if (!creatorUserId) {
 		return (
 			<Layout>
 				<div className="flex items-center justify-center min-h-[50vh]">

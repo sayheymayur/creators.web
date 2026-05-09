@@ -47,7 +47,7 @@ export function ContentManager() {
 	const [isPosting, setIsPosting] = useState(false);
 	const [uploadError, setUploadError] = useState<string>('');
 
-	const authedCreatorId = authState.user?.id ?? '';
+	const authedCreatorUserId = authState.user?.id ?? '';
 	const creatorData = creator ?? (authState.user?.role === 'creator' ? {
 		...mockCreators[0],
 		id: authState.user.id,
@@ -57,7 +57,7 @@ export function ContentManager() {
 		avatar: authState.user.avatar,
 	} : mockCreators[0]);
 	const myPosts = contentState.posts.filter(p =>
-		String(p.creatorId) === String(authedCreatorId || creatorData.id)
+		String(p.creatorId) === String(authedCreatorUserId || creatorData.id)
 	);
 	const totalLikes = useMemo(() => myPosts.reduce((s, p) => s + (p.likes ?? 0), 0), [myPosts]);
 	const totalComments = useMemo(() => myPosts.reduce((s, p) => s + Math.max(p.commentCount ?? 0, p.comments?.length ?? 0), 0), [myPosts]);
@@ -66,10 +66,10 @@ export function ContentManager() {
 		// Wait until the WebSocket is ready before fetching — calling loadCreatorPosts
 		// while the WS client is still connecting returns silently with no data.
 		if (contentState.postsWsStatus !== 'ready') return;
-		const id = authedCreatorId || creatorData.id;
-		if (!id) return;
-		void loadCreatorPosts(id, true);
-	}, [authedCreatorId, creatorData.id, loadCreatorPosts, contentState.postsWsStatus]);
+		const creatorUserId = authedCreatorUserId || creatorData.id;
+		if (!creatorUserId) return;
+		void loadCreatorPosts(creatorUserId, true);
+	}, [authedCreatorUserId, creatorData.id, loadCreatorPosts, contentState.postsWsStatus]);
 
 	function handleCreatePost() {
 		const text = newPostText.trim();
@@ -110,7 +110,6 @@ export function ContentManager() {
 				setUploadError('');
 			})
 			.catch(e => {
-				// Avoid showing raw URLs/tokens from upload errors in UI.
 				if (e instanceof Error && e.message.includes('Upload failed')) {
 					const statusMatch = /HTTP\s+(\d{3})/.exec(e.message);
 					const status = statusMatch ? Number(statusMatch[1]) : null;

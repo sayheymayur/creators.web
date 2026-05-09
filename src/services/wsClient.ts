@@ -108,9 +108,12 @@ class WsConnection {
 			this.queue.push(msg);
 			return;
 		}
-		let roomid = '';
-		if (msg.startsWith('>')) roomid = msg.split('\n')[0].replace('>', '').trim();
-		console.log('[>>] ' + (roomid ? '[' + roomid + '] ' : '') + '' + msg.split('\n')[1]);
+		const lines = msg.split('\n').filter(l => l.trim().length > 0);
+		const serviceLine = lines[0]?.startsWith('>') ? lines[0].slice(1).trim() : '';
+		const cmdLine = lines.find(l => l.trim().startsWith('/')) ?? lines[1] ?? '';
+		// Keep the existing `[>>] [service rid] /command ...` style, but make sure
+		// we always include the service/requestId line when present.
+		console.log('[>>] ' + (serviceLine ? '[' + serviceLine + '] ' : '') + cmdLine);
 
 		try {
 			this.socket.send(msg);

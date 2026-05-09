@@ -43,7 +43,7 @@ export interface CreatePostInput {
 
 interface ContentState {
 	posts: Post[];
-	subscribedCreatorIds: string[];
+	subscribedCreatorUserIds: string[];
 	postsWsStatus: PostsWsStatus;
 	postsWsError: string | null;
 	feedNextCursor: string | null;
@@ -75,7 +75,7 @@ type ContentAction =
 
 const initialState: ContentState = {
 	posts: [],
-	subscribedCreatorIds: [],
+	subscribedCreatorUserIds: [],
 	postsWsStatus: 'idle',
 	postsWsError: null,
 	feedNextCursor: null,
@@ -195,13 +195,13 @@ function contentReducer(state: ContentState, action: ContentAction): ContentStat
 			};
 		}
 		case 'SUBSCRIBE': {
-			if (state.subscribedCreatorIds.includes(action.payload)) return state;
-			return { ...state, subscribedCreatorIds: [...state.subscribedCreatorIds, action.payload] };
+			if (state.subscribedCreatorUserIds.includes(action.payload)) return state;
+			return { ...state, subscribedCreatorUserIds: [...state.subscribedCreatorUserIds, action.payload] };
 		}
 		case 'UNSUBSCRIBE': {
 			return {
 				...state,
-				subscribedCreatorIds: state.subscribedCreatorIds.filter(id => id !== action.payload),
+				subscribedCreatorUserIds: state.subscribedCreatorUserIds.filter(id => id !== action.payload),
 			};
 		}
 		case 'UPDATE_POST': {
@@ -315,15 +315,15 @@ interface ContentContextValue {
 	editPost: (postId: string, text: string) => Promise<void>;
 	deletePost: (postId: string) => Promise<void>;
 	reportPost: (postId: string, reason: string) => Promise<ReportPostResponse>;
-	subscribe: (creatorId: string) => void;
-	unsubscribe: (creatorId: string) => void;
-	isSubscribed: (creatorId: string) => boolean;
+	subscribe: (creatorUserId: string) => void;
+	unsubscribe: (creatorUserId: string) => void;
+	isSubscribed: (creatorUserId: string) => boolean;
 	updatePost: (post: Partial<Post> & { id: string }) => Promise<void>;
 	loadMoreFeed: () => Promise<void>;
 	refreshFeed: () => Promise<void>;
 	loadMoreExplore: () => Promise<void>;
 	refreshExplore: () => Promise<void>;
-	loadCreatorPosts: (creatorId: string, reset?: boolean) => Promise<void>;
+	loadCreatorPosts: (creatorUserId: string, reset?: boolean) => Promise<void>;
 	loadPostComments: (postId: string) => Promise<void>;
 	loadMorePostComments: (postId: string) => Promise<void>;
 	creatorWsSearch: (opts: {
@@ -352,7 +352,6 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 	const mockMode = isPostsMockMode();
 	const stateRef = useRef(state);
 	stateRef.current = state;
-	const creatorPkByUserIdRef = useRef<Record<string, string>>({});
 	const creatorUserInflightRef = useRef<Partial<Record<string, Promise<void>>>>({});
 	const creatorBootstrapRef = useRef<{ userId: string, username: string } | null>(null);
 	const initialWsPostsLoadedKeyRef = useRef<string | null>(null);
@@ -373,16 +372,38 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 		else console.debug(msg, data);
 	}, [creatorWsDebugEnabled]);
 
+	/**
+	 * Dev-only in-flight dedupe for React 18 StrictMode double-mount:
+	 * When the app mounts twice in development, identical WS requests can be fired twice.
+	 * We keep a short-lived per-command promise cache so the second call reuses the first.
+	 */
+	const wsInflightDedupe = useRef<Record<string, Promise<unknown>>>({});
+
 	const wsRequestLine = useCallback(
 		(service: string, line: string): Promise<unknown> => {
 			const trimmed = line.trim();
 			if (!trimmed.startsWith('/')) {
 				return Promise.reject(new Error(`Invalid WS command line: ${trimmed}`));
 			}
+
+			const key = `${service} ${trimmed}`;
+			if (import.meta.env.DEV) {
+				const existing = wsInflightDedupe.current[key];
+				if (existing !== undefined) return existing;
+			}
+
 			const parts = trimmed.split(' ');
 			const command = parts[0].slice(1);
 			const args = parts.slice(1);
-			return ensureWsAuth().then(() => ws.request(service, command, args));
+			const p = ensureWsAuth().then(() => ws.request(service, command, args));
+			if (import.meta.env.DEV) {
+				wsInflightDedupe.current[key] = p;
+				p.finally(() => {
+					// Only clear if the same promise is still stored.
+					if (wsInflightDedupe.current[key] === p) delete wsInflightDedupe.current[key];
+				});
+			}
+			return p;
 		},
 		[ws, ensureWsAuth]
 	);
@@ -612,28 +633,12 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 
 	const creatorWsGetByUserId = useCallback(
 		(creatorUserId: string) => {
-			const uid = String(creatorUserId);
-			const cachedPk = creatorPkByUserIdRef.current[uid];
-			if (cachedPk) return creatorWsGetByPk(cachedPk);
-
-			const maxPages = 10; // prevents infinite loops; can be increased if needed
-			const limit = 30;
-
-			const walk = (beforeCursor: string | undefined, page: number): Promise<CreatorGetResponse> =>
-				creatorWsSearch({ limit, beforeCursor })
-					.then(r => {
-						const match = r.creators.find(c => String(c.user_id) === uid);
-						if (match) {
-							creatorPkByUserIdRef.current[uid] = match.id;
-							return creatorWsGetByPk(match.id);
-						}
-						if (!r.nextCursor || page >= maxPages) return { creator: null };
-						return walk(r.nextCursor, page + 1);
-					});
-
-			return walk(undefined, 1);
+			// Backend behavior (observed): `creator /get <id>` expects creatorUserId (users.id),
+			// not the creators table row PK. Calling `/get <creatorRowId>` returns the wrong profile.
+			const uid = String(creatorUserId).trim();
+			return wsRequestLine('creator', `/get ${uid}`).then(json => json as CreatorGetResponse);
 		},
-		[creatorWsSearch, creatorWsGetByPk]
+		[wsRequestLine]
 	);
 
 	const creatorWsUpsert = useCallback(
@@ -667,7 +672,6 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 			.then(r => {
 				const patch: Record<string, CreatorDisplay> = {};
 				for (const c of r.creators) {
-					creatorPkByUserIdRef.current[String(c.user_id)] = c.id;
 					patch[String(c.user_id)] = {
 						name: c.name,
 						username: c.username,
@@ -691,7 +695,6 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 			.then(r => {
 				const patch: Record<string, CreatorDisplay> = {};
 				for (const c of r.creators) {
-					creatorPkByUserIdRef.current[String(c.user_id)] = c.id;
 					patch[String(c.user_id)] = {
 						name: c.name,
 						username: c.username,
@@ -972,17 +975,17 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 		dispatch({ type: 'UNLOCK_POST', payload: { postId, userId } });
 	}, []);
 
-	const subscribe = useCallback((creatorId: string) => {
-		dispatch({ type: 'SUBSCRIBE', payload: creatorId });
+	const subscribe = useCallback((creatorUserId: string) => {
+		dispatch({ type: 'SUBSCRIBE', payload: creatorUserId });
 	}, []);
 
-	const unsubscribe = useCallback((creatorId: string) => {
-		dispatch({ type: 'UNSUBSCRIBE', payload: creatorId });
+	const unsubscribe = useCallback((creatorUserId: string) => {
+		dispatch({ type: 'UNSUBSCRIBE', payload: creatorUserId });
 	}, []);
 
 	const isSubscribed = useCallback(
-		(creatorId: string) => state.subscribedCreatorIds.includes(creatorId),
-		[state.subscribedCreatorIds]
+		(creatorUserId: string) => state.subscribedCreatorUserIds.includes(creatorUserId),
+		[state.subscribedCreatorUserIds]
 	);
 
 	return (

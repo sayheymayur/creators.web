@@ -31,6 +31,7 @@ import {
 	postDtoToPost,
 } from '../services/postDtoMap';
 import { useAuth } from './AuthContext';
+import { useSubscriptions } from './SubscriptionContext';
 
 export type PostsWsStatus = 'idle' | 'connecting' | 'ready' | 'error';
 
@@ -48,10 +49,14 @@ interface ContentState {
 	postsWsError: string | null;
 	feedNextCursor: string | null;
 	exploreNextCursor: string | null;
+	/** Ordered post ids from `/list feed` for the Feed screen. */
+	feedPostIds: string[];
 	/** Ordered post ids from `/list explore` for the Explore screen. */
 	explorePostIds: string[];
 	/** Per-post next cursor for `/comments` pagination; key missing until first fetch; `null` = no more pages. */
 	commentPagination: Record<string, string | null>;
+	/** Loading state for the first comments page fetch per post. */
+	commentLoadingByPostId: Record<string, boolean>;
 	creatorCursors: Record<string, string | null>;
 	creatorProfiles: Record<string, CreatorDisplay>;
 }
@@ -65,11 +70,13 @@ type ContentAction =
 	{ type: 'ADD_POST', payload: Post } |
 	{ type: 'UPSERT_POST', payload: Post } |
 	{ type: 'DELETE_POST', payload: string } |
+	{ type: 'PREPEND_POST_ID', payload: { listKind: 'feed' | 'explore', postId: string } } |
 	{ type: 'SUBSCRIBE', payload: string } |
 	{ type: 'UNSUBSCRIBE', payload: string } |
 	{ type: 'UPDATE_POST', payload: Partial<Post> & { id: string } } |
-	{ type: 'MERGE_POSTS_LIST', payload: { posts: Post[], nextCursor: string | null, listKind: 'feed' | 'explore' | 'creator', creatorId?: string, replaceExploreOrder?: boolean } } |
+	{ type: 'MERGE_POSTS_LIST', payload: { posts: Post[], nextCursor: string | null, listKind: 'feed' | 'explore' | 'creator', creatorId?: string, replaceExploreOrder?: boolean, replaceFeedOrder?: boolean } } |
 	{ type: 'SET_POST_COMMENTS', payload: { postId: string, comments: Comment[], nextCursor: string | null, mode: 'replace' | 'append' } } |
+	{ type: 'SET_POST_COMMENTS_LOADING', payload: { postId: string, loading: boolean } } |
 	{ type: 'SET_WS', payload: { status: PostsWsStatus, error?: string | null } } |
 	{ type: 'SET_CREATOR_PROFILES', payload: Record<string, CreatorDisplay> };
 
@@ -80,8 +87,10 @@ const initialState: ContentState = {
 	postsWsError: null,
 	feedNextCursor: null,
 	exploreNextCursor: null,
+	feedPostIds: [],
 	explorePostIds: [],
 	commentPagination: {},
+	commentLoadingByPostId: {},
 	creatorCursors: {},
 	creatorProfiles: {},
 };
@@ -190,9 +199,19 @@ function contentReducer(state: ContentState, action: ContentAction): ContentStat
 			return {
 				...state,
 				posts: state.posts.filter(p => p.id !== pid),
+				feedPostIds: state.feedPostIds.filter(id => id !== pid),
 				explorePostIds: state.explorePostIds.filter(id => id !== pid),
 				commentPagination: restPagination,
 			};
+		}
+		case 'PREPEND_POST_ID': {
+			const { listKind, postId } = action.payload;
+			if (listKind === 'feed') {
+				const next = [postId, ...state.feedPostIds.filter(id => id !== postId)];
+				return { ...state, feedPostIds: next };
+			}
+			const next = [postId, ...state.explorePostIds.filter(id => id !== postId)];
+			return { ...state, explorePostIds: next };
 		}
 		case 'SUBSCRIBE': {
 			if (state.subscribedCreatorUserIds.includes(action.payload)) return state;
@@ -213,7 +232,7 @@ function contentReducer(state: ContentState, action: ContentAction): ContentStat
 			};
 		}
 		case 'MERGE_POSTS_LIST': {
-			const { posts: incoming, nextCursor, listKind, creatorId, replaceExploreOrder } = action.payload;
+			const { posts: incoming, nextCursor, listKind, creatorId, replaceExploreOrder, replaceFeedOrder } = action.payload;
 			const byId: Record<string, Post> = {};
 			for (const p of state.posts) {
 				byId[p.id] = p;
@@ -235,6 +254,11 @@ function contentReducer(state: ContentState, action: ContentAction): ContentStat
 				mergedList.push(byId[k]);
 			});
 			const incomingIds = incoming.map(p => p.id);
+			const feedPostIds = listKind === 'feed' ?
+				(replaceFeedOrder ?
+					incomingIds :
+					[...state.feedPostIds, ...incomingIds.filter(id => !state.feedPostIds.includes(id))]) :
+				state.feedPostIds;
 			const explorePostIds = listKind === 'explore' ?
 				(replaceExploreOrder ?
 					incomingIds :
@@ -245,6 +269,7 @@ function contentReducer(state: ContentState, action: ContentAction): ContentStat
 				posts: sortPostsNewestFirst(mergedList),
 				feedNextCursor: listKind === 'feed' ? nextCursor : state.feedNextCursor,
 				exploreNextCursor: listKind === 'explore' ? nextCursor : state.exploreNextCursor,
+				feedPostIds,
 				explorePostIds,
 				creatorCursors: creatorId ?
 					{ ...state.creatorCursors, [creatorId]: nextCursor } :
@@ -270,6 +295,20 @@ function contentReducer(state: ContentState, action: ContentAction): ContentStat
 				commentPagination: {
 					...state.commentPagination,
 					[postId]: nextCursor,
+				},
+				commentLoadingByPostId: {
+					...state.commentLoadingByPostId,
+					[postId]: false,
+				},
+			};
+		}
+		case 'SET_POST_COMMENTS_LOADING': {
+			const { postId, loading } = action.payload;
+			return {
+				...state,
+				commentLoadingByPostId: {
+					...state.commentLoadingByPostId,
+					[postId]: loading,
 				},
 			};
 		}
@@ -343,6 +382,7 @@ const ContentContext = createContext<ContentContextValue | null>(null);
 export function ContentProvider({ children }: { children: React.ReactNode }) {
 	const [state, dispatch] = useReducer(contentReducer, initialState);
 	const { state: authState } = useAuth();
+	const subscriptions = useSubscriptions();
 	const ws = useWs();
 	const wsConnected = useWsConnected();
 	const wsAuthReady = useWsAuthReady();
@@ -534,6 +574,12 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 						mergePostDtoIntoPost(existing, dto, prof, uid) :
 						postDtoToPost(dto, prof, likedByMe, uid);
 					dispatch({ type: 'UPSERT_POST', payload: post });
+					// Spec: `/list feed` and `/list explore` are public-only.
+					// When a new public post is pushed, make sure it shows up immediately in both lists.
+					if (event === 'new' && dto.visibility === 'public') {
+						dispatch({ type: 'PREPEND_POST_ID', payload: { listKind: 'feed', postId: post.id } });
+						dispatch({ type: 'PREPEND_POST_ID', payload: { listKind: 'explore', postId: post.id } });
+					}
 				});
 				return;
 			}
@@ -585,7 +631,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 				const body = json as ListPostsResponse;
 				dispatch({
 					type: 'MERGE_POSTS_LIST',
-					payload: { posts, nextCursor: body.nextCursor ?? null, listKind: 'feed' },
+					payload: { posts, nextCursor: body.nextCursor ?? null, listKind: 'feed', replaceFeedOrder: true },
 				});
 			}));
 
@@ -714,7 +760,10 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 		return wsRequestLine('posts', '/list feed 30')
 			.then(json => mapList(json).then(posts => {
 				const body = json as ListPostsResponse;
-				dispatch({ type: 'MERGE_POSTS_LIST', payload: { posts, nextCursor: body.nextCursor ?? null, listKind: 'feed' } });
+				dispatch({
+					type: 'MERGE_POSTS_LIST',
+					payload: { posts, nextCursor: body.nextCursor ?? null, listKind: 'feed', replaceFeedOrder: true },
+				});
 			}))
 			.catch(e => {
 				dispatch({ type: 'SET_WS', payload: { status: 'error', error: e instanceof Error ? e.message : String(e) } });
@@ -804,6 +853,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 			if (Object.prototype.hasOwnProperty.call(stateRef.current.commentPagination, postId)) {
 				return Promise.resolve();
 			}
+			dispatch({ type: 'SET_POST_COMMENTS_LOADING', payload: { postId, loading: true } });
 			return wsRequestLine('posts', `/comments ${postId} 30`)
 				.then(json => {
 					const body = json as ListCommentsResponse;
@@ -819,7 +869,10 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 						});
 					});
 				})
-				.catch(() => {});
+				.catch(() => {})
+				.finally(() => {
+					dispatch({ type: 'SET_POST_COMMENTS_LOADING', payload: { postId, loading: false } });
+				});
 		},
 		[mapCommentList, wsRequestLine]
 	);
@@ -983,9 +1036,11 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 		dispatch({ type: 'UNSUBSCRIBE', payload: creatorUserId });
 	}, []);
 
+	// Subscription source-of-truth lives in SubscriptionContext (WS-backed).
+	// Keep ContentContext API stable so Feed/Messages can rely on it.
 	const isSubscribed = useCallback(
-		(creatorUserId: string) => state.subscribedCreatorUserIds.includes(creatorUserId),
-		[state.subscribedCreatorUserIds]
+		(creatorUserId: string) => subscriptions.isSubscribed(creatorUserId),
+		[subscriptions]
 	);
 
 	return (

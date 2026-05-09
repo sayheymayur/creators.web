@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Star, Grid3x3, MessageCircle, Zap, Share2, MoreHorizontal, Lock, Image, Type, Phone, Video, ArrowLeft } from '../../components/icons';
+import { Star, Grid3x3, Zap, Share2, MoreHorizontal, Lock, Image, Type, ArrowLeft } from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';
 import { PostCard } from '../../components/ui/PostCard';
 import { TipModal } from '../../components/modals/TipModal';
@@ -10,14 +10,11 @@ import { useContent } from '../../context/ContentContext';
 import { mockCreators } from '../../data/users';
 import { useNotifications } from '../../context/NotificationContext';
 import { ensureMediaPermissions, isDeviceInUseError } from '../../services/mediaPermissions';
-import { useChat } from '../../context/ChatContext';
-import { useCall } from '../../context/CallContext';
 import { useSession } from '../../context/SessionContext';
 import { SessionPickerModal, type SessionPayMode } from '../../components/modals/SessionPickerModal';
 import type { Creator, SessionType } from '../../types';
 import { ApiError } from '../../services/creatorsApi';
 import { creatorProfileDtoToCreator } from '../../services/creatorWsMap';
-import { randomUuid } from '../../utils/isUuid';
 import { formatINR } from '../../services/razorpay';
 import { useSessions } from '../../context/SessionsContext';
 import { useWs, useWsConnected } from '../../context/WsContext';
@@ -31,8 +28,6 @@ export function CreatorProfile() {
 	const { state: authState } = useAuth();
 	const { state: contentState, isSubscribed, loadCreatorPosts, creatorWsGetByUserId } = useContent();
 	const { showToast } = useNotifications();
-	const { addConversation, getConversationForUser } = useChat();
-	const { startCall } = useCall();
 	useSession();
 	const { requestSession, state: sessionsState, clearOutgoing } = useSessions();
 	const ws = useWs();
@@ -46,6 +41,8 @@ export function CreatorProfile() {
 	const [isLoadingCreator, setIsLoadingCreator] = useState(false);
 	const [followBusy, setFollowBusy] = useState(false);
 	const [isFollowed, setIsFollowed] = useState<boolean>(false);
+	const [showOverflowMenu, setShowOverflowMenu] = useState(false);
+	const overflowRef = useRef<HTMLDivElement | null>(null);
 	const hasLoadedCreatorRef = useRef(false);
 
 	const maybeCreator = useMemo(() => mockCreators.find(c => c.id === creatorUserId), [creatorUserId]);
@@ -258,26 +255,16 @@ export function CreatorProfile() {
 			.finally(() => setCancelBusy(false));
 	}
 
-	function handleMessage() {
-		if (!authState.user) { navigate('/login'); return; }
-		const existing = getConversationForUser(creatorForDisplay.id);
-		if (existing) {
-			navigate(`/messages/${existing.id}`);
-		} else {
-			const convId = randomUuid();
-			addConversation({
-				id: convId,
-				participantIds: [authState.user.id, creatorForDisplay.id],
-				participantNames: [authState.user.name, creatorForDisplay.name],
-				participantAvatars: [authState.user.avatar, creatorForDisplay.avatar],
-				lastMessage: '',
-				lastMessageTime: new Date().toISOString(),
-				unreadCount: 0,
-				isOnline: creatorForDisplay.isOnline,
-			});
-			navigate(`/messages/${convId}`);
+	useEffect(() => {
+		function onDocMouseDown(e: MouseEvent) {
+			if (!showOverflowMenu) return;
+			const t = e.target as Node | null;
+			if (!t) return;
+			if (overflowRef.current && !overflowRef.current.contains(t)) setShowOverflowMenu(false);
 		}
-	}
+		document.addEventListener('mousedown', onDocMouseDown);
+		return () => document.removeEventListener('mousedown', onDocMouseDown);
+	}, [showOverflowMenu]);
 
 	return (
 		<Layout>
@@ -307,9 +294,33 @@ export function CreatorProfile() {
 						<button className="w-8 h-8 bg-background/70 text-foreground hover:bg-background/90 dark:bg-black/40 dark:text-white dark:hover:bg-black/60 backdrop-blur-sm rounded-full flex items-center justify-center transition-colors">
 							<Share2 className="w-4 h-4" />
 						</button>
-						<button className="w-8 h-8 bg-background/70 text-foreground hover:bg-background/90 dark:bg-black/40 dark:text-white dark:hover:bg-black/60 backdrop-blur-sm rounded-full flex items-center justify-center transition-colors">
-							<MoreHorizontal className="w-4 h-4" />
-						</button>
+						<div ref={overflowRef} className="relative">
+							<button
+								type="button"
+								onClick={() => setShowOverflowMenu(v => !v)}
+								className="w-8 h-8 bg-background/70 text-foreground hover:bg-background/90 dark:bg-black/40 dark:text-white dark:hover:bg-black/60 backdrop-blur-sm rounded-full flex items-center justify-center transition-colors"
+								aria-label="More actions"
+							>
+								<MoreHorizontal className="w-4 h-4" />
+							</button>
+							{showOverflowMenu && (
+								<div className="absolute right-0 top-full mt-2 w-52 bg-surface2 border border-border/20 rounded-2xl shadow-2xl py-1.5 z-40 overflow-hidden">
+									{subscribed && subId && (
+										<button
+											type="button"
+											disabled={cancelBusy}
+											onClick={() => {
+												setShowOverflowMenu(false);
+												handleCancelSubscription();
+											}}
+											className="w-full flex items-center gap-2 px-3 py-2 text-sm text-rose-300 hover:bg-foreground/5 transition-colors disabled:opacity-60"
+										>
+											Cancel subscription
+										</button>
+									)}
+								</div>
+							)}
+						</div>
 					</div>
 				</div>
 
@@ -330,33 +341,6 @@ export function CreatorProfile() {
 							<div className="flex gap-2 mt-4">
 								{subscribed ? (
 									<>
-										<button
-											onClick={() => { startCall(creatorForDisplay.id, creatorForDisplay.name, creatorForDisplay.avatar, 'audio'); navigate('/call'); }}
-											className="w-9 h-9 bg-foreground/10 hover:bg-emerald-500/20 hover:text-emerald-400 text-muted rounded-xl flex items-center justify-center transition-all"
-										>
-											<Phone className="w-4 h-4" />
-										</button>
-										<button
-											onClick={() => { startCall(creatorForDisplay.id, creatorForDisplay.name, creatorForDisplay.avatar, 'video'); navigate('/call'); }}
-											className="w-9 h-9 bg-foreground/10 hover:bg-sky-500/20 hover:text-sky-400 text-muted rounded-xl flex items-center justify-center transition-all"
-										>
-											<Video className="w-4 h-4" />
-										</button>
-										<button
-											onClick={handleMessage}
-											className="flex items-center gap-1.5 bg-foreground/10 hover:bg-foreground/15 text-foreground text-sm font-semibold px-3 py-2 rounded-xl transition-all"
-										>
-											<MessageCircle className="w-4 h-4" />
-											Message
-										</button>
-										<button
-											type="button"
-											disabled={!subId || cancelBusy}
-											onClick={handleCancelSubscription}
-											className="flex items-center gap-1.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 text-sm font-semibold px-3 py-2 rounded-xl transition-all border border-rose-500/20 disabled:opacity-50"
-										>
-											Cancel
-										</button>
 										<button
 											onClick={() => setShowTipModal(true)}
 											className="flex items-center gap-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 text-sm font-semibold px-3 py-2 rounded-xl transition-all"

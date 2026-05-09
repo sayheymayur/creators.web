@@ -13,7 +13,13 @@ export function Feed() {
 	const [filter, setFilter] = useState<'all' | 'subscribed'>('all');
 	const followingRef = useDragScroll();
 
-	const posts = contentState.posts.filter(p => {
+	// Spec alignment: Feed renders only `/list feed` results (public posts).
+	// Do not render posts that were loaded via `/list creator` when browsing profiles.
+	const feedPosts = contentState.feedPostIds
+		.map(pid => contentState.posts.find(p => p.id === pid))
+		.filter((p): p is NonNullable<typeof p> => Boolean(p));
+
+	const posts = feedPosts.filter(p => {
 		if (filter === 'subscribed') return isSubscribed(p.creatorId);
 		return true;
 	});

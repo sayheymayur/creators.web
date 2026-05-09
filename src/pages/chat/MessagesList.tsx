@@ -10,7 +10,7 @@ import { useWs, useWsConnected } from '../../context/WsContext';
 import { formatDistanceToNow } from '../../utils/date';
 import { mockCreators } from '../../data/users';
 import { useContent } from '../../context/ContentContext';
-import { isUuid, randomUuid } from '../../utils/isUuid';
+import { isUuid } from '../../utils/isUuid';
 import { useSubscriptions } from '../../context/SubscriptionContext';
 import { SessionPickerModal, type SessionPayMode } from '../../components/modals/SessionPickerModal';
 import type { Creator, SessionType } from '../../types';
@@ -18,9 +18,8 @@ import { useNotifications } from '../../context/NotificationContext';
 
 export function MessagesList() {
 	const { state: authState } = useAuth();
-	const { state: chatState, addConversation } = useChat();
+	const { state: chatState } = useChat();
 	const { state: sessionsState, requestSession, clearOutgoing } = useSessions();
-	const { isSubscribed } = useContent();
 	const { activeByCreatorUserId } = useSubscriptions();
 	const { creatorWsGetByUserId, state: contentState } = useContent();
 	const { showToast } = useNotifications();
@@ -81,29 +80,6 @@ export function MessagesList() {
 			avatar: conv.participantAvatars[otherIdx],
 			id: conv.participantIds[otherIdx],
 		};
-	}
-
-	function startNewChat(creatorId: string, creatorName: string, creatorAvatar: string, isOnline: boolean) {
-		const existing = chatState.conversations.find(c =>
-			c.participantIds.includes(userId) && c.participantIds.includes(creatorId)
-		);
-		if (existing) {
-			navigate(`/messages/${existing.id}`);
-			return;
-		}
-		const convId = randomUuid();
-		addConversation({
-			id: convId,
-			participantIds: [userId, creatorId],
-			participantNames: [authState.user?.name ?? 'You', creatorName],
-			participantAvatars: [authState.user?.avatar ?? '', creatorAvatar],
-			lastMessage: '',
-			lastMessageTime: new Date().toISOString(),
-			unreadCount: 0,
-			isOnline,
-		});
-		navigate(`/messages/${convId}`);
-		setShowNewChat(false);
 	}
 
 	const subscribedCreatorIds = Object.keys(activeByCreatorUserId ?? {});
@@ -200,17 +176,17 @@ export function MessagesList() {
 									const name = display?.name ?? cached?.name ?? base.name ?? 'Creator';
 									const avatar = display?.avatar ?? cached?.avatar ?? base.avatar ?? '';
 									return (
-									<button
-										key={creatorUserId}
-										onClick={() => openBookingForCreator(creatorUserId)}
-										className="w-full flex items-center gap-3 hover:bg-foreground/5 rounded-xl p-2 transition-colors"
-									>
-										<Avatar src={avatar} alt={name} size="md" isOnline={base.isOnline} />
-										<div className="text-left">
-											<p className="text-sm font-medium text-foreground">{name}</p>
-											<p className="text-xs text-muted">{base.category}</p>
-										</div>
-									</button>
+										<button
+											key={creatorUserId}
+											onClick={() => openBookingForCreator(creatorUserId)}
+											className="w-full flex items-center gap-3 hover:bg-foreground/5 rounded-xl p-2 transition-colors"
+										>
+											<Avatar src={avatar} alt={name} size="md" isOnline={base.isOnline} />
+											<div className="text-left">
+												<p className="text-sm font-medium text-foreground">{name}</p>
+												<p className="text-xs text-muted">{base.category}</p>
+											</div>
+										</button>
 									);
 								})}
 							</div>

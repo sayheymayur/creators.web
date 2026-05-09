@@ -16,6 +16,25 @@ import { subscriptionAmountMinor, subscriptionId, subscriptionUiStatus } from '.
 
 const ADD_FUND_PRESETS_INR = [100, 250, 500, 1000, 2000, 5000];
 
+type SubscriptionRowKeyInput = {
+	creatorUserId: string,
+	subscriptionId: string | null,
+	dto: Record<string, unknown>,
+};
+
+/** Stable unique key per subscription row (multiple rows per creator are valid). */
+function subscriptionListKey(s: SubscriptionRowKeyInput, listIndex: number): string {
+	if (s.subscriptionId) return s.subscriptionId;
+	const d = s.dto;
+	const t =
+		typeof d.updated_at === 'string' ? d.updated_at :
+		typeof d.created_at === 'string' ? d.created_at :
+		typeof d.started_at === 'string' ? d.started_at :
+		'';
+	const base = `${s.creatorUserId}:${t || 'nostamp'}`;
+	return t ? base : `${base}:i${listIndex}`;
+}
+
 function TransactionItem({ tx }: { tx: Transaction }) {
 	const isPositive = tx.amount > 0;
 	const typeColors: Record<Transaction['type'], string> = {
@@ -312,10 +331,10 @@ export function Wallet() {
 									<div className="px-1">
 										<p className="text-xs font-semibold text-muted uppercase tracking-wide mb-2">Active</p>
 										<div className="space-y-3">
-											{activeSubs.map(s => {
+											{activeSubs.map((s, i) => {
 												const display = creatorDisplay[s.creatorUserId];
 												return (
-													<div key={s.creatorUserId} className="bg-surface border border-border/20 rounded-2xl p-4">
+													<div key={subscriptionListKey(s, i)} className="bg-surface border border-border/20 rounded-2xl p-4">
 														<div className="flex items-center gap-3 mb-3">
 															{display?.avatar ? (
 																<img src={display.avatar} alt={display.name} className="w-10 h-10 rounded-full object-cover" />
@@ -351,10 +370,10 @@ export function Wallet() {
 									<div className="px-1">
 										<p className="text-xs font-semibold text-muted uppercase tracking-wide mb-2">Cancelled</p>
 										<div className="space-y-3">
-											{cancelledSubs.map(s => {
+											{cancelledSubs.map((s, i) => {
 												const display = creatorDisplay[s.creatorUserId];
 												return (
-													<div key={s.creatorUserId} className="bg-surface border border-border/20 rounded-2xl p-4 opacity-90">
+													<div key={subscriptionListKey(s, i)} className="bg-surface border border-border/20 rounded-2xl p-4 opacity-90">
 														<div className="flex items-center gap-3">
 															{display?.avatar ? (
 																<img src={display.avatar} alt={display.name} className="w-10 h-10 rounded-full object-cover" />
@@ -378,10 +397,10 @@ export function Wallet() {
 									<div className="px-1">
 										<p className="text-xs font-semibold text-muted uppercase tracking-wide mb-2">Past (Expired)</p>
 										<div className="space-y-3">
-											{expiredSubs.map(s => {
+											{expiredSubs.map((s, i) => {
 												const display = creatorDisplay[s.creatorUserId];
 												return (
-													<div key={`${s.creatorUserId}:${s.subscriptionId ?? ''}`} className="bg-surface border border-border/20 rounded-2xl p-4 opacity-90">
+													<div key={subscriptionListKey(s, i)} className="bg-surface border border-border/20 rounded-2xl p-4 opacity-90">
 														<div className="flex items-center gap-3">
 															{display?.avatar ? (
 																<img src={display.avatar} alt={display.name} className="w-10 h-10 rounded-full object-cover" />

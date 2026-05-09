@@ -6,13 +6,14 @@ import React, {
 	useReducer,
 	useRef,
 } from 'react';
-import type { Post, Comment } from '../types';
+import type { Post, Comment, Creator } from '../types';
 import { isPostLiked, setPostLiked } from '../services/likedPosts';
 import { setPostCommented } from '../services/commentedPosts';
 import { useEnsureWsAuth, useWs, useWsAuthReady, useWsConnected } from './WsContext';
 import { isPostsMockMode } from '../services/postsMode';
 import {
 	buildCreatorListCommand,
+	creatorWsListFollowing,
 } from '../services/creatorWsService';
 import type { CreatorGetResponse, CreatorListResponse } from '../services/creatorWsTypes';
 import type {
@@ -32,6 +33,8 @@ import {
 } from '../services/postDtoMap';
 import { useAuth } from './AuthContext';
 import { useSubscriptions } from './SubscriptionContext';
+import { creatorSummaryToCardCreator } from '../services/creatorWsMap';
+import { mockCreators } from '../data/users';
 
 export type PostsWsStatus = 'idle' | 'connecting' | 'ready' | 'error';
 
@@ -59,6 +62,7 @@ interface ContentState {
 	commentLoadingByPostId: Record<string, boolean>;
 	creatorCursors: Record<string, string | null>;
 	creatorProfiles: Record<string, CreatorDisplay>;
+	followingCreators: Creator[];
 }
 
 type ContentAction =
@@ -78,7 +82,8 @@ type ContentAction =
 	{ type: 'SET_POST_COMMENTS', payload: { postId: string, comments: Comment[], nextCursor: string | null, mode: 'replace' | 'append' } } |
 	{ type: 'SET_POST_COMMENTS_LOADING', payload: { postId: string, loading: boolean } } |
 	{ type: 'SET_WS', payload: { status: PostsWsStatus, error?: string | null } } |
-	{ type: 'SET_CREATOR_PROFILES', payload: Record<string, CreatorDisplay> };
+	{ type: 'SET_CREATOR_PROFILES', payload: Record<string, CreatorDisplay> } |
+	{ type: 'SET_FOLLOWING_CREATORS', payload: Creator[] };
 
 const initialState: ContentState = {
 	posts: [],
@@ -93,6 +98,7 @@ const initialState: ContentState = {
 	commentLoadingByPostId: {},
 	creatorCursors: {},
 	creatorProfiles: {},
+	followingCreators: [],
 };
 
 function sortPostsNewestFirst(posts: Post[]): Post[] {
@@ -337,6 +343,9 @@ function contentReducer(state: ContentState, action: ContentAction): ContentStat
 				}),
 			};
 		}
+		case 'SET_FOLLOWING_CREATORS': {
+			return { ...state, followingCreators: action.payload };
+		}
 		default:
 			return state;
 	}
@@ -375,6 +384,7 @@ interface ContentContextValue {
 	/** Resolve creator profile by author user id (user_id from posts). */
 	creatorWsGetByUserId: (creatorUserId: string) => Promise<CreatorGetResponse>;
 	creatorWsUpsert: (username: string, name: string, bio?: string) => Promise<void>;
+	refreshFollowing: () => Promise<void>;
 }
 
 const ContentContext = createContext<ContentContextValue | null>(null);
@@ -447,6 +457,20 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 		},
 		[ws, ensureWsAuth]
 	);
+
+	const refreshFollowing = useCallback(() => {
+		const u = authUserRef.current;
+		if (!u) return Promise.resolve();
+		// Spec: listfollowing is fan-scoped; requires authenticated socket.
+		return ensureWsAuth()
+			.then(() => creatorWsListFollowing(ws, 30))
+			.then(resp => {
+				const base = { ...mockCreators[0] } as Partial<Creator>;
+				const creators = (resp.creators ?? []).map(dto => creatorSummaryToCardCreator(dto, base));
+				dispatch({ type: 'SET_FOLLOWING_CREATORS', payload: creators });
+			})
+			.catch(() => {});
+	}, [ensureWsAuth, ws]);
 
 	const resolveCreatorDisplay = useCallback(
 		(userId: string, profiles: Record<string, CreatorDisplay>): CreatorDisplay | undefined => {
@@ -612,6 +636,16 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 			offComment();
 		};
 	}, [ws, wsConnected, handlePush]);
+
+	useEffect(() => {
+		const u = authState.user;
+		if (!u || !wsConnected || !wsAuthReady) {
+			dispatch({ type: 'SET_FOLLOWING_CREATORS', payload: [] });
+			return;
+		}
+		// Refresh following list once per login session.
+		void refreshFollowing().then(() => {});
+	}, [authState.user?.id, authState.user?.role, wsConnected, wsAuthReady, refreshFollowing]);
 
 	// Spec-based bootstrapping for feed/explore (and my creator posts).
 	useEffect(() => {
@@ -1071,6 +1105,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 				creatorWsGetByPk,
 				creatorWsGetByUserId,
 				creatorWsUpsert,
+				refreshFollowing,
 			}}
 		>
 			{children}

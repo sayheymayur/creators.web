@@ -5,7 +5,6 @@ import { Layout } from '../../components/layout/Layout';
 import { PostCard } from '../../components/ui/PostCard';
 import { useContent } from '../../context/ContentContext';
 import { useDragScroll } from '../../hooks/useDragScroll';
-import type { Creator } from '../../types';
 
 export function Feed() {
 	const { state: contentState, isSubscribed, loadMoreFeed, refreshFeed } = useContent();
@@ -24,17 +23,16 @@ export function Feed() {
 		return true;
 	});
 
-	// Creator directory may be loaded via WS; in the meantime we don't render mock “following” pills.
-	const subscribedCreators: Creator[] = [];
+	const followingCreators = contentState.followingCreators ?? [];
 
 	return (
 		<Layout>
 			<div className="max-w-2xl mx-auto px-4 py-6">
-				{subscribedCreators.length > 0 && (
+				{followingCreators.length > 0 && (
 					<div className="mb-6">
 						<p className="text-xs text-muted font-medium uppercase tracking-wider mb-3">Following</p>
 						<div ref={followingRef} className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-							{subscribedCreators.map(creator => (
+							{followingCreators.map(creator => (
 								<button
 									key={creator.id}
 									onClick={() => { void navigate(`/creator/${creator.id}`); }}

@@ -26,7 +26,7 @@ export function CreatorProfile() {
 	const { id: creatorUserId } = useParams<{ id: string }>();
 	const navigate = useNavigate();
 	const { state: authState } = useAuth();
-	const { state: contentState, isSubscribed, loadCreatorPosts, creatorWsGetByUserId } = useContent();
+	const { state: contentState, isSubscribed, loadCreatorPosts, creatorWsGetByUserId, refreshFollowing } = useContent();
 	const { showToast } = useNotifications();
 	useSession();
 	const { requestSession, state: sessionsState, clearOutgoing } = useSessions();
@@ -232,6 +232,7 @@ export function CreatorProfile() {
 			.then(() => {
 				setIsFollowed(prev => !prev);
 				showToast(isFollowed ? 'Unfollowed.' : 'You are now following this creator.');
+				void refreshFollowing().catch(() => {});
 			})
 			.catch((err: unknown) => {
 				showToast(err instanceof Error ? err.message : (isFollowed ? 'Unfollow failed' : 'Follow failed'), 'error');

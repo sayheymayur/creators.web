@@ -22,7 +22,7 @@ export function creatorProfileDtoToCreator(dto: CreatorProfileDTO, base?: Partia
 		category: category0,
 		isOnline: base?.isOnline ?? false,
 		postCount: base?.postCount ?? 0,
-		likeCount: base?.likeCount ?? 0,
+		likeCount: typeof dto.profile_like_count === 'number' ? dto.profile_like_count : (base?.likeCount ?? 0),
 		monthlyStats: base?.monthlyStats ?? [],
 		perMinuteRate: base?.perMinuteRate ?? 0,
 		liveStreamEnabled: base?.liveStreamEnabled ?? false,

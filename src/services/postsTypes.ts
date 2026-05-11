@@ -27,6 +27,15 @@ export interface CommentDTO {
 	user_id: string;
 	text: string;
 	created_at: string;
+	/** null = top-level comment */
+	parent_comment_id?: string | null;
+	heart_count?: number;
+}
+
+export interface CommentHeartUpdatePayload {
+	post_id: string;
+	comment_id: string;
+	heart_count: number;
 }
 
 export interface ReportPostResponse {
@@ -67,7 +76,8 @@ export type PostsPushEvent =
 	'updated' |
 	'deleted' |
 	'likeupdate' |
-	'newcomment';
+	'newcomment' |
+	'commentheartupdate';
 
 export interface DeletedPostEventPayload {
 	id: string;

@@ -17,6 +17,7 @@ import {
 import type { CreatorGetResponse, CreatorListResponse } from '../services/creatorWsTypes';
 import type {
 	CommentDTO,
+	CommentHeartUpdatePayload,
 	DeletedPostEventPayload,
 	LikeUpdateEventPayload,
 	ListCommentsResponse,
@@ -54,6 +55,11 @@ interface ContentState {
 	commentPagination: Record<string, string | null>;
 	creatorCursors: Record<string, string | null>;
 	creatorProfiles: Record<string, CreatorDisplay>;
+	/** Post ids the current user has saved (from `/listsaved` bootstrap + toggles). */
+	savedPostIds: Record<string, true>;
+	/** Ordered posts for the `/saved` screen (from `/listsaved`). */
+	savedFeedPosts: Post[];
+	savedFeedNextCursor: string | null;
 }
 
 type ContentAction =
@@ -61,6 +67,7 @@ type ContentAction =
 	{ type: 'SET_LIKE_SERVER', payload: { postId: string, like_count: number, likedByMe: boolean, userId: string } } |
 	{ type: 'PATCH_POST_LIKES', payload: { postId: string, like_count: number } } |
 	{ type: 'ADD_COMMENT', payload: { postId: string, comment: Comment } } |
+	{ type: 'PATCH_COMMENT_HEART', payload: { postId: string, commentId: string, heart_count: number } } |
 	{ type: 'UNLOCK_POST', payload: { postId: string, userId: string } } |
 	{ type: 'ADD_POST', payload: Post } |
 	{ type: 'UPSERT_POST', payload: Post } |
@@ -71,7 +78,11 @@ type ContentAction =
 	{ type: 'MERGE_POSTS_LIST', payload: { posts: Post[], nextCursor: string | null, listKind: 'feed' | 'explore' | 'creator', creatorId?: string, replaceExploreOrder?: boolean } } |
 	{ type: 'SET_POST_COMMENTS', payload: { postId: string, comments: Comment[], nextCursor: string | null, mode: 'replace' | 'append' } } |
 	{ type: 'SET_WS', payload: { status: PostsWsStatus, error?: string | null } } |
-	{ type: 'SET_CREATOR_PROFILES', payload: Record<string, CreatorDisplay> };
+	{ type: 'SET_CREATOR_PROFILES', payload: Record<string, CreatorDisplay> } |
+	{ type: 'HYDRATE_SAVED_FROM_LIST', payload: { posts: Post[] } } |
+	{ type: 'SET_SAVED_PAGE_FEED', payload: { posts: Post[], nextCursor: string | null, mode: 'replace' | 'append' } } |
+	{ type: 'PATCH_SAVED_ID', payload: { postId: string, saved: boolean } } |
+	{ type: 'CLEAR_SAVED_LOCAL' };
 
 const initialState: ContentState = {
 	posts: [],
@@ -84,12 +95,35 @@ const initialState: ContentState = {
 	commentPagination: {},
 	creatorCursors: {},
 	creatorProfiles: {},
+	savedPostIds: {},
+	savedFeedPosts: [],
+	savedFeedNextCursor: null,
 };
 
 function sortPostsNewestFirst(posts: Post[]): Post[] {
 	return [...posts].sort(
 		(a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
 	);
+}
+
+function mergeIncomingPosts(prevPosts: Post[], incoming: Post[]): Post[] {
+	const byId: Record<string, Post> = {};
+	for (const p of prevPosts) {
+		byId[p.id] = p;
+	}
+	for (const p of incoming) {
+		const prev = byId[p.id];
+		byId[p.id] = prev ?
+			{
+				...prev,
+				...p,
+				comments: prev.comments,
+				commentCount: p.commentCount,
+				likedBy: p.likedBy?.length ? p.likedBy : prev.likedBy,
+			} :
+			p;
+	}
+	return sortPostsNewestFirst(Object.values(byId));
 }
 
 function uniqueStrings(ids: string[]): string[] {
@@ -101,6 +135,12 @@ function uniqueStrings(ids: string[]): string[] {
 		out.push(id);
 	}
 	return out;
+}
+
+function wsEscapeMultilineText(text: string): string {
+	// WS request protocol is line-oriented; literal newlines would truncate the command.
+	// Escape to a single line; UI will decode `\\n` back to newlines on render.
+	return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n/g, '\\n');
 }
 
 function contentReducer(state: ContentState, action: ContentAction): ContentState {
@@ -158,6 +198,21 @@ function contentReducer(state: ContentState, action: ContentAction): ContentStat
 				}),
 			};
 		}
+		case 'PATCH_COMMENT_HEART': {
+			const { postId, commentId, heart_count } = action.payload;
+			return {
+				...state,
+				posts: state.posts.map(p => {
+					if (p.id !== postId) return p;
+					return {
+						...p,
+						comments: p.comments.map(c =>
+							c.id === commentId ? { ...c, heartCount: heart_count } : c
+						),
+					};
+				}),
+			};
+		}
 		case 'UNLOCK_POST': {
 			return {
 				...state,
@@ -187,11 +242,15 @@ function contentReducer(state: ContentState, action: ContentAction): ContentStat
 		case 'DELETE_POST': {
 			const pid = action.payload;
 			const { [pid]: _rm, ...restPagination } = state.commentPagination;
+			const nextSavedIds = { ...state.savedPostIds };
+			delete nextSavedIds[pid];
 			return {
 				...state,
 				posts: state.posts.filter(p => p.id !== pid),
 				explorePostIds: state.explorePostIds.filter(id => id !== pid),
 				commentPagination: restPagination,
+				savedPostIds: nextSavedIds,
+				savedFeedPosts: state.savedFeedPosts.filter(p => p.id !== pid),
 			};
 		}
 		case 'SUBSCRIBE': {
@@ -263,7 +322,9 @@ function contentReducer(state: ContentState, action: ContentAction): ContentStat
 						byId[c.id] = c;
 					}
 					const merged = Object.values(byId).sort(
-						(a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+						(a, b) =>
+							new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime() ||
+							a.id.localeCompare(b.id)
 					);
 					return { ...p, comments: merged };
 				}),
@@ -298,6 +359,53 @@ function contentReducer(state: ContentState, action: ContentAction): ContentStat
 				}),
 			};
 		}
+		case 'HYDRATE_SAVED_FROM_LIST': {
+			const { posts } = action.payload;
+			const ids = { ...state.savedPostIds };
+			for (const p of posts) ids[p.id] = true;
+			return {
+				...state,
+				savedPostIds: ids,
+				posts: mergeIncomingPosts(state.posts, posts),
+			};
+		}
+		case 'SET_SAVED_PAGE_FEED': {
+			const { posts, nextCursor, mode } = action.payload;
+			const nextFeed = mode === 'replace' ? posts : [...state.savedFeedPosts, ...posts];
+			const ids = { ...state.savedPostIds };
+			for (const p of posts) ids[p.id] = true;
+			return {
+				...state,
+				savedFeedPosts: nextFeed,
+				savedFeedNextCursor: nextCursor,
+				savedPostIds: ids,
+				posts: mergeIncomingPosts(state.posts, posts),
+			};
+		}
+		case 'PATCH_SAVED_ID': {
+			const { postId, saved } = action.payload;
+			const ids = { ...state.savedPostIds };
+			if (saved) ids[postId] = true;
+			else delete ids[postId];
+			let savedFeedPosts = state.savedFeedPosts;
+			if (saved) {
+				const p = state.posts.find(x => x.id === postId);
+				if (p && !savedFeedPosts.some(x => x.id === postId)) {
+					savedFeedPosts = [p, ...savedFeedPosts];
+				}
+			} else {
+				savedFeedPosts = savedFeedPosts.filter(p => p.id !== postId);
+			}
+			return { ...state, savedPostIds: ids, savedFeedPosts };
+		}
+		case 'CLEAR_SAVED_LOCAL': {
+			return {
+				...state,
+				savedPostIds: {},
+				savedFeedPosts: [],
+				savedFeedNextCursor: null,
+			};
+		}
 		default:
 			return state;
 	}
@@ -309,6 +417,8 @@ interface ContentContextValue {
 	postsWsStatus: PostsWsStatus;
 	toggleLike: (postId: string, userId: string) => Promise<void>;
 	addComment: (postId: string, text: string) => Promise<void>;
+	addReply: (postId: string, parentCommentId: string, text: string) => Promise<void>;
+	heartComment: (commentId: string) => Promise<void>;
 	unlockPost: (postId: string, userId: string) => void;
 	addPost: (post: Post) => void;
 	createPost: (input: CreatePostInput) => Promise<void>;
@@ -336,6 +446,11 @@ interface ContentContextValue {
 	/** Resolve creator profile by author user id (user_id from posts). */
 	creatorWsGetByUserId: (creatorUserId: string) => Promise<CreatorGetResponse>;
 	creatorWsUpsert: (username: string, name: string, bio?: string) => Promise<void>;
+	isPostSaved: (postId: string) => boolean;
+	savePost: (postId: string) => Promise<void>;
+	unsavePost: (postId: string) => Promise<void>;
+	/** Load `/listsaved` into `state.savedFeedPosts` (fan saved screen). */
+	loadSavedFeed: (reset: boolean) => Promise<void>;
 }
 
 const ContentContext = createContext<ContentContextValue | null>(null);
@@ -355,6 +470,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 	const creatorUserInflightRef = useRef<Partial<Record<string, Promise<void>>>>({});
 	const creatorBootstrapRef = useRef<{ userId: string, username: string } | null>(null);
 	const initialWsPostsLoadedKeyRef = useRef<string | null>(null);
+	const savedListBootstrapKeyRef = useRef<string | null>(null);
 
 	const creatorWsDebugEnabled = useCallback((): boolean => {
 		if (!import.meta.env.DEV) return false;
@@ -558,12 +674,25 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 		const offDeleted = ws.on('posts', 'deleted', data => handlePush('deleted', data));
 		const offLike = ws.on('posts', 'likeupdate', data => handlePush('likeupdate', data));
 		const offComment = ws.on('posts', 'newcomment', data => handlePush('newcomment', data));
+		const offCommentHeart = ws.on('posts', 'commentheartupdate', (data: unknown) => {
+			const pl = data as CommentHeartUpdatePayload;
+			if (!pl?.post_id || !pl?.comment_id) return;
+			dispatch({
+				type: 'PATCH_COMMENT_HEART',
+				payload: {
+					postId: String(pl.post_id),
+					commentId: String(pl.comment_id),
+					heart_count: Number(pl.heart_count) || 0,
+				},
+			});
+		});
 		return () => {
 			offNew();
 			offUpdated();
 			offDeleted();
 			offLike();
 			offComment();
+			offCommentHeart();
 		};
 	}, [ws, wsConnected, handlePush]);
 
@@ -617,6 +746,30 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 		});
 	}, [wsConnected, wsAuthReady, wsRequestLine, mapList, authState.user]);
 
+	// Clear saved state when logging out.
+	useEffect(() => {
+		if (authState.user?.id) return;
+		savedListBootstrapKeyRef.current = null;
+		dispatch({ type: 'CLEAR_SAVED_LOCAL' });
+	}, [authState.user?.id]);
+
+	// Hydrate saved-post ids for bookmark state (requires login).
+	useEffect(() => {
+		if (!wsConnected || !wsAuthReady) return;
+		const u = authUserRef.current;
+		if (!u) return;
+		const key = `saved-bootstrap:${u.id}`;
+		if (savedListBootstrapKeyRef.current === key) return;
+		savedListBootstrapKeyRef.current = key;
+		void wsRequestLine('posts', '/listsaved 30')
+			.then(json => mapList(json).then(posts => {
+				dispatch({ type: 'HYDRATE_SAVED_FROM_LIST', payload: { posts } });
+			}))
+			.catch(() => {
+				savedListBootstrapKeyRef.current = null;
+			});
+	}, [wsConnected, wsAuthReady, wsRequestLine, mapList, authState.user?.id]);
+
 	const creatorWsSearch = useCallback(
 		(opts: { q?: string, category?: string, limit?: number, beforeCursor?: string }) => {
 			const cmd = buildCreatorListCommand(opts);
@@ -650,6 +803,51 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 				return parts.join(' ');
 			})()).then(() => {}),
 		[wsRequestLine]
+	);
+
+	const savePost = useCallback(
+		(postId: string) =>
+			wsRequestLine('posts', `/save ${postId}`).then(() => {
+				dispatch({ type: 'PATCH_SAVED_ID', payload: { postId, saved: true } });
+			}),
+		[wsRequestLine]
+	);
+
+	const unsavePost = useCallback(
+		(postId: string) =>
+			wsRequestLine('posts', `/unsave ${postId}`).then(() => {
+				dispatch({ type: 'PATCH_SAVED_ID', payload: { postId, saved: false } });
+			}),
+		[wsRequestLine]
+	);
+
+	const isPostSaved = useCallback(
+		(postId: string) => Boolean(state.savedPostIds[postId]),
+		[state.savedPostIds]
+	);
+
+	const loadSavedFeed = useCallback(
+		(reset: boolean) => {
+			const cursor = reset ? undefined : stateRef.current.savedFeedNextCursor;
+			if (!reset && (cursor == null || cursor === '')) return Promise.resolve();
+			const cmd = cursor ? `/listsaved 30 ${cursor}` : '/listsaved 30';
+			return wsRequestLine('posts', cmd)
+				.then(json => mapList(json).then(posts => {
+					const body = json as ListPostsResponse;
+					dispatch({
+						type: 'SET_SAVED_PAGE_FEED',
+						payload: {
+							posts,
+							nextCursor: body.nextCursor ?? null,
+							mode: reset ? 'replace' : 'append',
+						},
+					});
+				}))
+				.catch(e => {
+					dispatch({ type: 'SET_WS', payload: { status: 'error', error: e instanceof Error ? e.message : String(e) } });
+				});
+		},
+		[mapList, wsRequestLine]
 	);
 
 	useEffect(() => {
@@ -776,8 +974,8 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 						payload: { posts, nextCursor: body.nextCursor ?? null, listKind: 'creator', creatorId },
 					});
 				}))
-				.catch(e => {
-					dispatch({ type: 'SET_WS', payload: { status: 'error', error: e instanceof Error ? e.message : String(e) } });
+				.catch(() => {
+					/* Saved feed errors are non-fatal; avoid clobbering global posts WS status. */
 				});
 		},
 		[mapList, wsRequestLine]
@@ -874,7 +1072,8 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 			if (!u) return Promise.resolve();
 			const trimmed = text.trim();
 			if (!trimmed) return Promise.resolve();
-			return wsRequestLine('posts', `/comment ${postId} ${trimmed}`).then(json => {
+			const safe = wsEscapeMultilineText(trimmed);
+			return wsRequestLine('posts', `/comment ${postId} ${safe}`).then(json => {
 				const dto = (json as { comment: CommentDTO }).comment;
 				setPostCommented(u.id, postId, true);
 				return fetchProfilesForIds([dto.user_id]).then(profiles => {
@@ -885,6 +1084,48 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 			});
 		},
 		[fetchProfilesForIds, resolveCreatorDisplay, wsRequestLine]
+	);
+
+	const addReply = useCallback(
+		(postId: string, parentCommentId: string, text: string) => {
+			const u = authUserRef.current;
+			if (!u) return Promise.resolve();
+			const trimmed = text.trim();
+			if (!trimmed) return Promise.resolve();
+			const pid = parentCommentId.trim();
+			if (!pid) return Promise.resolve();
+			const safe = wsEscapeMultilineText(trimmed);
+			return wsRequestLine('posts', `/reply ${postId} ${pid} ${safe}`).then(json => {
+				const dto = (json as { comment: CommentDTO }).comment;
+				setPostCommented(u.id, postId, true);
+				return fetchProfilesForIds([dto.user_id]).then(profiles => {
+					const prof = resolveCreatorDisplay(dto.user_id, profiles);
+					const comment = commentDtoToComment(dto, prof);
+					dispatch({ type: 'ADD_COMMENT', payload: { postId, comment } });
+				});
+			});
+		},
+		[fetchProfilesForIds, resolveCreatorDisplay, wsRequestLine]
+	);
+
+	const heartComment = useCallback(
+		(commentId: string) =>
+			wsRequestLine('posts', `/heartcomment ${commentId}`).then(json => {
+				const body = json as { comment_id?: string, post_id?: string, heart_count?: number };
+				const postId = String(body.post_id ?? '');
+				const cid = String(body.comment_id ?? '');
+				if (postId && cid) {
+					dispatch({
+						type: 'PATCH_COMMENT_HEART',
+						payload: {
+							postId,
+							commentId: cid,
+							heart_count: Number(body.heart_count) || 0,
+						},
+					});
+				}
+			}),
+		[wsRequestLine]
 	);
 
 	const addPost = useCallback((post: Post) => {
@@ -995,6 +1236,8 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 				postsWsStatus: state.postsWsStatus,
 				toggleLike,
 				addComment,
+				addReply,
+				heartComment,
 				unlockPost,
 				addPost,
 				createPost,
@@ -1016,6 +1259,10 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 				creatorWsGetByPk,
 				creatorWsGetByUserId,
 				creatorWsUpsert,
+				isPostSaved,
+				savePost,
+				unsavePost,
+				loadSavedFeed,
 			}}
 		>
 			{children}

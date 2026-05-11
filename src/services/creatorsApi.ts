@@ -87,6 +87,33 @@ export interface UpdateMyProfileResponse {
 	user: User;
 }
 
+export interface ChangePasswordRequest {
+	currentPassword: string;
+	newPassword: string;
+}
+
+export interface ChangePasswordResponse {
+	ok: true;
+}
+
+export type NotificationSettingsKeys = 'messages' | 'subscriptions' | 'tips' | 'likes' | 'system';
+
+export interface NotificationSettings {
+	messages: boolean;
+	subscriptions: boolean;
+	tips: boolean;
+	likes: boolean;
+	system: boolean;
+}
+
+export interface NotificationSettingsResponse {
+	settings: NotificationSettings;
+}
+
+export interface PutNotificationSettingsRequest {
+	settings: Partial<NotificationSettings>;
+}
+
 export interface CreateReportRequest {
 	targetType: 'post' | 'user' | 'message';
 	targetId: string;
@@ -152,6 +179,26 @@ export interface RazorpayConfirmResponse {
 	alreadyConfirmed?: true;
 }
 
+export interface PaymentsTipRequest {
+	creatorUserId: string;
+	amountCents: string;
+	postId?: string;
+	currency?: string;
+}
+
+export interface PaymentsTipResponse {
+	tip: {
+		id: string;
+		fan_user_id: string;
+		creator_user_id: string;
+		post_id: string | null;
+		amount_cents: string;
+		currency: string;
+		created_at: string;
+	};
+	from_balance_after: string;
+}
+
 export interface MediaCreateUploadRequest {
 	fileName: string;
 	mimeType: string;
@@ -185,6 +232,19 @@ export class ApiError extends Error {
 		this.status = status;
 		this.body = body;
 	}
+}
+
+/** Reads `{ error: string }` from API error bodies when present. */
+export function apiErrorMessage(err: unknown, fallback: string): string {
+	if (err instanceof ApiError) {
+		const b = err.body;
+		if (b && typeof b === 'object' && 'error' in b && typeof (b as { error: unknown }).error === 'string') {
+			return (b as { error: string }).error;
+		}
+		return err.message;
+	}
+	if (err instanceof Error) return err.message;
+	return fallback;
 }
 
 function apiBaseUrl(): string {
@@ -229,6 +289,35 @@ function requestJson<T>(
 		});
 }
 
+function requestJsonAllow201<T>(
+	path: string,
+	init: Omit<RequestInit, 'body'> & { body?: unknown, auth?: boolean } = {}
+): Promise<T> {
+	const url = `${apiBaseUrl()}${path.startsWith('/') ? '' : '/'}${path}`;
+	const headers = new Headers(init.headers);
+	headers.set('Accept', 'application/json');
+
+	const auth = init.auth ?? false;
+	if (auth) {
+		const token = getSessionToken();
+		if (token) headers.set('Authorization', `Bearer ${token}`);
+	}
+
+	let body: BodyInit | null | undefined = init.body as BodyInit | null | undefined;
+	if (body && typeof body === 'object' && !(body instanceof FormData) && !(body instanceof Blob) && !(body instanceof URLSearchParams)) {
+		headers.set('Content-Type', 'application/json');
+		body = JSON.stringify(body);
+	}
+
+	return globalThis.fetch(url, { ...(init as RequestInit), headers, body })
+		.then(res => {
+			if (res.status >= 200 && res.status < 300) return readJsonSafe(res).then(v => v as T);
+			return readJsonSafe(res).then(errorBody => {
+				throw new ApiError(`HTTP ${res.status} for ${path}`, res.status, errorBody);
+			});
+		});
+}
+
 export const creatorsApi = {
 	auth: {
 		register(body: RegisterRequest): Promise<AuthTokenResponse> {
@@ -264,6 +353,15 @@ export const creatorsApi = {
 		updateProfile(body: UpdateMyProfileRequest): Promise<UpdateMyProfileResponse> {
 			return requestJson<UpdateMyProfileResponse>('/me/profile', { method: 'POST', body, auth: true });
 		},
+		changePassword(body: ChangePasswordRequest): Promise<ChangePasswordResponse> {
+			return requestJson<ChangePasswordResponse>('/me/password', { method: 'POST', body, auth: true });
+		},
+		getNotificationSettings(signal?: AbortSignal): Promise<NotificationSettingsResponse> {
+			return requestJson<NotificationSettingsResponse>('/me/notification-settings', { method: 'GET', auth: true, signal });
+		},
+		putNotificationSettings(body: PutNotificationSettingsRequest): Promise<NotificationSettingsResponse> {
+			return requestJson<NotificationSettingsResponse>('/me/notification-settings', { method: 'PUT', body, auth: true });
+		},
 	},
 	payments: {
 		/** GET /payments/gateway — source of truth for which provider the app uses. */
@@ -283,6 +381,9 @@ export const creatorsApi = {
 		},
 		razorpayConfirm(body: RazorpayConfirmRequest): Promise<RazorpayConfirmResponse> {
 			return requestJson<RazorpayConfirmResponse>('/payments/razorpay/confirm', { method: 'POST', body, auth: true });
+		},
+		tip(body: PaymentsTipRequest): Promise<PaymentsTipResponse> {
+			return requestJsonAllow201<PaymentsTipResponse>('/payments/tip', { method: 'POST', body, auth: true });
 		},
 		/** When backend is ready: implement POST /payments/stripe/create-payment-intent */
 		stripeCreatePaymentIntent(body: StripeCreatePaymentIntentRequest): Promise<StripeCreatePaymentIntentResponse> {

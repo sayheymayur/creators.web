@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Heart, MessageCircle, Lock, Zap, MoreHorizontal, Bookmark, Send, Trash2, Type, AlertTriangle } from '../icons';
 import { useNavigate } from 'react-router-dom';
 import type { Post } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { useContent } from '../../context/ContentContext';
+import { PostCommentThread } from './PostCommentThread';
 import { useNotifications } from '../../context/NotificationContext';
 import { Avatar } from './Avatar';
 import { formatDistanceToNow } from '../../utils/date';
@@ -22,10 +23,21 @@ interface PostCardProps {
 
 export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 	const { state: authState } = useAuth();
-	const { toggleLike, addComment, isSubscribed, loadPostComments, loadMorePostComments, editPost, reportPost, deletePost, state: contentState } = useContent();
+	const {
+		toggleLike,
+		isSubscribed,
+		loadPostComments,
+		loadMorePostComments,
+		editPost,
+		reportPost,
+		deletePost,
+		isPostSaved,
+		savePost,
+		unsavePost,
+		state: contentState,
+	} = useContent();
 	const { showToast } = useNotifications();
 	const navigate = useNavigate();
-	const [commentText, setCommentText] = useState('');
 	const [showComments, setShowComments] = useState(false);
 	const [showTipModal, setShowTipModal] = useState(false);
 	const [showPPVModal, setShowPPVModal] = useState(false);
@@ -48,9 +60,11 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 	const commentNext = contentState.commentPagination[post.id];
 	const commentCountShown = Math.max(post.commentCount, post.comments.length);
 
-	const savedKey = useMemo(() => (userId ? `cw.savedPosts.${userId}` : ''), [userId]);
-	const [isSaved, setIsSaved] = useState(false);
+	const isSaved = isPostSaved(post.id);
 	const [isCommented, setIsCommented] = useState(false);
+	const [bookmarkPopKey, setBookmarkPopKey] = useState(0);
+	const [likePopKey, setLikePopKey] = useState(0);
+	const prevLikedRef = useRef(isLiked);
 
 	useEffect(() => {
 		if (!showComments) return;
@@ -58,15 +72,11 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 	}, [showComments, post.id, loadPostComments]);
 
 	useEffect(() => {
-		if (!savedKey) { setIsSaved(false); return; }
-		try {
-			const raw = globalThis.localStorage?.getItem(savedKey) ?? '[]';
-			const ids = JSON.parse(raw) as unknown;
-			setIsSaved(Array.isArray(ids) && ids.includes(post.id));
-		} catch {
-			setIsSaved(false);
+		if (prevLikedRef.current !== isLiked) {
+			prevLikedRef.current = isLiked;
+			if (isLiked) setLikePopKey(k => k + 1);
 		}
-	}, [savedKey, post.id]);
+	}, [isLiked]);
 
 	useEffect(() => {
 		if (!userId) { setIsCommented(false); return; }
@@ -95,32 +105,14 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 
 	function toggleSaved() {
 		if (!authState.user) { void navigate('/login'); return; }
-		if (!savedKey) return;
-		try {
-			const raw = globalThis.localStorage?.getItem(savedKey) ?? '[]';
-			const ids0 = JSON.parse(raw) as unknown;
-			const ids: string[] = Array.isArray(ids0) ? ids0.filter(x => typeof x === 'string') : [];
-			const nextSaved = !ids.includes(post.id);
-			const next = nextSaved ? [...ids, post.id] : ids.filter(x => x !== post.id);
-			globalThis.localStorage?.setItem(savedKey, JSON.stringify(next));
-			setIsSaved(nextSaved);
-			showToast(nextSaved ? 'Saved' : 'Removed from saved');
-		} catch {
-			showToast('Could not update saved posts', 'error');
-		}
-	}
-
-	function handleComment(e: React.FormEvent) {
-		e.preventDefault();
-		if (!authState.user || !commentText.trim()) return;
-		void addComment(post.id, commentText.trim())
+		const nextSaved = !isSaved;
+		void (nextSaved ? savePost(post.id) : unsavePost(post.id))
 			.then(() => {
-				setCommentText('');
-				setIsCommented(true);
-				showToast('Comment posted!');
+				if (nextSaved) setBookmarkPopKey(k => k + 1);
+				showToast(nextSaved ? 'Saved' : 'Removed from saved');
 			})
 			.catch(() => {
-				showToast('Could not post comment', 'error');
+				showToast('Could not update saved posts', 'error');
 			});
 	}
 
@@ -329,10 +321,16 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 			<div className="px-4 py-3 flex items-center justify-between">
 				<div className="flex items-center gap-4">
 					<button
+						type="button"
 						onClick={handleLike}
-						className={`flex items-center gap-1.5 group transition-all duration-200 ${isLiked ? 'text-rose-500' : 'text-muted hover:text-foreground'}`}
+						className={`flex items-center gap-1.5 group transition-colors duration-200 ${isLiked ? 'text-rose-500' : 'text-muted hover:text-foreground'} motion-safe:active:scale-95`}
 					>
-						<Heart className={`w-5 h-5 transition-transform duration-200 group-active:scale-125 ${isLiked ? 'fill-rose-500' : ''}`} />
+						<span
+							key={likePopKey}
+							className={likePopKey > 0 ? 'inline-flex motion-safe:animate-cw-heart-pop' : 'inline-flex'}
+						>
+							<Heart className={`w-5 h-5 transition-colors duration-200 ${isLiked ? 'fill-rose-500' : ''}`} />
+						</span>
 						<span className="text-xs font-medium">{post.likes.toLocaleString()}</span>
 					</button>
 					<button
@@ -360,47 +358,22 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 					<button
 						type="button"
 						onClick={toggleSaved}
-						className="text-muted hover:text-foreground transition-colors"
+						className="text-muted hover:text-foreground transition-colors motion-safe:active:scale-95"
 						aria-label={isSaved ? 'Unsave post' : 'Save post'}
 					>
-						<Bookmark className={`w-5 h-5 ${isSaved ? 'text-rose-500 fill-rose-500' : 'text-muted'}`} />
+						<span
+							key={bookmarkPopKey}
+							className={`inline-flex ${bookmarkPopKey > 0 ? 'motion-safe:animate-cw-bookmark-pop' : ''}`}
+						>
+							<Bookmark className={`w-5 h-5 transition-colors duration-200 ${isSaved ? 'text-rose-500 fill-rose-500' : 'text-muted'}`} />
+						</span>
 					</button>
 				</div>
 			</div>
 
 			{showComments && (
-				<div className="px-4 pb-4 border-t border-border/10 pt-3 space-y-3">
-					<div className="max-h-64 overflow-y-auto space-y-3">
-						{post.comments.map(comment => (
-							<div key={comment.id} className="flex gap-2">
-								<Avatar src={comment.userAvatar} alt={comment.userName} size="xs" />
-								<div className="bg-foreground/5 rounded-xl px-3 py-2 flex-1">
-									<p className="text-xs font-semibold text-foreground/80">{comment.userName}</p>
-									<p className="text-xs text-muted mt-0.5">{comment.text}</p>
-								</div>
-							</div>
-						))}
-					</div>
-					{typeof commentNext === 'string' && commentNext ? (
-						<button
-							type="button"
-							onClick={() => { void loadMorePostComments(post.id); }}
-							className="text-xs text-rose-400 hover:text-rose-300 font-medium"
-						>
-							Load older comments
-						</button>
-					) : null}
-					{authState.user && (
-						<form onSubmit={e => { handleComment(e); }} className="flex gap-2">
-							<Avatar src={authState.user.avatar} alt={authState.user.name} size="xs" />
-							<input
-								value={commentText}
-								onChange={e => setCommentText(e.target.value)}
-								placeholder="Add a comment..."
-								className="flex-1 bg-input border border-border/20 rounded-xl px-3 py-2 text-xs text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
-							/>
-						</form>
-					)}
+				<div className="px-3 sm:px-4 pb-3 sm:pb-4 pt-3 border-t border-border/15 dark:border-border/20 bg-foreground/[0.02] dark:bg-black/20">
+					<PostCommentThread post={post} commentNext={commentNext} onCommentPosted={() => setIsCommented(true)} />
 				</div>
 			)}
 
@@ -411,6 +384,7 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 					creatorId={post.creatorId}
 					creatorName={post.creatorName}
 					creatorAvatar={post.creatorAvatar}
+					postId={post.id}
 				/>
 			)}
 			{showPPVModal && (

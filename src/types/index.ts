@@ -172,7 +172,12 @@ export interface Comment {
 	userAvatar: string;
 	text: string;
 	createdAt: string;
+	/** Legacy field; prefer `heartCount` for creator hearts (API spec). */
 	likes: number;
+	/** null / undefined = top-level */
+	parentCommentId?: string | null;
+	/** Creator hearts on this comment (from API); omit in older mocks */
+	heartCount?: number;
 }
 
 export interface Message {

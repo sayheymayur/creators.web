@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Bell, Wallet, ChevronDown, LogOut, Settings, User, Shield, LayoutDashboard, Sun, Moon } from '../icons';
+import { Bell, Wallet, ChevronDown, LogOut, Settings, User, Shield, LayoutDashboard, Sun, Moon, Bookmark } from '../icons';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { useChat } from '../../context/ChatContext';
@@ -62,6 +62,12 @@ export function Navbar() {
 									path="/explore"
 									current={location.pathname}
 									onClick={() => { void navigate('/explore'); }}
+								/>
+								<NavLink
+									label="Saved"
+									path="/saved"
+									current={location.pathname}
+									onClick={() => { void navigate('/saved'); }}
 								/>
 								<NavLink
 									label="Messages"

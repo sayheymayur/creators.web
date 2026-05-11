@@ -1,5 +1,5 @@
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Home, Compass, MessageCircle, Wallet, LayoutDashboard, DollarSign, FileText, PhoneCall } from '../icons';
+import { Home, Compass, MessageCircle, Wallet, LayoutDashboard, DollarSign, FileText, PhoneCall, Bookmark } from '../icons';
 import { useAuth } from '../../context/AuthContext';
 import { useChat } from '../../context/ChatContext';
 
@@ -20,6 +20,7 @@ export function BottomNav() {
 	const fanLinks = [
 		{ icon: Home, label: 'Feed', path: '/feed' },
 		{ icon: Compass, label: 'Explore', path: '/explore' },
+		{ icon: Bookmark, label: 'Saved', path: '/saved' },
 		{ icon: MessageCircle, label: 'Messages', path: '/messages', badge: totalUnread },
 		{ icon: PhoneCall, label: 'Calls', path: '/call-history' },
 		{ icon: Wallet, label: 'Wallet', path: '/wallet' },

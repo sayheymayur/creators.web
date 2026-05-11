@@ -27,7 +27,6 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 		toggleLike,
 		isSubscribed,
 		loadPostComments,
-		loadMorePostComments,
 		editPost,
 		reportPost,
 		deletePost,

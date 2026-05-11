@@ -14,23 +14,23 @@ function commentSort(a: Comment, b: Comment): number {
 
 /** Group flat API comments into a forest (roots = no parent). */
 export function buildCommentTree(flat: Comment[]): CommentTreeNode[] {
-	const childrenOf = new Map<string | null, Comment[]>();
+	const childrenOf: Record<string, Comment[]> = {};
 	for (const c of flat) {
 		const raw = c.parentCommentId;
-		const pid = raw == null || raw === '' ? null : String(raw);
-		const list = childrenOf.get(pid) ?? [];
+		const pid = raw == null || raw === '' ? '__root__' : String(raw);
+		const list = childrenOf[pid] ?? [];
 		list.push(c);
-		childrenOf.set(pid, list);
+		childrenOf[pid] = list;
 	}
-	for (const list of childrenOf.values()) {
-		list.sort(commentSort);
+	for (const key of Object.keys(childrenOf)) {
+		childrenOf[key].sort(commentSort);
 	}
-	function build(parentId: string | null): CommentTreeNode[] {
-		const kids = childrenOf.get(parentId) ?? [];
+	function build(parentId: string): CommentTreeNode[] {
+		const kids = childrenOf[parentId] ?? [];
 		return kids.map(comment => ({
 			comment,
 			replies: build(comment.id),
 		}));
 	}
-	return build(null);
+	return build('__root__');
 }

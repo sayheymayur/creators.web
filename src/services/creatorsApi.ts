@@ -188,13 +188,13 @@ export interface PaymentsTipRequest {
 
 export interface PaymentsTipResponse {
 	tip: {
-		id: string;
-		fan_user_id: string;
-		creator_user_id: string;
-		post_id: string | null;
-		amount_cents: string;
-		currency: string;
-		created_at: string;
+		id: string,
+		fan_user_id: string,
+		creator_user_id: string,
+		post_id: string | null,
+		amount_cents: string,
+		currency: string,
+		created_at: string,
 	};
 	from_balance_after: string;
 }
@@ -238,8 +238,9 @@ export class ApiError extends Error {
 export function apiErrorMessage(err: unknown, fallback: string): string {
 	if (err instanceof ApiError) {
 		const b = err.body;
-		if (b && typeof b === 'object' && 'error' in b && typeof (b as { error: unknown }).error === 'string') {
-			return (b as { error: string }).error;
+		if (b && typeof b === 'object' && 'error' in b) {
+			const msg = (b as Record<string, unknown>).error;
+			if (typeof msg === 'string') return msg;
 		}
 		return err.message;
 	}

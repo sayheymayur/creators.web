@@ -323,7 +323,7 @@ function contentReducer(state: ContentState, action: ContentAction): ContentStat
 					}
 					const merged = Object.values(byId).sort(
 						(a, b) =>
-							new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime() ||
+							(new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()) ||
 							a.id.localeCompare(b.id)
 					);
 					return { ...p, comments: merged };

@@ -90,7 +90,7 @@ function CommentBranch({
 	const showRepliesBlock = directReplyCount > 0 && threadOpen;
 
 	return (
-		<div className={depth === 0 ? '' : `border-l border-border/40 dark:border-border/30 ${ml}`}>
+		<div className={depth === 0 ? '' : `border-l border-border/70 dark:border-border/30 ${ml}`}>
 			<div className={`flex gap-2 sm:gap-2.5 ${depth > 0 ? 'pt-2.5 pl-2 sm:pl-2.5' : ''}`}>
 				<div className="shrink-0 pt-0.5">
 					<Avatar src={comment.userAvatar} alt={comment.userName} size="xs" />
@@ -216,21 +216,21 @@ function CommentBranch({
 									}
 								/>
 								<div className="flex items-center gap-2 pb-1">
-								<button
-									type="button"
-									onClick={onCancelReply}
-									className="text-[11px] sm:text-xs px-2 py-2 rounded-lg text-muted hover:text-foreground disabled:opacity-40 font-semibold min-h-[36px]"
-								>
-									Cancel
-								</button>
-								<button
-									type="button"
-									disabled={!replyText.trim() || submittingReply}
-									onClick={() => onSubmitReply(comment.id, threadRootId)}
-									className="text-[11px] sm:text-xs px-3 py-2 rounded-lg bg-rose-500 text-white hover:bg-rose-600 disabled:opacity-50 font-semibold min-h-[36px]"
-								>
-									{submittingReply ? 'Posting…' : 'Reply'}
-								</button>
+									<button
+										type="button"
+										onClick={onCancelReply}
+										className="text-[11px] sm:text-xs px-2 py-2 rounded-lg text-muted hover:text-foreground disabled:opacity-40 font-semibold min-h-[36px]"
+									>
+										Cancel
+									</button>
+									<button
+										type="button"
+										disabled={!replyText.trim() || submittingReply}
+										onClick={() => onSubmitReply(comment.id, threadRootId)}
+										className="text-[11px] sm:text-xs px-3 py-2 rounded-lg bg-rose-500 text-white hover:bg-rose-600 disabled:opacity-50 font-semibold min-h-[36px]"
+									>
+										{submittingReply ? 'Posting…' : 'Reply'}
+									</button>
 								</div>
 							</div>
 						</div>

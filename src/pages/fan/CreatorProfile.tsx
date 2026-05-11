@@ -15,7 +15,6 @@ import { useCall } from '../../context/CallContext';
 import { useSession } from '../../context/SessionContext';
 import { SessionPickerModal, type SessionPayMode } from '../../components/modals/SessionPickerModal';
 import type { Creator, SessionType } from '../../types';
-import type { CreatorProfileDTO } from '../../services/creatorWsTypes';
 import { ApiError } from '../../services/creatorsApi';
 import { creatorProfileDtoToCreator } from '../../services/creatorWsMap';
 import { randomUuid } from '../../utils/isUuid';
@@ -86,7 +85,7 @@ export function CreatorProfile() {
 				if (ac.signal.aborted) return;
 				if (r.creator) {
 					hasLoadedCreatorRef.current = true;
-					const dto = r.creator as CreatorProfileDTO;
+					const dto = r.creator;
 					setIsFollowed(Boolean(dto.is_followed));
 					setProfileLikedByMe(Boolean(dto.is_profile_liked));
 					setRemoteCreator(creatorProfileDtoToCreator(dto, base));
@@ -149,7 +148,8 @@ export function CreatorProfile() {
 			.then((json: unknown) => {
 				const b = json as { profile_like_count?: number };
 				if (typeof b.profile_like_count === 'number') {
-					setRemoteCreator(c => (c ? { ...c, likeCount: b.profile_like_count } : c));
+					const n = b.profile_like_count;
+					setRemoteCreator(c => (c ? { ...c, likeCount: n } : c));
 				}
 				const nextLiked = cmd === 'likeprofile';
 				if (nextLiked) setProfileLikePopKey(k => k + 1);

@@ -3,9 +3,8 @@ import { DollarSign, TrendingUp, Zap, Users, ArrowUpRight, CheckCircle } from '.
 import { Layout } from '../../components/layout/Layout';
 import { Modal } from '../../components/ui/Toast';
 import { Button } from '../../components/ui/Button';
-import { useAuth, useCurrentCreator } from '../../context/AuthContext';
+import { useCurrentCreator } from '../../context/AuthContext';
 import { mockCreators } from '../../data/users';
-import { minimalCreatorFromUser } from '../../utils/creatorShell';
 import { useNotifications } from '../../context/NotificationContext';
 import { delayMs } from '../../utils/delay';
 import { formatINRFromMinor, parseMinor } from '../../utils/money';
@@ -13,7 +12,6 @@ import { formatINR } from '../../services/razorpay';
 
 export function Earnings() {
 	const creator = useCurrentCreator();
-	const { state: authState } = useAuth();
 	const { showToast } = useNotifications();
 	const [showWithdraw, setShowWithdraw] = useState(false);
 	const [withdrawAmount, setWithdrawAmount] = useState('');
@@ -22,7 +20,7 @@ export function Earnings() {
 	const [bankName, setBankName] = useState('');
 	const [accountNumber, setAccountNumber] = useState('');
 
-	const creatorData = creator ?? (authState.user?.role === 'creator' ? minimalCreatorFromUser(authState.user) : mockCreators[0]);
+	const creatorData = creator ?? mockCreators[0];
 
 	function handleWithdraw() {
 		if (!withdrawAmount || !bankName || !accountNumber) {

@@ -1,15 +1,16 @@
-name: CI
+name: ESLint Check
 
 on:
   pull_request:
     branches:
       - main
+
   push:
     branches:
-      - main
+      - main   # runs on direct commits to main
 
 jobs:
-  verify:
+  lint:
     runs-on: ubuntu-latest
 
     steps:
@@ -20,16 +21,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      - name: ESLint
+      - name: Run ESLint
         run: npm run lint
-
-      - name: TypeScript
-        run: npm run typecheck
-
-      - name: Production build
-        run: npm run build

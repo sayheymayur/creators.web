@@ -7,7 +7,6 @@ import { useNotifications } from '../../context/NotificationContext';
 import { mockKYCApplications } from '../../data/transactions';
 import type { KYCApplication } from '../../types';
 import { formatDate } from '../../utils/date';
-import { UserAvatarMedia } from '../../components/ui/Avatar';
 
 export function CreatorApproval() {
 	const { showToast } = useNotifications();
@@ -79,7 +78,7 @@ export function CreatorApproval() {
 						displayed.map(app => (
 							<div key={app.id} className="bg-surface border border-border/20 rounded-2xl p-4">
 								<div className="flex items-start gap-4">
-									<UserAvatarMedia src={app.creatorAvatar} alt={app.creatorName} className="w-12 h-12 rounded-xl object-cover shrink-0" />
+									<img src={app.creatorAvatar} alt={app.creatorName} className="w-12 h-12 rounded-xl object-cover shrink-0" />
 									<div className="flex-1 min-w-0">
 										<div className="flex items-start justify-between gap-2 mb-1">
 											<div>
@@ -130,7 +129,7 @@ export function CreatorApproval() {
 				<Modal isOpen title="Review KYC Application" onClose={() => setSelectedApp(null)} maxWidth="max-w-lg">
 					<div className="p-5 space-y-4">
 						<div className="flex items-center gap-3">
-							<UserAvatarMedia src={selectedApp.creatorAvatar} alt={selectedApp.creatorName} className="w-12 h-12 rounded-xl object-cover" />
+							<img src={selectedApp.creatorAvatar} alt="" className="w-12 h-12 rounded-xl object-cover" />
 							<div>
 								<p className="font-semibold text-foreground">{selectedApp.creatorName}</p>
 								<p className="text-xs text-muted">{selectedApp.creatorEmail}</p>

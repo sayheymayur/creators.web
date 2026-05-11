@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Mic, MicOff, Phone, Maximize2 } from '../icons';
 import { useCallSession } from '../../context/CallSessionContext';
-import { AvatarBackdrop, UserAvatarMedia } from '../ui/Avatar';
 
 const STORAGE_KEY = 'cw.miniCall.pos.v1';
 const NAVBAR_PX = 56;
@@ -187,7 +186,7 @@ export function MinimizedCallWindow() {
 						/>
 						{!cs.hasRemoteVideo && (
 							<div className="absolute inset-0">
-								<AvatarBackdrop
+								<img
 									src={cs.participantAvatar}
 									alt=""
 									className="h-full w-full object-cover"
@@ -239,9 +238,9 @@ export function MinimizedCallWindow() {
 					</>
 				) : (
 					<>
-						<UserAvatarMedia
+						<img
 							src={cs.participantAvatar}
-							alt={cs.participantName}
+							alt=""
 							className="h-12 w-12 shrink-0 rounded-xl object-cover"
 						/>
 						<div className="min-w-0 flex-1">

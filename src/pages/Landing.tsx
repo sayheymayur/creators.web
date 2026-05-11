@@ -7,7 +7,6 @@ import { useDragScroll } from '../hooks/useDragScroll';
 import { useTheme } from '../context/ThemeContext';
 import { MarketingFooter } from '../components/marketing/MarketingFooter';
 import { ContactForm } from '../components/marketing/ContactForm';
-import { ProfileBannerMedia } from '../components/ui/Avatar';
 
 export function Landing() {
 	const navigate = useNavigate();
@@ -163,11 +162,7 @@ export function Landing() {
 								className="bg-surface border border-border/20 rounded-2xl overflow-hidden cursor-pointer hover:border-rose-500/30 transition-all group flex-shrink-0 w-44 sm:w-52 md:w-60"
 							>
 								<div className="relative h-28 sm:h-32 md:h-40">
-									<ProfileBannerMedia
-										src={creator.banner}
-										alt={`${creator.name} cover`}
-										className="w-full h-full object-cover"
-									/>
+									<img src={creator.banner} alt="" className="w-full h-full object-cover" />
 									<div className="absolute inset-0 bg-gradient-to-b from-transparent to-surface" />
 								</div>
 								<div className="px-3 pb-3 pt-2">

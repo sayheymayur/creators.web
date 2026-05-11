@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { Phone, PhoneOff, Video } from '../icons';
 import { useCall } from '../../context/CallContext';
-import { AvatarBackdrop, UserAvatarMedia } from '../ui/Avatar';
 
 export function IncomingCallOverlay() {
 	const { state, acceptCall, declineCall } = useCall();
@@ -22,7 +21,7 @@ export function IncomingCallOverlay() {
 
 			<div className="relative w-full sm:max-w-sm bg-surface dark:bg-[#141414] rounded-t-3xl sm:rounded-3xl overflow-hidden shadow-2xl animate-slide-up border border-border/20">
 				<div className="absolute inset-0 overflow-hidden">
-					<AvatarBackdrop
+					<img
 						src={call.participantAvatar}
 						alt=""
 						className="w-full h-full object-cover scale-110 blur-2xl opacity-20"
@@ -33,7 +32,7 @@ export function IncomingCallOverlay() {
 					<div className="relative inline-block mb-5">
 						<div className="absolute inset-0 rounded-full bg-rose-500/20 animate-ping scale-125" />
 						<div className="absolute inset-0 rounded-full bg-rose-500/10 animate-ping scale-150 animation-delay-150" />
-						<UserAvatarMedia
+						<img
 							src={call.participantAvatar}
 							alt={call.participantName}
 							className="relative w-24 h-24 rounded-full object-cover border-4 border-border/20 dark:border-white/10"

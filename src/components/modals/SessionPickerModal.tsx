@@ -3,7 +3,6 @@ import { X, MessageCircle, Phone, Video, Clock, Zap, AlertCircle, Wallet } from 
 import { formatINR } from '../../services/razorpay';
 import { compareMinor, formatINRFromMinor, inrRupeesToMinor } from '../../utils/money';
 import type { SessionType } from '../../types';
-import { UserAvatarMedia } from '../ui/Avatar';
 
 // Backend spec allowed values: 10, 15, 20, 25, 30
 const DURATION_OPTIONS = [10, 15, 20, 25, 30];
@@ -73,7 +72,7 @@ export function SessionPickerModal({
 			<div className="relative w-full sm:max-w-md bg-surface border border-border/20 rounded-t-3xl sm:rounded-3xl animate-slide-up sm:animate-fade-in overflow-hidden">
 				<div className="p-5 border-b border-border/10">
 					<div className="flex items-center gap-3">
-						<UserAvatarMedia src={creatorAvatar} alt={creatorName} className="w-10 h-10 rounded-xl object-cover" />
+						<img src={creatorAvatar} alt={creatorName} className="w-10 h-10 rounded-xl object-cover" />
 						<div>
 							<h2 className="text-base font-bold text-foreground">Start a Session</h2>
 							<p className="text-xs text-muted">with {creatorName}</p>

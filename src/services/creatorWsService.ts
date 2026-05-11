@@ -1,6 +1,6 @@
 import type { CreatorsMultiplexWs } from './creatorsMultiplexWs';
 import type { WsClient } from './wsClient';
-import type { CreatorGetResponse, CreatorListResponse, CreatorSummaryDTO, CreatorUpsertResponse } from './creatorWsTypes';
+import type { CreatorGetResponse, CreatorListResponse, CreatorUpsertResponse } from './creatorWsTypes';
 
 export interface CreatorFollowResponse {
 	ok: true;
@@ -10,24 +10,6 @@ export interface CreatorFollowResponse {
 export interface CreatorUnfollowResponse {
 	ok: true;
 	creator_user_id: string;
-}
-
-export interface CreatorListFollowingResponse {
-	creators: CreatorSummaryDTO[];
-	nextCursor: string | null;
-}
-
-export interface CreatorListFollowersRow {
-	id: string;
-	name?: string | null;
-	username?: string | null;
-	avatar_url?: string | null;
-	[key: string]: unknown;
-}
-
-export interface CreatorListFollowersResponse {
-	followers: CreatorListFollowersRow[];
-	nextCursor: string | null;
 }
 
 const MAX_Q = 64;
@@ -95,31 +77,6 @@ export function creatorWsUpsertProfile(
 	bio?: string
 ): Promise<CreatorUpsertResponse> {
 	return client.send('creator', buildCreatorUpsertCommand(username, name, bio)).then(json => json as CreatorUpsertResponse);
-}
-
-export function creatorWsListFollowing(ws: WsClient, limit = 30, beforeCursor?: string, requestId?: string): Promise<CreatorListFollowingResponse> {
-	const lim = Math.min(50, Math.max(1, Math.floor(limit)));
-	const args = beforeCursor ? [String(lim), beforeCursor] : [String(lim)];
-	const rid = requestId?.trim() || undefined;
-	if (rid && /\s/.test(rid)) throw new Error('requestId must not contain spaces');
-	return ws.request('creator', 'listfollowing', args, rid).then(json => json as CreatorListFollowingResponse);
-}
-
-export function creatorWsListFollowers(
-	ws: WsClient,
-	creatorUserId: string,
-	limit = 30,
-	beforeCursor?: string,
-	requestId?: string
-): Promise<CreatorListFollowersResponse> {
-	const id = String(creatorUserId).trim();
-	if (!id) throw new Error('creatorUserId is required');
-	if (/\s/.test(id)) throw new Error('creatorUserId must not contain whitespace');
-	const lim = Math.min(50, Math.max(1, Math.floor(limit)));
-	const args = beforeCursor ? [id, String(lim), beforeCursor] : [id, String(lim)];
-	const rid = requestId?.trim() || undefined;
-	if (rid && /\s/.test(rid)) throw new Error('requestId must not contain spaces');
-	return ws.request('creator', 'listfollowers', args, rid).then(json => json as CreatorListFollowersResponse);
 }
 
 /**

@@ -5,7 +5,7 @@ import { Layout } from '../../components/layout/Layout';
 import { PostCard } from '../../components/ui/PostCard';
 import { useContent } from '../../context/ContentContext';
 import { useDragScroll } from '../../hooks/useDragScroll';
-import { UserAvatarMedia } from '../../components/ui/Avatar';
+import type { Creator } from '../../types';
 
 export function Feed() {
 	const { state: contentState, isSubscribed, loadMoreFeed, refreshFeed } = useContent();
@@ -13,27 +13,22 @@ export function Feed() {
 	const [filter, setFilter] = useState<'all' | 'subscribed'>('all');
 	const followingRef = useDragScroll();
 
-	// Spec alignment: Feed renders only `/list feed` results (public posts).
-	// Do not render posts that were loaded via `/list creator` when browsing profiles.
-	const feedPosts = contentState.feedPostIds
-		.map(pid => contentState.posts.find(p => p.id === pid))
-		.filter((p): p is NonNullable<typeof p> => Boolean(p));
-
-	const posts = feedPosts.filter(p => {
+	const posts = contentState.posts.filter(p => {
 		if (filter === 'subscribed') return isSubscribed(p.creatorId);
 		return true;
 	});
 
-	const followingCreators = contentState.followingCreators ?? [];
+	// Creator directory may be loaded via WS; in the meantime we don't render mock “following” pills.
+	const subscribedCreators: Creator[] = [];
 
 	return (
 		<Layout>
 			<div className="max-w-2xl mx-auto px-4 py-6">
-				{followingCreators.length > 0 && (
+				{subscribedCreators.length > 0 && (
 					<div className="mb-6">
 						<p className="text-xs text-muted font-medium uppercase tracking-wider mb-3">Following</p>
 						<div ref={followingRef} className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-							{followingCreators.map(creator => (
+							{subscribedCreators.map(creator => (
 								<button
 									key={creator.id}
 									onClick={() => { void navigate(`/creator/${creator.id}`); }}
@@ -41,7 +36,7 @@ export function Feed() {
 								>
 									<div className="relative">
 										<div className={`w-14 h-14 rounded-full p-0.5 ${creator.isOnline ? 'bg-gradient-to-tr from-rose-500 to-amber-400' : 'bg-foreground/10'}`}>
-											<UserAvatarMedia
+											<img
 												src={creator.avatar}
 												alt={creator.name}
 												className="w-full h-full rounded-full object-cover border-2 border-background"

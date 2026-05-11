@@ -5,7 +5,6 @@ import { useCall } from '../../context/CallContext';
 import { mockCreators, mockFanUser } from '../../data/users';
 import { useAuth } from '../../context/AuthContext';
 import type { CallRecord } from '../../types';
-import { UserAvatarMedia } from '../../components/ui/Avatar';
 
 function formatDuration(secs: number): string {
 	if (!secs) return '';
@@ -119,7 +118,7 @@ function CallRow({
 	return (
 		<div className="flex items-center gap-3 bg-foreground/5 hover:bg-foreground/10 rounded-2xl p-3 transition-colors group">
 			<div className="relative shrink-0">
-				<UserAvatarMedia src={avatar} alt={record.participantName} className="w-11 h-11 rounded-xl object-cover" />
+				<img src={avatar} alt={record.participantName} className="w-11 h-11 rounded-xl object-cover" />
 				<div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-background flex items-center justify-center ${
 					isMissed ? 'bg-rose-500/90' : record.direction === 'incoming' ? 'bg-emerald-500/90' : 'bg-sky-500/90'
 				}`}

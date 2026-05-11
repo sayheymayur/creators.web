@@ -46,7 +46,6 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 	const isContentVisible = isOwner || !post.isLocked || (post.isPPV && post.unlockedBy.includes(userId)) || (!post.isPPV && isSubscribedToCreator);
 
 	const commentNext = contentState.commentPagination[post.id];
-	const commentLoading = contentState.commentLoadingByPostId?.[post.id] ?? false;
 	const commentCountShown = Math.max(post.commentCount, post.comments.length);
 
 	const savedKey = useMemo(() => (userId ? `cw.savedPosts.${userId}` : ''), [userId]);
@@ -201,38 +200,6 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 			.finally(() => setReportSending(false));
 	}
 
-	function LockedOverlayCard() {
-		return (
-			<div className="bg-surface2 border border-border/20 rounded-2xl p-5 text-center w-full max-w-[260px]">
-				<Lock className="w-8 h-8 text-rose-400 mx-auto mb-2" />
-				{post.isPPV ? (
-					<>
-						<p className="text-foreground font-semibold text-sm mb-1">Pay-per-view</p>
-						<p className="text-muted text-xs mb-3">Unlock this post for {post.ppvPrice != null ? formatINR(post.ppvPrice) : '—'}</p>
-						<button
-							onClick={() => setShowPPVModal(true)}
-							className="w-full bg-rose-500 hover:bg-rose-600 text-white text-sm font-semibold py-2 rounded-lg transition-colors"
-						>
-							Unlock for {post.ppvPrice != null ? formatINR(post.ppvPrice) : '—'}
-						</button>
-					</>
-				) : (
-					<>
-						<p className="text-foreground font-semibold text-sm mb-1">Subscriber Only</p>
-						<p className="text-muted text-xs mb-3">Subscribe to view this content</p>
-						<button
-							type="button"
-							onClick={() => { void navigate(`/creator/${post.creatorId}`); }}
-							className="w-full bg-rose-500 hover:bg-rose-600 text-white text-sm font-semibold py-2 rounded-lg transition-colors"
-						>
-							Subscribe
-						</button>
-					</>
-				)}
-			</div>
-		);
-	}
-
 	return (
 		<div className="bg-surface border border-border/20 rounded-2xl overflow-hidden shadow-sm shadow-black/5 dark:shadow-none hover:border-border/30 hover:shadow-md hover:shadow-black/10 dark:hover:shadow-none transition-all duration-300">
 			<div className="flex items-center justify-between px-4 pt-4 pb-3">
@@ -299,35 +266,22 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 			</div>
 
 			{post.text && (
-				isContentVisible ? (
-					<p className="px-4 pb-3 text-sm text-foreground/90 leading-relaxed whitespace-pre-wrap line-clamp-4">
-						{tokenizeHashtags(post.text).map((t, i) =>
-							t.type === 'hashtag' ? (
-								<button
-									key={`${t.tag}-${i}`}
-									type="button"
-									onClick={() => { void navigate(`/explore?tag=${encodeURIComponent(t.tag)}`); }}
-									className="text-rose-400 font-medium hover:underline"
-								>
-									{t.value}
-								</button>
-							) : (
-								<span key={i}>{t.value}</span>
-							)
-						)}
-					</p>
-				) : (
-					<div className="px-4 pb-3">
-						<div className="relative rounded-xl overflow-hidden bg-foreground/5 border border-border/10 min-h-[160px]">
-							<p className="p-4 text-sm text-foreground/70 leading-relaxed whitespace-pre-wrap line-clamp-4 blur-sm select-none">
-								{post.text}
-							</p>
-							<div className="absolute inset-0 flex items-center justify-center bg-overlay/55 backdrop-blur-sm p-4">
-								<LockedOverlayCard />
-							</div>
-						</div>
-					</div>
-				)
+				<p className="px-4 pb-3 text-sm text-foreground/90 leading-relaxed whitespace-pre-wrap line-clamp-4">
+					{tokenizeHashtags(post.text).map((t, i) =>
+						t.type === 'hashtag' ? (
+							<button
+								key={`${t.tag}-${i}`}
+								type="button"
+								onClick={() => { void navigate(`/explore?tag=${encodeURIComponent(t.tag)}`); }}
+								className="text-rose-400 font-medium hover:underline"
+							>
+								{t.value}
+							</button>
+						) : (
+							<span key={i}>{t.value}</span>
+						)
+					)}
+				</p>
 			)}
 
 			{post.type !== 'text' && post.mediaUrl && (
@@ -339,8 +293,34 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 						style={{ aspectRatio: '4/3' }}
 					/>
 					{!isContentVisible && (
-						<div className="absolute inset-0 flex items-center justify-center bg-overlay/60 backdrop-blur-md p-4">
-							<LockedOverlayCard />
+						<div className="absolute inset-0 flex flex-col items-center justify-center bg-overlay/60 backdrop-blur-md">
+							<div className="bg-surface2 border border-border/20 rounded-2xl p-6 text-center max-w-[220px]">
+								<Lock className="w-8 h-8 text-rose-400 mx-auto mb-2" />
+								{post.isPPV ? (
+									<>
+										<p className="text-foreground font-semibold text-sm mb-1">Pay-per-view</p>
+										<p className="text-muted text-xs mb-3">Unlock this post for {post.ppvPrice != null ? formatINR(post.ppvPrice) : '—'}</p>
+										<button
+											onClick={() => setShowPPVModal(true)}
+											className="w-full bg-rose-500 hover:bg-rose-600 text-white text-sm font-semibold py-2 rounded-lg transition-colors"
+										>
+											Unlock for {post.ppvPrice != null ? formatINR(post.ppvPrice) : '—'}
+										</button>
+									</>
+								) : (
+									<>
+										<p className="text-foreground font-semibold text-sm mb-1">Subscriber Only</p>
+										<p className="text-muted text-xs mb-3">Subscribe to view this content</p>
+										<button
+											type="button"
+											onClick={() => { void navigate(`/creator/${post.creatorId}`); }}
+											className="w-full bg-rose-500 hover:bg-rose-600 text-white text-sm font-semibold py-2 rounded-lg transition-colors"
+										>
+											Subscribe
+										</button>
+									</>
+								)}
+							</div>
 						</div>
 					)}
 				</div>
@@ -391,12 +371,6 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 			{showComments && (
 				<div className="px-4 pb-4 border-t border-border/10 pt-3 space-y-3">
 					<div className="max-h-64 overflow-y-auto space-y-3">
-						{commentLoading && post.comments.length === 0 && (
-							<div className="flex items-center gap-2 text-xs text-muted py-2">
-								<div className="h-4 w-4 rounded-full border-2 border-border/30 border-t-foreground/60 animate-spin" />
-								<span>Loading comments…</span>
-							</div>
-						)}
 						{post.comments.map(comment => (
 							<div key={comment.id} className="flex gap-2">
 								<Avatar src={comment.userAvatar} alt={comment.userName} size="xs" />

@@ -1,34 +1,38 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Star, Grid3x3, Zap, Share2, MoreHorizontal, Lock, Image, Type, ArrowLeft } from '../../components/icons';
+import { Star, Grid3x3, MessageCircle, Zap, Share2, MoreHorizontal, Lock, Image, Type, Phone, Video, ArrowLeft } from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';
 import { PostCard } from '../../components/ui/PostCard';
 import { TipModal } from '../../components/modals/TipModal';
 import { SubscribeModal } from '../../components/modals/SubscribeModal';
 import { useAuth } from '../../context/AuthContext';
 import { useContent } from '../../context/ContentContext';
+import { mockCreators } from '../../data/users';
 import { useNotifications } from '../../context/NotificationContext';
 import { ensureMediaPermissions, isDeviceInUseError } from '../../services/mediaPermissions';
+import { useChat } from '../../context/ChatContext';
+import { useCall } from '../../context/CallContext';
 import { useSession } from '../../context/SessionContext';
 import { SessionPickerModal, type SessionPayMode } from '../../components/modals/SessionPickerModal';
 import type { Creator, SessionType } from '../../types';
 import { ApiError } from '../../services/creatorsApi';
 import { creatorProfileDtoToCreator } from '../../services/creatorWsMap';
+import { randomUuid } from '../../utils/isUuid';
 import { formatINR } from '../../services/razorpay';
 import { useSessions } from '../../context/SessionsContext';
 import { useWs, useWsConnected } from '../../context/WsContext';
 import { creatorFollow, creatorUnfollow } from '../../services/creatorWsService';
 import { useSubscriptions } from '../../context/SubscriptionContext';
 import { subscriptionId, subscriptionUiStatus } from '../../services/subscriptionUi';
-import { ProfileBannerMedia, UserAvatarMedia } from '../../components/ui/Avatar';
-import { minimalCreatorFromDisplay } from '../../utils/creatorShell';
 
 export function CreatorProfile() {
 	const { id: creatorUserId } = useParams<{ id: string }>();
 	const navigate = useNavigate();
 	const { state: authState } = useAuth();
-	const { state: contentState, isSubscribed, loadCreatorPosts, creatorWsGetByUserId, refreshFollowing } = useContent();
+	const { state: contentState, isSubscribed, loadCreatorPosts, creatorWsGetByUserId } = useContent();
 	const { showToast } = useNotifications();
+	const { addConversation, getConversationForUser } = useChat();
+	const { startCall } = useCall();
 	useSession();
 	const { requestSession, state: sessionsState, clearOutgoing } = useSessions();
 	const ws = useWs();
@@ -42,29 +46,31 @@ export function CreatorProfile() {
 	const [isLoadingCreator, setIsLoadingCreator] = useState(false);
 	const [followBusy, setFollowBusy] = useState(false);
 	const [isFollowed, setIsFollowed] = useState<boolean>(false);
-	const [showOverflowMenu, setShowOverflowMenu] = useState(false);
-	const overflowRef = useRef<HTMLDivElement | null>(null);
 	const hasLoadedCreatorRef = useRef(false);
 
+	const maybeCreator = useMemo(() => mockCreators.find(c => c.id === creatorUserId), [creatorUserId]);
 	const cachedDisplay = useMemo(() => (creatorUserId ? contentState.creatorProfiles[creatorUserId] : undefined), [creatorUserId, contentState.creatorProfiles]);
 	const fallbackCreator = useMemo<Creator | null>(() => {
-		if (!creatorUserId || !cachedDisplay) return null;
-		return minimalCreatorFromDisplay(creatorUserId, cachedDisplay);
+		if (!creatorUserId) return null;
+		if (!cachedDisplay) return null;
+		const base = mockCreators[0];
+		return {
+			...base,
+			id: creatorUserId,
+			name: cachedDisplay.name || base.name,
+			username: cachedDisplay.username || base.username,
+			avatar: cachedDisplay.avatar || base.avatar,
+		};
 	}, [creatorUserId, cachedDisplay]);
-
-	useEffect(() => {
-		hasLoadedCreatorRef.current = false;
-		setRemoteCreator(null);
-		setIsFollowed(false);
-	}, [creatorUserId]);
 
 	useEffect(() => {
 		if (!creatorUserId) return;
 		const ac = new AbortController();
+		const base = maybeCreator ?? mockCreators[0];
 
 		// creator WS commands are multiplexed over the posts socket; wait until it is ready.
 		if (contentState.postsWsStatus !== 'ready') {
-			setIsLoadingCreator(true);
+			setIsLoadingCreator(false);
 			return () => ac.abort();
 		}
 
@@ -76,10 +82,16 @@ export function CreatorProfile() {
 				if (r.creator) {
 					hasLoadedCreatorRef.current = true;
 					setIsFollowed(Boolean((r.creator as unknown as { is_followed?: boolean | null }).is_followed));
-					setRemoteCreator(creatorProfileDtoToCreator(r.creator, {}));
+					setRemoteCreator(creatorProfileDtoToCreator(r.creator, base));
 					return;
 				}
-				hasLoadedCreatorRef.current = true;
+				if (!hasLoadedCreatorRef.current && !fallbackCreator) {
+					showToast('Creator profile not found for this user.', 'error');
+				}
+				// Fall back to cached display from posts directory so the user can still view creator posts.
+				if (!hasLoadedCreatorRef.current && fallbackCreator) {
+					setRemoteCreator(fallbackCreator);
+				}
 			})
 			.catch((err: unknown) => {
 				if (ac.signal.aborted) return;
@@ -97,7 +109,7 @@ export function CreatorProfile() {
 			});
 
 		return () => ac.abort();
-	}, [creatorUserId, creatorWsGetByUserId, contentState.postsWsStatus, showToast]);
+	}, [creatorUserId, maybeCreator, creatorWsGetByUserId, contentState.postsWsStatus]);
 
 	useEffect(() => {
 		if (!creatorUserId) return;
@@ -114,7 +126,7 @@ export function CreatorProfile() {
 		);
 	}
 
-	const creator = remoteCreator ?? fallbackCreator ?? null;
+	const creator = remoteCreator ?? fallbackCreator ?? maybeCreator ?? null;
 
 	if (!creator && !isLoadingCreator) {
 		return (
@@ -223,7 +235,6 @@ export function CreatorProfile() {
 			.then(() => {
 				setIsFollowed(prev => !prev);
 				showToast(isFollowed ? 'Unfollowed.' : 'You are now following this creator.');
-				void refreshFollowing().catch(() => {});
 			})
 			.catch((err: unknown) => {
 				showToast(err instanceof Error ? err.message : (isFollowed ? 'Unfollow failed' : 'Follow failed'), 'error');
@@ -247,28 +258,34 @@ export function CreatorProfile() {
 			.finally(() => setCancelBusy(false));
 	}
 
-	useEffect(() => {
-		function onDocMouseDown(e: MouseEvent) {
-			if (!showOverflowMenu) return;
-			const t = e.target as Node | null;
-			if (!t) return;
-			if (overflowRef.current && !overflowRef.current.contains(t)) setShowOverflowMenu(false);
+	function handleMessage() {
+		if (!authState.user) { navigate('/login'); return; }
+		const existing = getConversationForUser(creatorForDisplay.id);
+		if (existing) {
+			navigate(`/messages/${existing.id}`);
+		} else {
+			const convId = randomUuid();
+			addConversation({
+				id: convId,
+				participantIds: [authState.user.id, creatorForDisplay.id],
+				participantNames: [authState.user.name, creatorForDisplay.name],
+				participantAvatars: [authState.user.avatar, creatorForDisplay.avatar],
+				lastMessage: '',
+				lastMessageTime: new Date().toISOString(),
+				unreadCount: 0,
+				isOnline: creatorForDisplay.isOnline,
+			});
+			navigate(`/messages/${convId}`);
 		}
-		document.addEventListener('mousedown', onDocMouseDown);
-		return () => document.removeEventListener('mousedown', onDocMouseDown);
-	}, [showOverflowMenu]);
+	}
 
 	return (
 		<Layout>
 			<div className="max-w-2xl mx-auto">
 				<div className="relative z-0">
-					<div className="relative h-40 sm:h-52 overflow-hidden">
-						<ProfileBannerMedia
-							src={creatorForDisplay.banner}
-							alt={`${creatorForDisplay.name} cover`}
-							className="w-full h-full object-cover"
-						/>
-						<div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-background pointer-events-none" />
+					<div className="h-40 sm:h-52">
+						<img src={creatorForDisplay.banner} alt="" className="w-full h-full object-cover" />
+						<div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-background" />
 					</div>
 
 					<div className="absolute top-3 left-3 z-20">
@@ -290,40 +307,16 @@ export function CreatorProfile() {
 						<button className="w-8 h-8 bg-background/70 text-foreground hover:bg-background/90 dark:bg-black/40 dark:text-white dark:hover:bg-black/60 backdrop-blur-sm rounded-full flex items-center justify-center transition-colors">
 							<Share2 className="w-4 h-4" />
 						</button>
-						<div ref={overflowRef} className="relative">
-							<button
-								type="button"
-								onClick={() => setShowOverflowMenu(v => !v)}
-								className="w-8 h-8 bg-background/70 text-foreground hover:bg-background/90 dark:bg-black/40 dark:text-white dark:hover:bg-black/60 backdrop-blur-sm rounded-full flex items-center justify-center transition-colors"
-								aria-label="More actions"
-							>
-								<MoreHorizontal className="w-4 h-4" />
-							</button>
-							{showOverflowMenu && (
-								<div className="absolute right-0 top-full mt-2 w-52 bg-surface2 border border-border/20 rounded-2xl shadow-2xl py-1.5 z-40 overflow-hidden">
-									{subscribed && subId && (
-										<button
-											type="button"
-											disabled={cancelBusy}
-											onClick={() => {
-												setShowOverflowMenu(false);
-												handleCancelSubscription();
-											}}
-											className="w-full flex items-center gap-2 px-3 py-2 text-sm text-rose-300 hover:bg-foreground/5 transition-colors disabled:opacity-60"
-										>
-											Cancel subscription
-										</button>
-									)}
-								</div>
-							)}
-						</div>
+						<button className="w-8 h-8 bg-background/70 text-foreground hover:bg-background/90 dark:bg-black/40 dark:text-white dark:hover:bg-black/60 backdrop-blur-sm rounded-full flex items-center justify-center transition-colors">
+							<MoreHorizontal className="w-4 h-4" />
+						</button>
 					</div>
 				</div>
 
 				<div className="px-4 -mt-12 pb-4 relative z-10">
 					<div className="flex items-end justify-between mb-3">
 						<div className="relative">
-							<UserAvatarMedia
+							<img
 								src={creatorForDisplay.avatar}
 								alt={creatorForDisplay.name}
 								className="w-20 h-20 rounded-2xl border-4 border-background object-cover"
@@ -337,6 +330,33 @@ export function CreatorProfile() {
 							<div className="flex gap-2 mt-4">
 								{subscribed ? (
 									<>
+										<button
+											onClick={() => { startCall(creatorForDisplay.id, creatorForDisplay.name, creatorForDisplay.avatar, 'audio'); navigate('/call'); }}
+											className="w-9 h-9 bg-foreground/10 hover:bg-emerald-500/20 hover:text-emerald-400 text-muted rounded-xl flex items-center justify-center transition-all"
+										>
+											<Phone className="w-4 h-4" />
+										</button>
+										<button
+											onClick={() => { startCall(creatorForDisplay.id, creatorForDisplay.name, creatorForDisplay.avatar, 'video'); navigate('/call'); }}
+											className="w-9 h-9 bg-foreground/10 hover:bg-sky-500/20 hover:text-sky-400 text-muted rounded-xl flex items-center justify-center transition-all"
+										>
+											<Video className="w-4 h-4" />
+										</button>
+										<button
+											onClick={handleMessage}
+											className="flex items-center gap-1.5 bg-foreground/10 hover:bg-foreground/15 text-foreground text-sm font-semibold px-3 py-2 rounded-xl transition-all"
+										>
+											<MessageCircle className="w-4 h-4" />
+											Message
+										</button>
+										<button
+											type="button"
+											disabled={!subId || cancelBusy}
+											onClick={handleCancelSubscription}
+											className="flex items-center gap-1.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 text-sm font-semibold px-3 py-2 rounded-xl transition-all border border-rose-500/20 disabled:opacity-50"
+										>
+											Cancel
+										</button>
 										<button
 											onClick={() => setShowTipModal(true)}
 											className="flex items-center gap-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 text-sm font-semibold px-3 py-2 rounded-xl transition-all"

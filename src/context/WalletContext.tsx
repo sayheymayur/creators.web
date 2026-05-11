@@ -65,10 +65,8 @@ function walletReducer(state: WalletState, action: WalletAction): WalletState {
 				historyNextCursor: action.payload.nextCursor,
 			};
 		case 'APPEND_LEDGER': {
-			// NOTE: ES3 target: avoid Map/Set (restricted globals in this codebase).
-			const existingIds: Record<string, true> = Object.create(null);
-			for (const row of state.ledgerRows) existingIds[row.id] = true;
-			const appended = action.payload.rows.filter(r => !existingIds[r.id]);
+			const existingIds = new globalThis.Set(state.ledgerRows.map(r => r.id));
+			const appended = action.payload.rows.filter(r => !existingIds.has(r.id));
 			return {
 				...state,
 				ledgerRows: [...state.ledgerRows, ...appended],

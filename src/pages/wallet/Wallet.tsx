@@ -13,10 +13,8 @@ import type { RazorpayOrderRow } from '../../services/paymentWs';
 import { useSubscriptions } from '../../context/SubscriptionContext';
 import { useContent } from '../../context/ContentContext';
 import { subscriptionAmountMinor, subscriptionId, subscriptionUiStatus } from '../../services/subscriptionUi';
-import { UserAvatarMedia } from '../../components/ui/Avatar';
 
 const ADD_FUND_PRESETS_INR = [100, 250, 500, 1000, 2000, 5000];
-const SHOW_MORE_STEP = 12;
 
 type SubscriptionRowKeyInput = {
 	creatorUserId: string,
@@ -132,11 +130,6 @@ export function Wallet() {
 	const [payError, setPayError] = useState('');
 	const [activeTab, setActiveTab] = useState<'transactions' | 'subscriptions' | 'orders'>('transactions');
 	const [creatorDisplay, setCreatorDisplay] = useState<Record<string, { name: string, avatar: string }>>({});
-	const [visibleTxCount, setVisibleTxCount] = useState(SHOW_MORE_STEP);
-	const [visibleOrderCount, setVisibleOrderCount] = useState(SHOW_MORE_STEP);
-	const [visibleActiveSubsCount, setVisibleActiveSubsCount] = useState(SHOW_MORE_STEP);
-	const [visibleCancelledSubsCount, setVisibleCancelledSubsCount] = useState(SHOW_MORE_STEP);
-	const [visibleExpiredSubsCount, setVisibleExpiredSubsCount] = useState(SHOW_MORE_STEP);
 
 	const user = authState.user;
 	const userId = user?.id ?? '';
@@ -179,17 +172,6 @@ export function Wallet() {
 
 	const totalSpent = transactions.filter(t => t.amount < 0).reduce((sum, t) => sum + Math.abs(t.amount), 0);
 	const totalDeposited = transactions.filter(t => t.type === 'deposit' && t.amount > 0).reduce((sum, t) => sum + t.amount, 0);
-
-	useEffect(() => {
-		// Reset pagination when switching tabs (keeps UX predictable).
-		if (activeTab === 'transactions') setVisibleTxCount(SHOW_MORE_STEP);
-		if (activeTab === 'orders') setVisibleOrderCount(SHOW_MORE_STEP);
-		if (activeTab === 'subscriptions') {
-			setVisibleActiveSubsCount(SHOW_MORE_STEP);
-			setVisibleCancelledSubsCount(SHOW_MORE_STEP);
-			setVisibleExpiredSubsCount(SHOW_MORE_STEP);
-		}
-	}, [activeTab]);
 
 	useEffect(() => {
 		setPayError(walletState.walletError ?? '');
@@ -309,18 +291,7 @@ export function Wallet() {
 							<p className="text-center text-muted py-8 text-sm">No transactions yet</p>
 						) : (
 							<>
-								{transactions.slice(0, visibleTxCount).map(tx => <TransactionItem key={tx.id} tx={tx} />)}
-								{transactions.length > visibleTxCount && (
-									<div className="py-4 flex justify-center">
-										<button
-											type="button"
-											onClick={() => setVisibleTxCount(v => v + SHOW_MORE_STEP)}
-											className="text-sm text-foreground/80 hover:text-foreground underline underline-offset-4"
-										>
-											Show more
-										</button>
-									</div>
-								)}
+								{transactions.map(tx => <TransactionItem key={tx.id} tx={tx} />)}
 								{historyNextCursor && (
 									<div className="py-4 flex justify-center">
 										<button
@@ -342,20 +313,7 @@ export function Wallet() {
 						{razorpayOrders.length === 0 ? (
 							<p className="text-center text-muted py-8 text-sm">No Razorpay orders yet</p>
 						) : (
-							<>
-								{razorpayOrders.slice(0, visibleOrderCount).map(o => <OrderRow key={o.id} o={o} />)}
-								{razorpayOrders.length > visibleOrderCount && (
-									<div className="py-4 flex justify-center">
-										<button
-											type="button"
-											onClick={() => setVisibleOrderCount(v => v + SHOW_MORE_STEP)}
-											className="text-sm text-foreground/80 hover:text-foreground underline underline-offset-4"
-										>
-											Show more
-										</button>
-									</div>
-								)}
-							</>
+							razorpayOrders.map(o => <OrderRow key={o.id} o={o} />)
 						)}
 					</div>
 				)}
@@ -373,16 +331,16 @@ export function Wallet() {
 									<div className="px-1">
 										<p className="text-xs font-semibold text-muted uppercase tracking-wide mb-2">Active</p>
 										<div className="space-y-3">
-											{activeSubs.slice(0, visibleActiveSubsCount).map((s, i) => {
+											{activeSubs.map((s, i) => {
 												const display = creatorDisplay[s.creatorUserId];
 												return (
 													<div key={subscriptionListKey(s, i)} className="bg-surface border border-border/20 rounded-2xl p-4">
 														<div className="flex items-center gap-3 mb-3">
-															<UserAvatarMedia
-																src={display?.avatar}
-																alt={display?.name ?? `Creator ${s.creatorUserId}`}
-																className="w-10 h-10 rounded-full object-cover"
-															/>
+															{display?.avatar ? (
+																<img src={display.avatar} alt={display.name} className="w-10 h-10 rounded-full object-cover" />
+															) : (
+																<div className="w-10 h-10 rounded-full bg-foreground/10" />
+															)}
 															<div className="flex-1">
 																<p className="text-sm font-semibold text-foreground">{display?.name ?? `Creator ${s.creatorUserId}`}</p>
 																<p className="text-xs text-emerald-300/80">Active subscription</p>
@@ -404,17 +362,6 @@ export function Wallet() {
 													</div>
 												);
 											})}
-											{activeSubs.length > visibleActiveSubsCount && (
-												<div className="py-1 flex justify-center">
-													<button
-														type="button"
-														onClick={() => setVisibleActiveSubsCount(v => v + SHOW_MORE_STEP)}
-														className="text-sm text-foreground/80 hover:text-foreground underline underline-offset-4"
-													>
-														Show more
-													</button>
-												</div>
-											)}
 										</div>
 									</div>
 								)}
@@ -423,16 +370,16 @@ export function Wallet() {
 									<div className="px-1">
 										<p className="text-xs font-semibold text-muted uppercase tracking-wide mb-2">Cancelled</p>
 										<div className="space-y-3">
-											{cancelledSubs.slice(0, visibleCancelledSubsCount).map((s, i) => {
+											{cancelledSubs.map((s, i) => {
 												const display = creatorDisplay[s.creatorUserId];
 												return (
 													<div key={subscriptionListKey(s, i)} className="bg-surface border border-border/20 rounded-2xl p-4 opacity-90">
 														<div className="flex items-center gap-3">
-															<UserAvatarMedia
-																src={display?.avatar}
-																alt={display?.name ?? `Creator ${s.creatorUserId}`}
-																className="w-10 h-10 rounded-full object-cover"
-															/>
+															{display?.avatar ? (
+																<img src={display.avatar} alt={display.name} className="w-10 h-10 rounded-full object-cover" />
+															) : (
+																<div className="w-10 h-10 rounded-full bg-foreground/10" />
+															)}
 															<div className="flex-1">
 																<p className="text-sm font-semibold text-foreground">{display?.name ?? `Creator ${s.creatorUserId}`}</p>
 																<p className="text-xs text-muted">Cancelled</p>
@@ -442,17 +389,6 @@ export function Wallet() {
 													</div>
 												);
 											})}
-											{cancelledSubs.length > visibleCancelledSubsCount && (
-												<div className="py-1 flex justify-center">
-													<button
-														type="button"
-														onClick={() => setVisibleCancelledSubsCount(v => v + SHOW_MORE_STEP)}
-														className="text-sm text-foreground/80 hover:text-foreground underline underline-offset-4"
-													>
-														Show more
-													</button>
-												</div>
-											)}
 										</div>
 									</div>
 								)}
@@ -461,16 +397,16 @@ export function Wallet() {
 									<div className="px-1">
 										<p className="text-xs font-semibold text-muted uppercase tracking-wide mb-2">Past (Expired)</p>
 										<div className="space-y-3">
-											{expiredSubs.slice(0, visibleExpiredSubsCount).map((s, i) => {
+											{expiredSubs.map((s, i) => {
 												const display = creatorDisplay[s.creatorUserId];
 												return (
 													<div key={subscriptionListKey(s, i)} className="bg-surface border border-border/20 rounded-2xl p-4 opacity-90">
 														<div className="flex items-center gap-3">
-															<UserAvatarMedia
-																src={display?.avatar}
-																alt={display?.name ?? `Creator ${s.creatorUserId}`}
-																className="w-10 h-10 rounded-full object-cover"
-															/>
+															{display?.avatar ? (
+																<img src={display.avatar} alt={display.name} className="w-10 h-10 rounded-full object-cover" />
+															) : (
+																<div className="w-10 h-10 rounded-full bg-foreground/10" />
+															)}
 															<div className="flex-1">
 																<p className="text-sm font-semibold text-foreground">{display?.name ?? `Creator ${s.creatorUserId}`}</p>
 																<p className="text-xs text-muted">Expired</p>
@@ -480,17 +416,6 @@ export function Wallet() {
 													</div>
 												);
 											})}
-											{expiredSubs.length > visibleExpiredSubsCount && (
-												<div className="py-1 flex justify-center">
-													<button
-														type="button"
-														onClick={() => setVisibleExpiredSubsCount(v => v + SHOW_MORE_STEP)}
-														className="text-sm text-foreground/80 hover:text-foreground underline underline-offset-4"
-													>
-														Show more
-													</button>
-												</div>
-											)}
 										</div>
 									</div>
 								)}

@@ -6,7 +6,6 @@ import { mockCreators, mockUsers } from '../../data/users';
 import { mockKYCApplications, mockReports } from '../../data/transactions';
 import { mockPosts } from '../../data/posts';
 import { formatINR } from '../../services/razorpay';
-import { UserAvatarMedia } from '../../components/ui/Avatar';
 
 export function AdminDashboard() {
 	const navigate = useNavigate();
@@ -64,7 +63,7 @@ export function AdminDashboard() {
 						<div className="space-y-3">
 							{mockCreators.filter(c => c.isKYCVerified).slice(0, 4).map(creator => (
 								<div key={creator.id} className="flex items-center gap-3">
-									<UserAvatarMedia src={creator.avatar} alt={creator.name} className="w-9 h-9 rounded-full object-cover" />
+									<img src={creator.avatar} alt={creator.name} className="w-9 h-9 rounded-full object-cover" />
 									<div className="flex-1 min-w-0">
 										<p className="text-sm font-medium text-foreground truncate">{creator.name}</p>
 										<p className="text-xs text-muted">{creator.subscriberCount.toLocaleString()} subscribers</p>

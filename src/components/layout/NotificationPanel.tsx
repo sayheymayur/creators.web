@@ -3,6 +3,7 @@ import { Bell, CheckCheck } from '../icons';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { formatDistanceToNow } from '../../utils/date';
+import { UserAvatarMedia } from '../ui/Avatar';
 
 interface NotificationPanelProps {
 	onClose: () => void;
@@ -55,13 +56,11 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
 									!isRead ? 'bg-rose-500/5' : ''
 								}`}
 							>
-								{fromAvatar ? (
-									<img src={fromAvatar} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" />
-								) : (
-									<div className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center shrink-0">
-										<Bell className="w-4 h-4 text-white/40" />
-									</div>
-								)}
+								<UserAvatarMedia
+									src={fromAvatar}
+									alt={n.title || 'Notification'}
+									className="w-9 h-9 rounded-full object-cover shrink-0"
+								/>
 								<div className="flex-1 min-w-0">
 									<p className={`text-xs font-medium ${isRead ? 'text-white/60' : 'text-white'} truncate`}>{n.title}</p>
 									<p className="text-xs text-white/40 truncate mt-0.5">{n.body ?? ''}</p>

@@ -13,6 +13,7 @@ import { TipModal } from '../../components/modals/TipModal';
 import type { VirtualGift } from '../../types';
 import type { LiveWithAgora } from '../../services/liveWsTypes';
 import { formatINR } from '../../services/razorpay';
+import { AvatarBackdrop, UserAvatarMedia } from '../../components/ui/Avatar';
 
 function formatElapsed(startedAt: string): string {
 	const diff = Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000);
@@ -257,7 +258,7 @@ export function LiveStreamRoom() {
 		<div className="fixed inset-0 z-[150] bg-overlay flex flex-col" onClick={resetControlsTimer} onTouchStart={resetControlsTimer}>
 			<div className="relative flex-1 overflow-hidden">
 				<div ref={remoteVideoRef} className={`absolute inset-0 z-0 ${hasRemoteVideo ? 'opacity-100' : 'opacity-0'}`} />
-				<img
+				<AvatarBackdrop
 					src={stream.creatorAvatar}
 					alt={stream.creatorName}
 					className={`w-full h-full object-cover scale-110 blur-sm brightness-40 ${hasRemoteVideo ? 'opacity-0' : 'opacity-100'}`}
@@ -370,7 +371,7 @@ export function LiveStreamRoom() {
 						<div className="px-4 pb-2 max-h-44 overflow-y-auto space-y-1.5">
 							{(stream.chatMessages ?? []).map(msg => (
 								<div key={msg.id} className="flex items-start gap-2">
-									<img src={msg.userAvatar} alt={msg.userName} className="w-5 h-5 rounded-full object-cover shrink-0 mt-0.5" />
+									<UserAvatarMedia src={msg.userAvatar} alt={msg.userName} className="w-5 h-5 rounded-full object-cover shrink-0 mt-0.5" />
 									{msg.isGift ? (
 										<div className="flex items-center gap-1.5 bg-amber-500/20 backdrop-blur-sm border border-amber-500/30 rounded-xl px-2.5 py-1">
 											<span className="text-base">{VIRTUAL_GIFTS.find(g => g.name === msg.giftName)?.emoji ?? '🎁'}</span>

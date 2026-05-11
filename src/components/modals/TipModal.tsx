@@ -8,6 +8,7 @@ import { useNotifications } from '../../context/NotificationContext';
 import { formatINR } from '../../services/razorpay';
 import { compareMinor, formatINRFromMinor, inrRupeesToMinor } from '../../utils/money';
 import { delayMs } from '../../utils/delay';
+import { UserAvatarMedia } from '../ui/Avatar';
 
 const TIP_PRESETS = [3, 5, 10, 20, 50, 100];
 
@@ -87,7 +88,7 @@ export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvata
 				) : (
 					<>
 						<div className="flex items-center gap-3 mb-5 p-3 bg-foreground/5 rounded-xl">
-							<img src={creatorAvatar} alt={creatorName} className="w-10 h-10 rounded-full object-cover" />
+							<UserAvatarMedia src={creatorAvatar} alt={creatorName} className="w-10 h-10 rounded-full object-cover" />
 							<div>
 								<p className="text-sm font-semibold text-foreground">{creatorName}</p>
 								<p className="text-xs text-muted">Your tip supports their work directly</p>

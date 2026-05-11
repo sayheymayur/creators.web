@@ -3,13 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import { Upload, CheckCircle, Clock, XCircle, Shield } from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';
 import { Button } from '../../components/ui/Button';
-import { useCurrentCreator } from '../../context/AuthContext';
+import { useAuth, useCurrentCreator } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { mockCreators } from '../../data/users';
+import { minimalCreatorFromUser } from '../../utils/creatorShell';
 import { delayMs } from '../../utils/delay';
 
 export function KYCFlow() {
 	const creator = useCurrentCreator();
+	const { state: authState } = useAuth();
 	const { showToast } = useNotifications();
 	const navigate = useNavigate();
 	const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -19,7 +21,7 @@ export function KYCFlow() {
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [submitted, setSubmitted] = useState(false);
 
-	const creatorData = creator ?? mockCreators[0];
+	const creatorData = creator ?? (authState.user?.role === 'creator' ? minimalCreatorFromUser(authState.user) : mockCreators[0]);
 
 	if (creatorData.kycStatus === 'approved') {
 		return (

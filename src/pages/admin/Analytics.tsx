@@ -2,6 +2,7 @@ import { TrendingUp, DollarSign, Users, Star } from '../../components/icons';
 import { Navbar } from '../../components/layout/Navbar';
 import { ToastContainer } from '../../components/ui/Toast';
 import { mockCreators, mockUsers } from '../../data/users';
+import { UserAvatarMedia } from '../../components/ui/Avatar';
 
 export function reports() {
 	const totalPlatformRevenue = mockCreators.reduce((s, c) => s + c.totalEarnings, 0) * 0.2;
@@ -64,7 +65,7 @@ export function reports() {
 								return (
 									<div key={creator.id} className="flex items-center gap-2">
 										<p className="text-xs text-muted/80 w-4 shrink-0">{i + 1}</p>
-										<img src={creator.avatar} alt="" className="w-6 h-6 rounded-full object-cover shrink-0" />
+										<UserAvatarMedia src={creator.avatar} alt={creator.name} className="w-6 h-6 rounded-full object-cover shrink-0" />
 										<p className="text-xs text-muted w-20 truncate">{creator.name}</p>
 										<div className="flex-1 h-2 bg-foreground/10 rounded-full overflow-hidden">
 											<div className="h-full bg-gradient-to-r from-rose-600 to-rose-400 rounded-full" style={{ width: `${pct}%` }} />

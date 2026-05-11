@@ -8,20 +8,29 @@ import { useChat } from '../../context/ChatContext';
 import { useSessions } from '../../context/SessionsContext';
 import { useWs, useWsConnected } from '../../context/WsContext';
 import { formatDistanceToNow } from '../../utils/date';
-import { mockCreators } from '../../data/users';
+import { minimalCreatorFromDisplay } from '../../utils/creatorShell';
 import { useContent } from '../../context/ContentContext';
-import { isUuid, randomUuid } from '../../utils/isUuid';
+import { isUuid } from '../../utils/isUuid';
+import { useSubscriptions } from '../../context/SubscriptionContext';
+import { SessionPickerModal, type SessionPayMode } from '../../components/modals/SessionPickerModal';
+import type { Creator, SessionType } from '../../types';
+import { useNotifications } from '../../context/NotificationContext';
 
 export function MessagesList() {
 	const { state: authState } = useAuth();
-	const { state: chatState, addConversation } = useChat();
-	const { state: sessionsState } = useSessions();
-	const { isSubscribed } = useContent();
+	const { state: chatState } = useChat();
+	const { state: sessionsState, requestSession, clearOutgoing } = useSessions();
+	const { activeByCreatorUserId } = useSubscriptions();
+	const { creatorWsGetByUserId, state: contentState } = useContent();
+	const { showToast } = useNotifications();
 	const ws = useWs();
 	const wsConnected = useWsConnected();
 	const navigate = useNavigate();
 	const [search, setSearch] = useState('');
 	const [showNewChat, setShowNewChat] = useState(false);
+	const [creatorDisplay, setCreatorDisplay] = useState<Record<string, { name: string, avatar: string }>>({});
+	const [showSessionModal, setShowSessionModal] = useState(false);
+	const [selectedCreator, setSelectedCreator] = useState<Creator | null>(null);
 
 	const userId = authState.user?.id ?? '';
 
@@ -73,32 +82,69 @@ export function MessagesList() {
 		};
 	}
 
-	function startNewChat(creatorId: string, creatorName: string, creatorAvatar: string, isOnline: boolean) {
-		const existing = chatState.conversations.find(c =>
-			c.participantIds.includes(userId) && c.participantIds.includes(creatorId)
-		);
-		if (existing) {
-			navigate(`/messages/${existing.id}`);
-			return;
-		}
-		const convId = randomUuid();
-		addConversation({
-			id: convId,
-			participantIds: [userId, creatorId],
-			participantNames: [authState.user?.name ?? 'You', creatorName],
-			participantAvatars: [authState.user?.avatar ?? '', creatorAvatar],
-			lastMessage: '',
-			lastMessageTime: new Date().toISOString(),
-			unreadCount: 0,
-			isOnline,
+	const subscribedCreatorIds = Object.keys(activeByCreatorUserId ?? {});
+
+	useEffect(() => {
+		if (!showNewChat) return;
+		if (subscribedCreatorIds.length === 0) return;
+		let cancelled = false;
+		const missing = subscribedCreatorIds.filter(id => !creatorDisplay[id]);
+		if (missing.length === 0) return;
+		void Promise.all(missing.map(id =>
+			creatorWsGetByUserId(id)
+				.then(r => {
+					if (cancelled) return;
+					const c = r.creator;
+					if (!c) return;
+					setCreatorDisplay(prev => ({
+						...prev,
+						[id]: { name: c.name, avatar: c.avatar_url ?? '' },
+					}));
+				})
+				.catch(() => {})
+		));
+		return () => { cancelled = true; };
+	}, [showNewChat, subscribedCreatorIds.join(','), creatorDisplay, creatorWsGetByUserId]);
+
+	function openBookingForCreator(creatorUserId: string) {
+		const cached = contentState.creatorProfiles?.[creatorUserId];
+		const display = creatorDisplay[creatorUserId];
+		const creator: Creator = minimalCreatorFromDisplay(creatorUserId, {
+			name: display?.name ?? cached?.name ?? 'Creator',
+			username: cached?.username ?? 'creator',
+			avatar: display?.avatar ?? cached?.avatar ?? '',
 		});
-		navigate(`/messages/${convId}`);
+		setSelectedCreator(creator);
+		setShowSessionModal(true);
 		setShowNewChat(false);
 	}
 
-	const messagableCreators = mockCreators.filter(c =>
-		isSubscribed(c.id) && c.isKYCVerified
-	);
+	function handleStartSession(type: SessionType, durationMinutes: number, _totalCost: number, _payMode: SessionPayMode) {
+		if (!authState.user) { void navigate('/login'); return; }
+		const kind = type === 'chat' ? 'chat' : 'call';
+		const uiCallType = type === 'audio' ? 'audio' : type === 'video' ? 'video' : undefined;
+		const creator = selectedCreator;
+		if (!creator) return;
+		void requestSession({
+			creatorUserId: creator.id,
+			kind,
+			minutes: durationMinutes,
+			uiCallType,
+			creatorDisplay: { name: creator.name, avatar: creator.avatar },
+		})
+			.then(() => {
+				showToast('Session request sent. Waiting for creator…');
+			})
+			.catch(err => {
+				showToast(err instanceof Error ? err.message : 'Failed to request session', 'error');
+			});
+	}
+
+	useEffect(() => {
+		return () => {
+			clearOutgoing();
+		};
+	}, []);
 
 	return (
 		<Layout>
@@ -115,24 +161,30 @@ export function MessagesList() {
 
 				{showNewChat && (
 					<div className="bg-surface border border-border/20 rounded-2xl p-4 mb-4">
-						<p className="text-xs text-muted font-medium mb-3 uppercase tracking-wider">Start a new conversation</p>
-						{messagableCreators.length === 0 ? (
-							<p className="text-muted text-sm">Subscribe to creators to message them</p>
+						<p className="text-xs text-muted font-medium mb-3 uppercase tracking-wider">Book a session</p>
+						{subscribedCreatorIds.length === 0 ? (
+							<p className="text-muted text-sm">Subscribe to creators to book sessions</p>
 						) : (
 							<div className="space-y-2">
-								{messagableCreators.map(creator => (
-									<button
-										key={creator.id}
-										onClick={() => startNewChat(creator.id, creator.name, creator.avatar, creator.isOnline)}
-										className="w-full flex items-center gap-3 hover:bg-foreground/5 rounded-xl p-2 transition-colors"
-									>
-										<Avatar src={creator.avatar} alt={creator.name} size="md" isOnline={creator.isOnline} />
-										<div className="text-left">
-											<p className="text-sm font-medium text-foreground">{creator.name}</p>
-											<p className="text-xs text-muted">{creator.category}</p>
-										</div>
-									</button>
-								))}
+								{subscribedCreatorIds.map(creatorUserId => {
+									const display = creatorDisplay[creatorUserId];
+									const cached = contentState.creatorProfiles?.[creatorUserId];
+									const name = display?.name ?? cached?.name ?? 'Creator';
+									const avatar = display?.avatar ?? cached?.avatar ?? '';
+									return (
+										<button
+											key={creatorUserId}
+											onClick={() => openBookingForCreator(creatorUserId)}
+											className="w-full flex items-center gap-3 hover:bg-foreground/5 rounded-xl p-2 transition-colors"
+										>
+											<Avatar src={avatar} alt={name} size="md" />
+											<div className="text-left">
+												<p className="text-sm font-medium text-foreground">{name}</p>
+												<p className="text-xs text-muted">Book session</p>
+											</div>
+										</button>
+									);
+								})}
 							</div>
 						)}
 					</div>
@@ -212,6 +264,18 @@ export function MessagesList() {
 					</div>
 				)}
 			</div>
+			{selectedCreator && (
+				<SessionPickerModal
+					isOpen={showSessionModal}
+					onClose={() => { setShowSessionModal(false); }}
+					creatorName={selectedCreator.name}
+					creatorAvatar={selectedCreator.avatar}
+					ratePerMinute={selectedCreator.perMinuteRate}
+					walletBalanceMinor={authState.user?.walletBalanceMinor ?? '0'}
+					onConfirm={handleStartSession}
+					protocol="sessions"
+				/>
+			)}
 		</Layout>
 	);
 }

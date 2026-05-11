@@ -8,6 +8,7 @@ import { useNotifications } from '../context/NotificationContext';
 import { ApiError, creatorsApi } from '../services/creatorsApi';
 import { uploadMediaAsset } from '../services/mediaUpload';
 import { delayMs } from '../utils/delay';
+import { UserAvatarMedia } from '../components/ui/Avatar';
 
 export function Settings() {
 	const { state: authState, logout, updateUser } = useAuth();
@@ -105,7 +106,7 @@ export function Settings() {
 					</div>
 					<div className="flex items-center gap-4 mb-4">
 						<div className="relative">
-							<img src={avatarPreviewUrl ?? user.avatar} alt={user.name} className="w-14 h-14 rounded-2xl object-cover" />
+							<UserAvatarMedia src={avatarPreviewUrl ?? user.avatar} alt={user.name} className="w-14 h-14 rounded-2xl object-cover" />
 							{user.role === 'fan' && (
 								<button
 									type="button"

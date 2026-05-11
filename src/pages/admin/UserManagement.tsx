@@ -6,6 +6,7 @@ import { useNotifications } from '../../context/NotificationContext';
 import { mockUsers } from '../../data/users';
 import type { User, AccountStatus } from '../../types';
 import { formatDate } from '../../utils/date';
+import { UserAvatarMedia } from '../../components/ui/Avatar';
 
 export function UserManagement() {
 	const { showToast } = useNotifications();
@@ -88,7 +89,7 @@ export function UserManagement() {
 					{filtered.map(user => (
 						<div key={user.id} className="grid grid-cols-12 gap-3 px-4 py-3 border-b border-border/10 last:border-0 items-center">
 							<div className="col-span-4 flex items-center gap-2 min-w-0">
-								<img src={user.avatar} alt={user.name} className="w-8 h-8 rounded-full object-cover shrink-0" />
+								<UserAvatarMedia src={user.avatar} alt={user.name} className="w-8 h-8 rounded-full object-cover shrink-0" />
 								<div className="min-w-0">
 									<p className="text-sm font-medium text-foreground truncate">{user.name}</p>
 									<p className="text-xs text-muted/80 truncate">{user.email}</p>

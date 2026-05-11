@@ -4,13 +4,13 @@ import { Search, SlidersHorizontal, TrendingUp, Star, Users, Eye, Compass } from
 import { Layout } from '../../components/layout/Layout';
 import { CreatorCard } from '../../components/ui/CreatorCard';
 import { PostCard } from '../../components/ui/PostCard';
-import { mockCreators } from '../../data/users';
 import type { Creator } from '../../types';
 import { useContent } from '../../context/ContentContext';
 import { useLiveStream } from '../../context/LiveStreamContext';
 import { creatorSummaryToCardCreator } from '../../services/creatorWsMap';
 import { useDragScroll } from '../../hooks/useDragScroll';
 import { normalizeHashtagTag, textHasHashtag } from '../../utils/hashtag';
+import { AvatarBackdrop } from '../../components/ui/Avatar';
 
 const CATEGORIES = ['All', 'Fitness', 'Art', 'Tech', 'Travel', 'Music', 'Food', 'Gaming'];
 
@@ -45,7 +45,7 @@ export function Explore() {
 		const q = search.trim() || undefined;
 		void creatorWsSearch({ q, category: cat, limit: 30 })
 			.then(r => {
-				setWsCreators(r.creators.map(d => creatorSummaryToCardCreator(d, mockCreators[0])));
+				setWsCreators(r.creators.map(d => creatorSummaryToCardCreator(d, {})));
 				setWsDirCursor(r.nextCursor ?? null);
 			})
 			.catch(() => {
@@ -76,7 +76,7 @@ export function Explore() {
 		const q = search.trim() || undefined;
 		void creatorWsSearch({ q, category: cat, limit: 30, beforeCursor: wsDirCursor })
 			.then(r => {
-				const next = r.creators.map(d => creatorSummaryToCardCreator(d, mockCreators[0]));
+				const next = r.creators.map(d => creatorSummaryToCardCreator(d, {}));
 				setWsCreators(prev => {
 					const seen: Record<string, true> = {};
 					for (const c of prev) seen[c.id] = true;
@@ -174,7 +174,11 @@ export function Explore() {
 									className="relative bg-surface border border-border/20 rounded-2xl overflow-hidden hover:border-border/30 transition-all group flex-shrink-0 w-64 sm:w-72"
 								>
 									<div className="relative h-28">
-										<img src={stream.creatorAvatar} alt={stream.creatorName} className="w-full h-full object-cover scale-105 blur-sm brightness-50" />
+										<AvatarBackdrop
+											src={stream.creatorAvatar}
+											alt={stream.creatorName}
+											className="w-full h-full object-cover scale-105 blur-sm brightness-50"
+										/>
 										<div className="absolute inset-0 bg-gradient-to-b from-transparent to-overlay/60" />
 										<div className="absolute top-2 left-2 flex items-center gap-1.5 bg-rose-500 rounded-lg px-2 py-0.5">
 											<div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />

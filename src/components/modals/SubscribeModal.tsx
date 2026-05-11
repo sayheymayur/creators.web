@@ -9,6 +9,7 @@ import { formatINR } from '../../services/razorpay';
 import { compareMinor, formatINRFromMinor, inrRupeesToMinor } from '../../utils/money';
 import type { Creator } from '../../types';
 import { delayMs } from '../../utils/delay';
+import { UserAvatarMedia } from '../ui/Avatar';
 
 interface SubscribeModalProps {
 	isOpen: boolean;
@@ -97,7 +98,7 @@ export function SubscribeModal({ isOpen, onClose, creator }: SubscribeModalProps
 				) : (
 					<>
 						<div className="flex items-center gap-3 mb-5 p-3 bg-foreground/5 rounded-xl">
-							<img src={creator.avatar} alt={creator.name} className="w-12 h-12 rounded-full object-cover" />
+							<UserAvatarMedia src={creator.avatar} alt={creator.name} className="w-12 h-12 rounded-full object-cover" />
 							<div className="flex-1">
 								<div className="flex items-center gap-1.5">
 									<p className="font-semibold text-foreground">{creator.name}</p>

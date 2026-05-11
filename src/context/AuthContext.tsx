@@ -2,6 +2,7 @@ import React, { createContext, useContext, useReducer, useCallback, useEffect, u
 import { signInWithPopup, signOut, signOut as firebaseSignOut } from 'firebase/auth';
 import type { User, Creator } from '../types';
 import { mockCreators } from '../data/users';
+import { minimalCreatorFromUser } from '../utils/creatorShell';
 import { delayMs } from '../utils/delay';
 import { isFirebaseConfigured, firebaseMissingConfigKeys } from '../config/firebase';
 import { getFirebaseAuth, getGoogleProvider } from '../lib/firebaseClient';
@@ -509,18 +510,5 @@ export function useCurrentCreator(): Creator | null {
 	const creatorMatch = mockCreators.find(c => c.id === currentUser.id);
 	if (creatorMatch) return creatorMatch;
 
-	return {
-		...mockCreators[0],
-		id: currentUser.id,
-		name: currentUser.name,
-		email: currentUser.email,
-		username: currentUser.username,
-		avatar: currentUser.avatar,
-		bio: currentUser.bio ?? mockCreators[0].bio,
-		banner: currentUser.banner ?? mockCreators[0].banner,
-		category: currentUser.category ?? mockCreators[0].category,
-		createdAt: currentUser.createdAt,
-		status: currentUser.status,
-		walletBalanceMinor: currentUser.walletBalanceMinor,
-	};
+	return minimalCreatorFromUser(currentUser);
 }

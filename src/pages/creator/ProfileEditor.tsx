@@ -6,9 +6,11 @@ import { useAuth, useCurrentCreator } from '../../context/AuthContext';
 import { useContent } from '../../context/ContentContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { mockCreators } from '../../data/users';
+import { minimalCreatorFromUser } from '../../utils/creatorShell';
 import { ApiError, creatorsApi } from '../../services/creatorsApi';
 import { uploadMediaAsset } from '../../services/mediaUpload';
 import { formatINR } from '../../services/razorpay';
+import { ProfileBannerMedia, UserAvatarMedia } from '../../components/ui/Avatar';
 
 export function ProfileEditor() {
 	const creator = useCurrentCreator();
@@ -16,7 +18,7 @@ export function ProfileEditor() {
 	const { creatorWsUpsert } = useContent();
 	const { showToast } = useNotifications();
 
-	const creatorData = creator ?? mockCreators[0];
+	const creatorData = creator ?? (authState.user?.role === 'creator' ? minimalCreatorFromUser(authState.user) : mockCreators[0]);
 	const currentUser = authState.user;
 	const isNewGoogleCreator = !!currentUser &&
 		currentUser.role === 'creator' &&
@@ -114,7 +116,11 @@ export function ProfileEditor() {
 
 				<div className="relative mb-6">
 					<div className="h-32 rounded-2xl overflow-hidden relative">
-						<img src={bannerPreviewUrl ?? bannerUrl} alt="" className="w-full h-full object-cover" />
+						<ProfileBannerMedia
+							src={bannerPreviewUrl ?? bannerUrl}
+							alt="Banner preview"
+							className="w-full h-full object-cover"
+						/>
 						<button
 							type="button"
 							onClick={() => bannerInputRef.current?.click()}
@@ -139,9 +145,9 @@ export function ProfileEditor() {
 
 					<div className="absolute -bottom-6 left-4">
 						<div className="relative">
-							<img
+							<UserAvatarMedia
 								src={avatarPreviewUrl ?? avatarUrl}
-								alt=""
+								alt="Avatar preview"
 								className="w-16 h-16 rounded-2xl border-4 border-background object-cover"
 							/>
 							<button

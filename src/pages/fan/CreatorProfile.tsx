@@ -21,10 +21,12 @@ import { randomUuid } from '../../utils/isUuid';
 import { formatINR } from '../../services/razorpay';
 import { useSessions } from '../../context/SessionsContext';
 import { useWs, useWsConnected } from '../../context/WsContext';
-import { creatorFollow } from '../../services/creatorWsService';
+import { creatorFollow, creatorUnfollow } from '../../services/creatorWsService';
+import { useSubscriptions } from '../../context/SubscriptionContext';
+import { subscriptionId, subscriptionUiStatus } from '../../services/subscriptionUi';
 
 export function CreatorProfile() {
-	const { id } = useParams<{ id: string }>();
+	const { id: creatorUserId } = useParams<{ id: string }>();
 	const navigate = useNavigate();
 	const { state: authState } = useAuth();
 	const { state: contentState, isSubscribed, loadCreatorPosts, creatorWsGetByUserId } = useContent();
@@ -35,6 +37,7 @@ export function CreatorProfile() {
 	const { requestSession, state: sessionsState, clearOutgoing } = useSessions();
 	const ws = useWs();
 	const wsConnected = useWsConnected();
+	const { getSubscriptionForCreator, cancel: cancelWsSubscription } = useSubscriptions();
 	const [showTipModal, setShowTipModal] = useState(false);
 	const [showSubscribeModal, setShowSubscribeModal] = useState(false);
 	const [showSessionModal, setShowSessionModal] = useState(false);
@@ -42,25 +45,26 @@ export function CreatorProfile() {
 	const [remoteCreator, setRemoteCreator] = useState<Creator | null>(null);
 	const [isLoadingCreator, setIsLoadingCreator] = useState(false);
 	const [followBusy, setFollowBusy] = useState(false);
+	const [isFollowed, setIsFollowed] = useState<boolean>(false);
 	const hasLoadedCreatorRef = useRef(false);
 
-	const maybeCreator = useMemo(() => mockCreators.find(c => c.id === id), [id]);
-	const cachedDisplay = useMemo(() => (id ? contentState.creatorProfiles[id] : undefined), [id, contentState.creatorProfiles]);
+	const maybeCreator = useMemo(() => mockCreators.find(c => c.id === creatorUserId), [creatorUserId]);
+	const cachedDisplay = useMemo(() => (creatorUserId ? contentState.creatorProfiles[creatorUserId] : undefined), [creatorUserId, contentState.creatorProfiles]);
 	const fallbackCreator = useMemo<Creator | null>(() => {
-		if (!id) return null;
+		if (!creatorUserId) return null;
 		if (!cachedDisplay) return null;
 		const base = mockCreators[0];
 		return {
 			...base,
-			id,
+			id: creatorUserId,
 			name: cachedDisplay.name || base.name,
 			username: cachedDisplay.username || base.username,
 			avatar: cachedDisplay.avatar || base.avatar,
 		};
-	}, [id, cachedDisplay]);
+	}, [creatorUserId, cachedDisplay]);
 
 	useEffect(() => {
-		if (!id) return;
+		if (!creatorUserId) return;
 		const ac = new AbortController();
 		const base = maybeCreator ?? mockCreators[0];
 
@@ -72,11 +76,12 @@ export function CreatorProfile() {
 
 		setIsLoadingCreator(true);
 
-		void creatorWsGetByUserId(id)
+		void creatorWsGetByUserId(creatorUserId)
 			.then(r => {
 				if (ac.signal.aborted) return;
 				if (r.creator) {
 					hasLoadedCreatorRef.current = true;
+					setIsFollowed(Boolean((r.creator as unknown as { is_followed?: boolean | null }).is_followed));
 					setRemoteCreator(creatorProfileDtoToCreator(r.creator, base));
 					return;
 				}
@@ -91,9 +96,9 @@ export function CreatorProfile() {
 			.catch((err: unknown) => {
 				if (ac.signal.aborted) return;
 				if (err instanceof ApiError) {
-					console.error('[creator-profile] ws getByUserId failed', { id, status: err.status, body: err.body });
+					console.error('[creator-profile] ws getByUserId failed', { creatorUserId, status: err.status, body: err.body });
 				} else {
-					console.error('[creator-profile] ws getByUserId failed', { id, err });
+					console.error('[creator-profile] ws getByUserId failed', { creatorUserId, err });
 				}
 				if (!hasLoadedCreatorRef.current) {
 					showToast('Could not load creator profile. Please try again.', 'error');
@@ -104,14 +109,14 @@ export function CreatorProfile() {
 			});
 
 		return () => ac.abort();
-	}, [id, maybeCreator, creatorWsGetByUserId, contentState.postsWsStatus]);
+	}, [creatorUserId, maybeCreator, creatorWsGetByUserId, contentState.postsWsStatus]);
 
 	useEffect(() => {
-		if (!id) return;
-		void loadCreatorPosts(id, true);
-	}, [id, loadCreatorPosts]);
+		if (!creatorUserId) return;
+		void loadCreatorPosts(creatorUserId, true);
+	}, [creatorUserId, loadCreatorPosts]);
 
-	if (!id) {
+	if (!creatorUserId) {
 		return (
 			<Layout>
 				<div className="flex items-center justify-center min-h-[50vh]">
@@ -143,7 +148,10 @@ export function CreatorProfile() {
 		);
 	}
 
-	const subscribed = isSubscribed(creator.id);
+	const subDto = getSubscriptionForCreator(creator.id);
+	const subStatus = subDto ? subscriptionUiStatus(subDto) : null;
+	const subscribed = subStatus === 'active' || isSubscribed(creator.id);
+	const subId = subDto ? subscriptionId(subDto) : null;
 	const isOwner = authState.user?.id === creator.id;
 	const creatorForDisplay: Creator = isOwner && authState.user ? {
 		...creator,
@@ -222,16 +230,32 @@ export function CreatorProfile() {
 			return;
 		}
 		setFollowBusy(true);
-		void creatorFollow(ws, creatorForDisplay.id)
+		const op = isFollowed ? creatorUnfollow : creatorFollow;
+		void op(ws, creatorForDisplay.id)
 			.then(() => {
-				showToast('You are now following this creator.');
+				setIsFollowed(prev => !prev);
+				showToast(isFollowed ? 'Unfollowed.' : 'You are now following this creator.');
 			})
 			.catch((err: unknown) => {
-				showToast(err instanceof Error ? err.message : 'Follow failed', 'error');
+				showToast(err instanceof Error ? err.message : (isFollowed ? 'Unfollow failed' : 'Follow failed'), 'error');
 			})
 			.finally(() => {
 				setFollowBusy(false);
 			});
+	}
+
+	const [cancelBusy, setCancelBusy] = useState(false);
+	function handleCancelSubscription() {
+		if (!subId) return;
+		setCancelBusy(true);
+		void cancelWsSubscription(subId)
+			.then(() => {
+				showToast('Subscription cancelled.');
+			})
+			.catch(err => {
+				showToast(err instanceof Error ? err.message : 'Cancel failed', 'error');
+			})
+			.finally(() => setCancelBusy(false));
 	}
 
 	function handleMessage() {
@@ -326,6 +350,14 @@ export function CreatorProfile() {
 											Message
 										</button>
 										<button
+											type="button"
+											disabled={!subId || cancelBusy}
+											onClick={handleCancelSubscription}
+											className="flex items-center gap-1.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 text-sm font-semibold px-3 py-2 rounded-xl transition-all border border-rose-500/20 disabled:opacity-50"
+										>
+											Cancel
+										</button>
+										<button
 											onClick={() => setShowTipModal(true)}
 											className="flex items-center gap-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 text-sm font-semibold px-3 py-2 rounded-xl transition-all"
 										>
@@ -354,12 +386,13 @@ export function CreatorProfile() {
 									onClick={() => { handleWsFollow(); }}
 									disabled={followBusy}
 									className={
-										'flex items-center gap-1.5 bg-foreground/10 hover:bg-foreground/15 text-foreground ' +
+										'flex items-center gap-1.5 ' +
+										(isFollowed ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/20 ' : 'bg-foreground/10 hover:bg-foreground/15 text-foreground border-border/20 ') +
 										'text-sm font-semibold px-3 py-2 rounded-xl transition-all border border-border/20 ' +
 										'disabled:opacity-50'
 									}
 								>
-									Follow
+									{isFollowed ? 'Following' : 'Follow'}
 								</button>
 							</div>
 						)}

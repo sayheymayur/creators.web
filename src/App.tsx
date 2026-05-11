@@ -10,6 +10,7 @@ import { SessionProvider } from './context/SessionContext';
 import { LiveStreamProvider } from './context/LiveStreamContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { WsProvider } from './context/WsContext';
+import { SubscriptionProvider } from './context/SubscriptionContext';
 import { SessionsProvider } from './context/SessionsContext';
 import { CallSessionProvider } from './context/CallSessionContext';
 import { MinimizedCallWindow } from './components/call/MinimizedCallWindow';
@@ -41,6 +42,7 @@ import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { CreatorApproval } from './pages/admin/CreatorApproval';
 import { UserManagement } from './pages/admin/UserManagement';
 import { ContentModeration } from './pages/admin/ContentModeration';
+import { SubscriptionWsSimulation } from './pages/admin/SubscriptionWsSimulation';
 
 import { Settings } from './pages/Settings';
 import { ActiveCallScreen } from './pages/call/ActiveCallScreen';
@@ -115,8 +117,34 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, Error
 	}
 }
 
+function AuthBootScreen() {
+	const { sessionRestoreError, retrySessionRestore } = useAuth();
+	return (
+		<div className="min-h-screen flex items-center justify-center bg-background text-foreground p-6">
+			<div className="w-full max-w-[420px] text-center">
+				<div className="mx-auto mb-4 h-10 w-10 rounded-full border-2 border-border/30 border-t-foreground/80 animate-spin" />
+				<h1 className="text-xl font-semibold mb-1">Checking your session</h1>
+				<p className="text-sm text-muted mb-4">Please wait a moment…</p>
+				{sessionRestoreError && (
+					<div className="text-left bg-surface2 border border-border/20 rounded-2xl p-3">
+						<p className="text-xs font-semibold text-muted mb-1">We couldn’t restore your session.</p>
+						<p className="text-xs text-foreground/80 break-words">{sessionRestoreError}</p>
+						<button
+							onClick={retrySessionRestore}
+							className="mt-3 px-4 py-2 rounded-full border border-border/30 bg-transparent text-foreground hover:bg-foreground/5 transition-colors text-sm"
+						>
+							Retry
+						</button>
+					</div>
+				)}
+			</div>
+		</div>
+	);
+}
+
 function ProtectedRoute({ children, roles }: { children: React.ReactNode, roles?: string[] }) {
-	const { state } = useAuth();
+	const { state, authStatus } = useAuth();
+	if (authStatus === 'unknown') return <AuthBootScreen />;
 	if (!state.isAuthenticated) return <Navigate to="/login" replace />;
 	if (roles && state.user && !roles.includes(state.user.role)) {
 		const redirect = state.user.role === 'admin' ? '/admin' :
@@ -133,14 +161,14 @@ function getAuthedRedirectPath(role?: string | null) {
 
 function GuestRoute({ children }: { children: React.ReactNode }) {
 	const { state, authStatus } = useAuth();
-	if (authStatus === 'unknown') return null;
+	if (authStatus === 'unknown') return <AuthBootScreen />;
 	if (state.isAuthenticated) return <Navigate to={getAuthedRedirectPath(state.user?.role)} replace />;
 	return <>{children}</>;
 }
 
 function AppFallbackRoute() {
 	const { state, authStatus } = useAuth();
-	if (authStatus === 'unknown') return null;
+	if (authStatus === 'unknown') return <AuthBootScreen />;
 	return (
 		<Navigate
 			to={state.isAuthenticated ? getAuthedRedirectPath(state.user?.role) : '/'}
@@ -188,6 +216,7 @@ function AppRoutes() {
 			<Route path="/admin/creators" element={<ProtectedRoute roles={['admin']}><CreatorApproval /></ProtectedRoute>} />
 			<Route path="/admin/users" element={<ProtectedRoute roles={['admin']}><UserManagement /></ProtectedRoute>} />
 			<Route path="/admin/moderation" element={<ProtectedRoute roles={['admin']}><ContentModeration /></ProtectedRoute>} />
+			<Route path="/admin/subscription-ws" element={<ProtectedRoute roles={['admin']}><SubscriptionWsSimulation /></ProtectedRoute>} />
 			<Route path="/admin/reports" element={<ProtectedRoute roles={['admin']}><AdminDashboard /></ProtectedRoute>} />
 
 			<Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
@@ -216,25 +245,27 @@ function Providers({ children }: { children: React.ReactNode }) {
 			<ThemeProvider>
 				<AuthProvider>
 					<WsProvider>
-						<NotificationProvider>
-							<ContentProvider>
-								<ChatProvider>
-									<WalletProvider>
-										<CallProvider>
-											<SessionProvider>
-												<SessionsProvider>
-													<CallSessionProvider>
-														<LiveStreamProvider>
-															{children}
-														</LiveStreamProvider>
-													</CallSessionProvider>
-												</SessionsProvider>
-											</SessionProvider>
-										</CallProvider>
-									</WalletProvider>
-								</ChatProvider>
-							</ContentProvider>
-						</NotificationProvider>
+						<SubscriptionProvider>
+							<NotificationProvider>
+								<ContentProvider>
+									<ChatProvider>
+										<WalletProvider>
+											<CallProvider>
+												<SessionProvider>
+													<SessionsProvider>
+														<CallSessionProvider>
+															<LiveStreamProvider>
+																{children}
+															</LiveStreamProvider>
+														</CallSessionProvider>
+													</SessionsProvider>
+												</SessionProvider>
+											</CallProvider>
+										</WalletProvider>
+									</ChatProvider>
+								</ContentProvider>
+							</NotificationProvider>
+						</SubscriptionProvider>
 					</WsProvider>
 				</AuthProvider>
 			</ThemeProvider>

@@ -7,7 +7,7 @@ import { isFirebaseConfigured, firebaseMissingConfigKeys } from '../config/fireb
 import { getFirebaseAuth, getGoogleProvider } from '../lib/firebaseClient';
 import { creatorsApi, ApiError } from '../services/creatorsApi';
 import { clearSessionToken, getSessionToken } from '../services/sessionToken';
-import { clearStoredUser, getStoredUser, setStoredUser } from '../services/sessionUser';
+import { clearStoredUser, setStoredUser } from '../services/sessionUser';
 import { clearPaymentGatewayCache } from '../services/payments';
 import { runCreatorsWsTeardown } from '../services/wsLogoutRegistry';
 import { ZERO_MINOR } from '../utils/money';
@@ -190,7 +190,6 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
 	const [state, dispatch] = useReducer(authReducer, initialState);
-	const didBootstrapRef = useRef(false);
 	const userRef = useRef<User | null>(null);
 	userRef.current = state.user;
 	const [authStatus, setAuthStatus] = useState<AuthStatus>(() => (getSessionToken() ? 'unknown' : 'guest'));
@@ -205,17 +204,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 			return Promise.resolve();
 		}
 
-		// If we have a stored user snapshot, treat the session as authenticated immediately
-		// and refresh it in background. This prevents refresh → redirect/login flicker.
-		const stored = getStoredUser();
-		if (stored && !state.isAuthenticated) {
-			dispatch({ type: 'LOGIN', payload: stored });
-		}
-		if (!stored) setAuthStatus('unknown');
+		// Production-style bootstrapping:
+		// - never show an authenticated UI until /me succeeds
+		// - enforce a minimum loader duration to avoid flicker
+		setAuthStatus('unknown');
 		setSessionRestoreError(null);
 
-		return creatorsApi.auth.me(signal)
-			.then(({ user }) => {
+		const minDelay = delayMs(3000);
+		const restoreTimeoutMs = 10_000;
+
+		const ac = new AbortController();
+		let timedOut = false;
+		const timeoutId = window.setTimeout(() => {
+			timedOut = true;
+			ac.abort();
+		}, restoreTimeoutMs);
+
+		if (signal) {
+			if (signal.aborted) ac.abort();
+			else signal.addEventListener('abort', () => ac.abort(), { once: true });
+		}
+
+		return Promise.all([creatorsApi.auth.me(ac.signal), minDelay])
+			.then(([{ user }]) => {
+				window.clearTimeout(timeoutId);
 				if (signal?.aborted) return;
 				if (!user) {
 					clearSessionToken();
@@ -228,33 +240,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 				setAuthStatus('authenticated');
 			})
 			.catch(err => {
-				if (signal?.aborted) return;
-				// Only drop the token when the backend explicitly rejects it.
-				// For transient network/CORS/5xx errors, keep the token so the user isn't "signed out" on refresh.
-				if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
-					clearSessionToken();
+				// Ensure the minimum loader duration applies on errors too.
+				return minDelay.then(() => {
+					window.clearTimeout(timeoutId);
+					if (signal?.aborted) return;
+
+					// If backend explicitly rejects the token, drop it and proceed as guest.
+					if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+						clearSessionToken();
+						clearStoredUser();
+						setAuthStatus('guest');
+						setSessionRestoreError(null);
+						return;
+					}
+
+					// For transient failures (network/CORS/5xx), block behind the boot screen.
+					// Clear any stored user snapshot so we never display stale authenticated UI.
 					clearStoredUser();
-					setAuthStatus('guest');
-					setSessionRestoreError(null);
-					return;
-				}
-				const msg = err instanceof ApiError ?
-					`Session restore failed (HTTP ${err.status}).` :
-					'Session restore failed.';
-				setSessionRestoreError(msg);
-				// Keep token + stored user so user stays "logged in" offline.
-				if (stored) setAuthStatus('authenticated');
+					const msg = timedOut ?
+						'Session restore timed out. Please retry.' :
+						err instanceof ApiError ?
+							`Session restore failed (HTTP ${err.status}).` :
+							'Session restore failed.';
+					setSessionRestoreError(msg);
+					setAuthStatus('unknown');
+				});
 			});
-	}, [state.isAuthenticated]);
+	}, []);
 
 	const retrySessionRestore = useCallback(() => {
 		void restoreSession();
 	}, [restoreSession]);
 
 	useEffect(() => {
-		// StrictMode runs effects twice in dev; avoid double-bootstrapping.
-		if (didBootstrapRef.current) return;
-		didBootstrapRef.current = true;
+		// In React.StrictMode (dev), effects run setup+cleanup+setup to surface unsafe patterns.
+		// We keep this effect idempotent: abort the in-flight request on cleanup and rerun on the next setup.
 		const ac = new AbortController();
 		void restoreSession(ac.signal);
 		return () => ac.abort();

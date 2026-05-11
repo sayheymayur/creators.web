@@ -108,9 +108,12 @@ class WsConnection {
 			this.queue.push(msg);
 			return;
 		}
-		let roomid = '';
-		if (msg.startsWith('>')) roomid = msg.split('\n')[0].replace('>', '').trim();
-		console.log('[>>] ' + (roomid ? '[' + roomid + '] ' : '') + '' + msg.split('\n')[1]);
+		const lines = msg.split('\n').filter(l => l.trim().length > 0);
+		const serviceLine = lines[0]?.startsWith('>') ? lines[0].slice(1).trim() : '';
+		const cmdLine = lines.find(l => l.trim().startsWith('/')) ?? lines[1] ?? '';
+		// Keep the existing `[>>] [service rid] /command ...` style, but make sure
+		// we always include the service/requestId line when present.
+		console.log('[>>] ' + (serviceLine ? '[' + serviceLine + '] ' : '') + cmdLine);
 
 		try {
 			this.socket.send(msg);
@@ -140,6 +143,7 @@ export class WsClient {
 	private anyListeners: AnyListener[] = [];
 	private eventListeners: Record<string, EventListener[]> = {};
 	private pending: Record<string, PendingReq> = {};
+	private pendingOrder: string[] = [];
 	private requestCounter = 0;
 	private currentService: string | null = null;
 	private lastAuthToken: string | null = null;
@@ -197,13 +201,25 @@ export class WsClient {
 				const pending = this.pending[frame.requestId];
 				if (pending) {
 					delete this.pending[frame.requestId];
+					this.pendingOrder = this.pendingOrder.filter(id => id !== frame.requestId);
 					pending.resolve(frame.data);
 				}
 			} else if (frame.type === 'error') {
 				const pending = this.pending[frame.requestId];
 				if (pending) {
 					delete this.pending[frame.requestId];
+					this.pendingOrder = this.pendingOrder.filter(id => id !== frame.requestId);
 					pending.reject(new Error(frame.message));
+				} else {
+					// Some backend errors do not include a request id (often `-`) when the service/command
+					// fails before the router binds a request. Best-effort: attribute to most recent request.
+					const rid = this.pendingOrder[this.pendingOrder.length - 1];
+					const last = rid ? this.pending[rid] : undefined;
+					if (rid && last && (frame.requestId === '-' || frame.requestId.trim() === '')) {
+						delete this.pending[rid];
+						this.pendingOrder = this.pendingOrder.filter(id => id !== rid);
+						last.reject(new Error(frame.message));
+					}
 				}
 			} else if (frame.type === 'event') {
 				const key = `${frame.service}:${frame.event}`;
@@ -252,6 +268,7 @@ export class WsClient {
 		this.connection.send(`${serviceLine}\n${cmdLine}\n`);
 		return new Promise((resolve, reject) => {
 			this.pending[rid] = { resolve, reject, service, command };
+			this.pendingOrder = [...this.pendingOrder, rid];
 		});
 	}
 
@@ -284,6 +301,7 @@ export class WsClient {
 			this.pending[id].reject(new Error(message));
 			delete this.pending[id];
 		});
+		this.pendingOrder = [];
 	}
 
 	private nextRequestId(): string {

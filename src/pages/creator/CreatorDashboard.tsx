@@ -72,16 +72,16 @@ export function CreatorDashboard() {
 		username: authState.user.username,
 		avatar: authState.user.avatar,
 	} : mockCreators[0]);
-	const creatorIdForPosts = authedCreatorId || creatorData.id;
+	const creatorUserIdForPosts = authedCreatorId || creatorData.id;
 
 	useEffect(() => {
-		if (!creatorIdForPosts) return;
-		void loadCreatorPosts(creatorIdForPosts, true);
-	}, [creatorIdForPosts, loadCreatorPosts]);
+		if (!creatorUserIdForPosts) return;
+		void loadCreatorPosts(creatorUserIdForPosts, true);
+	}, [creatorUserIdForPosts, loadCreatorPosts]);
 
-	const creatorPosts = contentState.posts.filter(p => p.creatorId === creatorIdForPosts);
+	const creatorPosts = contentState.posts.filter(p => p.creatorId === creatorUserIdForPosts);
 
-	const creatorSessions = sessionState.sessionHistory.filter(s => s.creatorId === creatorIdForPosts);
+	const creatorSessions = sessionState.sessionHistory.filter(s => s.creatorId === creatorUserIdForPosts);
 	const sessionEarnings = creatorSessions.reduce((sum, s) => sum + s.earnings, 0);
 
 	if (creatorData.kycStatus !== 'approved') {

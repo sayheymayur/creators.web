@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Plus, ArrowUpRight, ArrowDownLeft, Wallet as WalletIcon, CreditCard, TrendingUp, RefreshCw, CheckCircle } from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';
 import { Modal } from '../../components/ui/Toast';
@@ -10,8 +10,30 @@ import { delayMs } from '../../utils/delay';
 import type { Transaction } from '../../types';
 import { formatINRFromMinor } from '../../utils/money';
 import type { RazorpayOrderRow } from '../../services/paymentWs';
+import { useSubscriptions } from '../../context/SubscriptionContext';
+import { useContent } from '../../context/ContentContext';
+import { subscriptionAmountMinor, subscriptionId, subscriptionUiStatus } from '../../services/subscriptionUi';
 
 const ADD_FUND_PRESETS_INR = [100, 250, 500, 1000, 2000, 5000];
+
+type SubscriptionRowKeyInput = {
+	creatorUserId: string,
+	subscriptionId: string | null,
+	dto: Record<string, unknown>,
+};
+
+/** Stable unique key per subscription row (multiple rows per creator are valid). */
+function subscriptionListKey(s: SubscriptionRowKeyInput, listIndex: number): string {
+	if (s.subscriptionId) return s.subscriptionId;
+	const d = s.dto;
+	const t =
+		typeof d.updated_at === 'string' ? d.updated_at :
+		typeof d.created_at === 'string' ? d.created_at :
+		typeof d.started_at === 'string' ? d.started_at :
+		'';
+	const base = `${s.creatorUserId}:${t || 'nostamp'}`;
+	return t ? base : `${base}:i${listIndex}`;
+}
 
 function TransactionItem({ tx }: { tx: Transaction }) {
 	const isPositive = tx.amount > 0;
@@ -92,15 +114,14 @@ export function Wallet() {
 	const {
 		addFundsViaRazorpay,
 		getUserTransactions,
-		getUserSubscriptions,
-		cancelSubscription,
-		toggleAutoRenew,
 		razorpayOrders,
 		historyNextCursor,
 		loadMoreLedger,
 		refreshWalletData,
 		state: walletState,
 	} = useWallet();
+	const { byCreatorUserId, cancel: cancelWsSubscription, loading: subsLoading, error: subsError } = useSubscriptions();
+	const { creatorWsGetByUserId } = useContent();
 	const [showAddFunds, setShowAddFunds] = useState(false);
 	const [addAmount, setAddAmount] = useState(500);
 	const [customAmount, setCustomAmount] = useState('');
@@ -108,12 +129,44 @@ export function Wallet() {
 	const [addSuccess, setAddSuccess] = useState(false);
 	const [payError, setPayError] = useState('');
 	const [activeTab, setActiveTab] = useState<'transactions' | 'subscriptions' | 'orders'>('transactions');
+	const [creatorDisplay, setCreatorDisplay] = useState<Record<string, { name: string, avatar: string }>>({});
 
 	const user = authState.user;
 	const userId = user?.id ?? '';
 	const transactions = getUserTransactions(userId);
-	const subscriptions = getUserSubscriptions(userId);
-	const activeSubscriptions = subscriptions.filter(s => s.isActive);
+	type WalletSubRow = {
+		creatorUserId: string,
+		dto: Record<string, unknown>,
+		status: 'active' | 'cancelled' | 'expired',
+		subscriptionId: string | null,
+		amountMinor: string | null,
+	};
+
+	const subs = useMemo<WalletSubRow[]>(() => {
+		const out: WalletSubRow[] = [];
+		for (const [creatorUserId, list] of Object.entries(byCreatorUserId)) {
+			for (const dto of list ?? []) {
+				out.push({
+					creatorUserId,
+					dto,
+					status: subscriptionUiStatus(dto),
+					subscriptionId: subscriptionId(dto),
+					amountMinor: subscriptionAmountMinor(dto),
+				});
+			}
+		}
+		return out;
+	}, [byCreatorUserId]);
+
+	const activeSubs = useMemo(() => subs.filter((s: WalletSubRow) => s.status === 'active'), [subs]);
+	const cancelledSubs = useMemo(() => subs.filter((s: WalletSubRow) => s.status === 'cancelled'), [subs]);
+	const expiredSubs = useMemo(() => subs.filter((s: WalletSubRow) => s.status === 'expired'), [subs]);
+
+	const creatorIds = useMemo(() => {
+		const ids: Record<string, true> = {};
+		for (const s of subs) ids[s.creatorUserId] = true;
+		return Object.keys(ids);
+	}, [subs]);
 
 	const balanceMinor = user?.walletBalanceMinor ?? '0';
 
@@ -123,6 +176,32 @@ export function Wallet() {
 	useEffect(() => {
 		setPayError(walletState.walletError ?? '');
 	}, [walletState.walletError]);
+
+	useEffect(() => {
+		if (activeTab !== 'subscriptions') return;
+		if (creatorIds.length === 0) return;
+		let cancelled = false;
+		const missing = creatorIds.filter(id => !creatorDisplay[id]);
+		if (missing.length === 0) return;
+
+		void Promise.all(missing.map(id =>
+			creatorWsGetByUserId(id)
+				.then(r => {
+					if (cancelled) return;
+					const c = r.creator;
+					if (!c) return;
+					setCreatorDisplay(prev => ({
+						...prev,
+						[id]: {
+							name: c.name,
+							avatar: c.avatar_url ?? '',
+						},
+					}));
+				})
+				.catch(() => {})
+		));
+		return () => { cancelled = true; };
+	}, [activeTab, creatorIds.join(','), creatorDisplay, creatorWsGetByUserId]);
 
 	function handleAddFunds() {
 		const amount = customAmount ? parseFloat(customAmount) : addAmount;
@@ -241,45 +320,112 @@ export function Wallet() {
 
 				{activeTab === 'subscriptions' && (
 					<div className="space-y-3">
-						{activeSubscriptions.length === 0 ? (
+						{subs.length === 0 ? (
 							<div className="bg-surface border border-border/20 rounded-2xl p-8 text-center">
 								<TrendingUp className="w-8 h-8 text-muted/50 mx-auto mb-2" />
 								<p className="text-muted text-sm">No active subscriptions</p>
 							</div>
 						) : (
-							activeSubscriptions.map(sub => (
-								<div key={sub.id} className="bg-surface border border-border/20 rounded-2xl p-4">
-									<div className="flex items-center gap-3 mb-3">
-										<img src={sub.creatorAvatar} alt={sub.creatorName} className="w-10 h-10 rounded-full object-cover" />
-										<div className="flex-1">
-											<p className="text-sm font-semibold text-foreground">{sub.creatorName}</p>
-											<p className="text-xs text-muted">Renews {formatDate(sub.endDate)}</p>
+							<div className="space-y-3">
+								{activeSubs.length > 0 && (
+									<div className="px-1">
+										<p className="text-xs font-semibold text-muted uppercase tracking-wide mb-2">Active</p>
+										<div className="space-y-3">
+											{activeSubs.map((s, i) => {
+												const display = creatorDisplay[s.creatorUserId];
+												return (
+													<div key={subscriptionListKey(s, i)} className="bg-surface border border-border/20 rounded-2xl p-4">
+														<div className="flex items-center gap-3 mb-3">
+															{display?.avatar ? (
+																<img src={display.avatar} alt={display.name} className="w-10 h-10 rounded-full object-cover" />
+															) : (
+																<div className="w-10 h-10 rounded-full bg-foreground/10" />
+															)}
+															<div className="flex-1">
+																<p className="text-sm font-semibold text-foreground">{display?.name ?? `Creator ${s.creatorUserId}`}</p>
+																<p className="text-xs text-emerald-300/80">Active subscription</p>
+															</div>
+															<span className="text-sm font-bold text-rose-400">{s.amountMinor ? `${formatINRFromMinor(s.amountMinor)}/mo` : '—'}</span>
+														</div>
+														<div className="flex gap-2">
+															<button
+																disabled={!s.subscriptionId}
+																onClick={() => {
+																	if (!s.subscriptionId) return;
+																	void cancelWsSubscription(s.subscriptionId);
+																}}
+																className="flex-1 text-xs py-1.5 rounded-xl font-medium border border-rose-500/20 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition-colors disabled:opacity-50"
+															>
+																Cancel subscription
+															</button>
+														</div>
+													</div>
+												);
+											})}
 										</div>
-										<span className="text-sm font-bold text-rose-400">
-											{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(sub.price)}/mo
-										</span>
 									</div>
-									<div className="flex gap-2">
-										<button
-											onClick={() => toggleAutoRenew(sub.id)}
-											className={`flex-1 text-xs py-1.5 rounded-xl font-medium transition-all border ${
-												sub.autoRenew ?
-													'border-emerald-500/30 bg-emerald-500/10 text-emerald-400' :
-													'border-border/20 bg-foreground/5 text-muted'
-											}`}
-										>
-											<RefreshCw className="w-3 h-3 inline mr-1" />
-											Auto-renew {sub.autoRenew ? 'ON' : 'OFF'}
-										</button>
-										<button
-											onClick={() => cancelSubscription(sub.id)}
-											className="flex-1 text-xs py-1.5 rounded-xl font-medium border border-rose-500/20 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition-colors"
-										>
-											Cancel
-										</button>
+								)}
+
+								{cancelledSubs.length > 0 && (
+									<div className="px-1">
+										<p className="text-xs font-semibold text-muted uppercase tracking-wide mb-2">Cancelled</p>
+										<div className="space-y-3">
+											{cancelledSubs.map((s, i) => {
+												const display = creatorDisplay[s.creatorUserId];
+												return (
+													<div key={subscriptionListKey(s, i)} className="bg-surface border border-border/20 rounded-2xl p-4 opacity-90">
+														<div className="flex items-center gap-3">
+															{display?.avatar ? (
+																<img src={display.avatar} alt={display.name} className="w-10 h-10 rounded-full object-cover" />
+															) : (
+																<div className="w-10 h-10 rounded-full bg-foreground/10" />
+															)}
+															<div className="flex-1">
+																<p className="text-sm font-semibold text-foreground">{display?.name ?? `Creator ${s.creatorUserId}`}</p>
+																<p className="text-xs text-muted">Cancelled</p>
+															</div>
+															<span className="text-xs px-2 py-1 rounded-full bg-foreground/5 text-muted">Cancelled</span>
+														</div>
+													</div>
+												);
+											})}
+										</div>
 									</div>
-								</div>
-							))
+								)}
+
+								{expiredSubs.length > 0 && (
+									<div className="px-1">
+										<p className="text-xs font-semibold text-muted uppercase tracking-wide mb-2">Past (Expired)</p>
+										<div className="space-y-3">
+											{expiredSubs.map((s, i) => {
+												const display = creatorDisplay[s.creatorUserId];
+												return (
+													<div key={subscriptionListKey(s, i)} className="bg-surface border border-border/20 rounded-2xl p-4 opacity-90">
+														<div className="flex items-center gap-3">
+															{display?.avatar ? (
+																<img src={display.avatar} alt={display.name} className="w-10 h-10 rounded-full object-cover" />
+															) : (
+																<div className="w-10 h-10 rounded-full bg-foreground/10" />
+															)}
+															<div className="flex-1">
+																<p className="text-sm font-semibold text-foreground">{display?.name ?? `Creator ${s.creatorUserId}`}</p>
+																<p className="text-xs text-muted">Expired</p>
+															</div>
+															<span className="text-xs px-2 py-1 rounded-full bg-foreground/5 text-muted">Expired</span>
+														</div>
+													</div>
+												);
+											})}
+										</div>
+									</div>
+								)}
+							</div>
+						)}
+						{(subsLoading || subsError) && (
+							<div className="px-1">
+								{subsLoading && <p className="text-xs text-muted">Syncing subscriptions…</p>}
+								{subsError && <p className="text-xs text-rose-400">{subsError}</p>}
+							</div>
 						)}
 					</div>
 				)}

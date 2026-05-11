@@ -40,7 +40,8 @@ export function parseFrame(raw: string): WsFrame | null {
 
 export function formatServiceLine(service: string, requestId?: string): string {
 	const s = service.trim();
-	return requestId ? `> ${s} ${requestId}` : `> ${s}`;
+	// Protocol doc: `>service` or `>service req123` (no space after `>`).
+	return requestId ? `>${s} ${requestId}` : `>${s}`;
 }
 
 export function formatCommandLine(command: string, args: string[] = []): string {

@@ -64,12 +64,15 @@ function walletReducer(state: WalletState, action: WalletAction): WalletState {
 				ledgerRows: action.payload.rows,
 				historyNextCursor: action.payload.nextCursor,
 			};
-		case 'APPEND_LEDGER':
+		case 'APPEND_LEDGER': {
+			const existingIds = new globalThis.Set(state.ledgerRows.map(r => r.id));
+			const appended = action.payload.rows.filter(r => !existingIds.has(r.id));
 			return {
 				...state,
-				ledgerRows: [...state.ledgerRows, ...action.payload.rows],
+				ledgerRows: [...state.ledgerRows, ...appended],
 				historyNextCursor: action.payload.nextCursor,
 			};
+		}
 		case 'SET_ORDERS':
 			return { ...state, razorpayOrders: action.payload };
 		case 'SET_WALLET_ERROR':

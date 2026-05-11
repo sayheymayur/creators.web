@@ -3,9 +3,8 @@ import { CheckCircle, Wallet, Star } from '../icons';
 import { Modal } from '../ui/Toast';
 import { Button } from '../ui/Button';
 import { useAuth } from '../../context/AuthContext';
-import { useWallet } from '../../context/WalletContext';
-import { useContent } from '../../context/ContentContext';
 import { useNotifications } from '../../context/NotificationContext';
+import { useSubscriptions } from '../../context/SubscriptionContext';
 import { formatINR } from '../../services/razorpay';
 import { compareMinor, formatINRFromMinor, inrRupeesToMinor } from '../../utils/money';
 import type { Creator } from '../../types';
@@ -28,9 +27,8 @@ type PayMode = 'external' | 'wallet';
 
 export function SubscribeModal({ isOpen, onClose, creator }: SubscribeModalProps) {
 	const { state: authState } = useAuth();
-	const { deductFunds, payExternally, addSubscription } = useWallet();
-	const { subscribe } = useContent();
 	const { showToast } = useNotifications();
+	const { subscribeWallet, subscribeViaCheckout } = useSubscriptions();
 	const [isLoading, setIsLoading] = useState(false);
 	const [success, setSuccess] = useState(false);
 	const [payMode, setPayMode] = useState<PayMode>('external');
@@ -42,22 +40,6 @@ export function SubscribeModal({ isOpen, onClose, creator }: SubscribeModalProps
 	const canAffordWallet = compareMinor(balanceMinor, '>=', subMinor);
 
 	function completeSubscription() {
-		if (!authState.user) return;
-		subscribe(creator.id);
-		const endDate = new Date();
-		endDate.setMonth(endDate.getMonth() + 1);
-		addSubscription({
-			id: `sub-${Date.now()}`,
-			userId: authState.user.id,
-			creatorId: creator.id,
-			creatorName: creator.name,
-			creatorAvatar: creator.avatar,
-			startDate: new Date().toISOString().split('T')[0],
-			endDate: endDate.toISOString().split('T')[0],
-			isActive: true,
-			price: creator.subscriptionPrice,
-			autoRenew: true,
-		});
 		setSuccess(true);
 		showToast(`Subscribed to ${creator.name}!`);
 		setTimeout(onClose, 2000);
@@ -70,37 +52,34 @@ export function SubscribeModal({ isOpen, onClose, creator }: SubscribeModalProps
 			setError('');
 
 			if (payMode === 'external') {
-				void payExternally(
-					creator.subscriptionPrice,
-					'subscription',
-					`Subscription to ${creator.name}`,
-					creator.id,
-					creator.name
-				).then(result => {
+				void subscribeViaCheckout(creator.id, creator.subscriptionPrice).then(result => {
 					if (result.ok) {
 						completeSubscription();
 					} else if (!result.cancelled) {
 						setError(result.error || 'Payment failed. Please try again.');
 					}
 					setIsLoading(false);
+				}).catch(err => {
+					setError(err instanceof Error ? err.message : 'Payment failed. Please try again.');
+					setIsLoading(false);
 				});
 				return;
 			}
 
-			const ok = deductFunds(
-				creator.subscriptionPrice,
-				'subscription',
-				`Subscription to ${creator.name}`,
-				creator.id,
-				creator.name
-			);
-
-			if (ok) {
-				completeSubscription();
-			} else {
+			if (!canAffordWallet) {
 				setError('Insufficient wallet balance.');
+				setIsLoading(false);
+				return;
 			}
-			setIsLoading(false);
+
+			void subscribeWallet(creator.id, true)
+				.then(() => {
+					completeSubscription();
+				})
+				.catch(err => {
+					setError(err instanceof Error ? err.message : 'Subscription failed. Please try again.');
+				})
+				.finally(() => setIsLoading(false));
 		});
 	}
 

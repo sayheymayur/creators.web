@@ -49,13 +49,12 @@ export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvata
 			void delayMs(400).then(() => {
 				void payExternally(tipAmount, 'tip', `Tip to ${creatorName}`, creatorId, creatorName).then(result => {
 					if (!result.ok) {
-						if (!result.cancelled) setError(result.error || 'Payment failed.');
-						setIsLoading(false);
+						setError(result.error || 'Tip failed.');
 						return;
 					}
-
 					setSuccess(true);
 					showToast(`Sent ${formatINR(tipAmount)} tip to ${creatorName}!`);
+					void refresh({ unreadOnly: true });
 					setTimeout(onClose, 1500);
 					setIsLoading(false);
 				});
@@ -141,7 +140,7 @@ export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvata
 									payMode === 'external' ? 'border-amber-500/40 bg-amber-500/10 text-amber-500' : 'border-border/20 bg-foreground/5 text-muted hover:bg-foreground/10'
 								}`}
 							>
-								Pay {tipAmount > 0 ? formatINR(tipAmount) : 'Checkout'}
+								Tip via wallet
 							</button>
 							<button
 								onClick={() => setPayMode('wallet')}

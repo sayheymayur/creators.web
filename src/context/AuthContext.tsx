@@ -174,6 +174,8 @@ interface AuthContextValue {
 	authStatus: AuthStatus;
 	sessionRestoreError: string | null;
 	retrySessionRestore: () => void;
+	/** Best-effort GET /me refresh (updates creatorDashboard). */
+	refreshMe: () => Promise<void>;
 	login: (email: string, password: string) => Promise<boolean>;
 	register: (email: string, password: string, displayName: string, role: 'fan' | 'creator') => Promise<boolean>;
 	loginWithGoogle: (role: 'fan' | 'creator') => Promise<User | null>;
@@ -440,6 +442,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 		dispatch({ type: 'UPDATE_USER', payload: data });
 	}, []);
 
+	const refreshMe = useCallback((): Promise<void> => {
+		const token = getSessionToken();
+		if (!token) return Promise.resolve();
+		return creatorsApi.auth.me()
+			.then(({ user }) => {
+				if (!user) return;
+				updateUser(user);
+				setStoredUser(user);
+			})
+			.catch(() => {});
+	}, [updateUser]);
+
 	const updateCreatorProfile = useCallback((data: Partial<Creator>) => {
 		dispatch({ type: 'UPDATE_CREATOR_PROFILE', payload: data });
 	}, []);
@@ -460,6 +474,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 			authStatus: state.isAuthenticated ? 'authenticated' : authStatus,
 			sessionRestoreError,
 			retrySessionRestore,
+			refreshMe,
 			login,
 			register,
 			loginWithGoogle,
@@ -476,6 +491,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 			authStatus,
 			sessionRestoreError,
 			retrySessionRestore,
+			refreshMe,
 			login,
 			register,
 			loginWithGoogle,

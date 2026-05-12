@@ -50,6 +50,21 @@ export interface PaymentConfirmResponse {
 	subscription?: Record<string, unknown>;
 }
 
+export interface TipDTO {
+	id: string;
+	fan_user_id: string;
+	creator_user_id: string;
+	post_id: string | null;
+	amount_cents: string;
+	currency: string;
+	created_at: string;
+}
+
+export interface PaymentTipResponse {
+	tip: TipDTO;
+	from_balance_after: string;
+}
+
 const SVC = 'payment';
 
 export function createPaymentWs(client: WsClient) {
@@ -90,6 +105,16 @@ export function createPaymentWs(client: WsClient) {
 		orders(limit?: number): Promise<PaymentOrdersResponse> {
 			const args = limit != null ? [String(limit)] : [];
 			return client.request(SVC, 'orders', args) as Promise<PaymentOrdersResponse>;
+		},
+		tip(creatorUserId: string, amountCents: string, postId?: string): Promise<PaymentTipResponse> {
+			const creator = String(creatorUserId ?? '').trim();
+			const amount = String(amountCents ?? '').trim();
+			if (!/^\d+$/.test(creator)) throw new Error('creatorUserId must be digits only');
+			if (!/^\d+$/.test(amount) || BigInt(amount) <= 0n) throw new Error('amountCents must be a positive integer string');
+			const args: string[] = [creator, amount];
+			const pid = String(postId ?? '').trim();
+			if (pid) args.push(pid);
+			return client.request(SVC, 'tip', args) as Promise<PaymentTipResponse>;
 		},
 	};
 }

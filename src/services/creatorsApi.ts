@@ -152,6 +152,26 @@ export interface RazorpayConfirmResponse {
 	alreadyConfirmed?: true;
 }
 
+export interface PaymentsTipRequest {
+	creatorUserId: string;
+	amountCents: string;
+	postId?: string;
+	currency?: string;
+}
+
+export interface PaymentsTipResponse {
+	tip: {
+		id: string,
+		fan_user_id: string,
+		creator_user_id: string,
+		post_id: string | null,
+		amount_cents: string,
+		currency: string,
+		created_at: string,
+	};
+	from_balance_after: string;
+}
+
 export interface MediaCreateUploadRequest {
 	fileName: string;
 	mimeType: string;
@@ -283,6 +303,9 @@ export const creatorsApi = {
 		},
 		razorpayConfirm(body: RazorpayConfirmRequest): Promise<RazorpayConfirmResponse> {
 			return requestJson<RazorpayConfirmResponse>('/payments/razorpay/confirm', { method: 'POST', body, auth: true });
+		},
+		tip(body: PaymentsTipRequest): Promise<PaymentsTipResponse> {
+			return requestJson<PaymentsTipResponse>('/payments/tip', { method: 'POST', body, auth: true });
 		},
 		/** When backend is ready: implement POST /payments/stripe/create-payment-intent */
 		stripeCreatePaymentIntent(body: StripeCreatePaymentIntentRequest): Promise<StripeCreatePaymentIntentResponse> {

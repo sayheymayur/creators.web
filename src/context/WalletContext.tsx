@@ -122,6 +122,8 @@ interface WalletContextValue {
 	payViaRazorpay: (amountRupees: number, type: Transaction['type'], description: string, recipientId?: string, recipientName?: string) => Promise<{ ok: boolean, cancelled?: boolean, error?: string }>;
 	/** Backwards-compatible name used by older modals. */
 	payExternally: (amountRupees: number, type: Transaction['type'], description: string, recipientId?: string, recipientName?: string) => Promise<{ ok: boolean, cancelled?: boolean, error?: string }>;
+	/** Spec: payment /tip and POST /payments/tip. Amount is minor units (string integer). */
+	tip: (creatorUserId: string, amountCents: string, postId?: string) => Promise<{ ok: boolean, error?: string }>;
 	cancelSubscription: (subscriptionId: string) => void;
 	toggleAutoRenew: (subscriptionId: string) => void;
 	addSubscription: (subscription: Subscription) => void;
@@ -133,7 +135,7 @@ const WalletContext = createContext<WalletContextValue | null>(null);
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
 	const [state, dispatch] = useReducer(walletReducer, initialState);
-	const { state: authState, updateWalletMinor } = useAuth();
+	const { state: authState, updateWalletMinor, refreshMe } = useAuth();
 	const ws = useWs();
 	const wsConnected = useWsConnected();
 	const payment = useMemo(() => createPaymentWs(ws), [ws]);
@@ -196,6 +198,39 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 			.then(() => Promise.all([refreshLedger(), refreshOrders()]))
 			.then(() => undefined);
 	}, [refreshBalance, refreshLedger, refreshOrders]);
+
+	const tip = useCallback((creatorUserId: string, amountCents: string, postId?: string) => {
+		const user = authState.user;
+		if (!user) return Promise.resolve({ ok: false, error: 'Not authenticated' });
+		const creator = String(creatorUserId ?? '').trim();
+		const amount = String(amountCents ?? '').trim();
+		if (!/^\d+$/.test(creator)) return Promise.resolve({ ok: false, error: 'Invalid creator id' });
+		if (!/^\d+$/.test(amount) || BigInt(amount) <= 0n) return Promise.resolve({ ok: false, error: 'Invalid amount' });
+
+		const doCall = wsConnected ?
+			payment.tip(creator, amount, postId) :
+			creatorsApi.payments.tip({ creatorUserId: creator, amountCents: amount, postId });
+
+		return doCall.then(
+			res => {
+				const afterRaw: unknown =
+					(res && typeof res === 'object' && 'from_balance_after' in res) ?
+						(res as { from_balance_after?: unknown }).from_balance_after :
+						undefined;
+				const after = typeof afterRaw === 'string' ? afterRaw : '';
+				if (after && /^\d+$/.test(after)) updateWalletMinor(after);
+				void refreshLedger();
+				void refreshOrders();
+				void refreshMe();
+				return { ok: true } as const;
+			},
+			(e: unknown) => {
+				const msg = e instanceof Error ? e.message : 'Tip failed';
+				dispatch({ type: 'SET_WALLET_ERROR', payload: msg });
+				return { ok: false, error: msg } as const;
+			}
+		);
+	}, [authState.user, wsConnected, payment, updateWalletMinor, refreshLedger, refreshOrders, refreshMe]);
 
 	useEffect(() => {
 		setHasSyncedBalance(false);
@@ -466,6 +501,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 			deductFunds,
 			payViaRazorpay,
 			payExternally: payViaRazorpay,
+			tip,
 			cancelSubscription,
 			toggleAutoRenew,
 			addSubscription,

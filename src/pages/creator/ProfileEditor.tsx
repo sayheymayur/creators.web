@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Camera, Save } from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';
 import { Button } from '../../components/ui/Button';
+import { MediaAvatar } from '../../components/ui/MediaAvatar';
+import { MediaBanner } from '../../components/ui/MediaBanner';
 import { useAuth, useCurrentCreator } from '../../context/AuthContext';
 import { useContent } from '../../context/ContentContext';
 import { useNotifications } from '../../context/NotificationContext';
@@ -124,8 +126,12 @@ export function ProfileEditor() {
 				</p>
 
 				<div className="relative mb-6">
-					<div className="h-32 rounded-2xl overflow-hidden relative">
-						<img src={bannerPreviewUrl ?? bannerUrl} alt="" className="w-full h-full object-cover" />
+					<div className="h-32 rounded-2xl overflow-hidden relative border border-border/20">
+						<MediaBanner
+							src={bannerPreviewUrl ?? bannerUrl}
+							alt=""
+							className="h-full w-full object-cover"
+						/>
 						<button
 							type="button"
 							onClick={() => bannerInputRef.current?.click()}
@@ -150,10 +156,11 @@ export function ProfileEditor() {
 
 					<div className="absolute -bottom-6 left-4">
 						<div className="relative">
-							<img
+							<MediaAvatar
 								src={avatarPreviewUrl ?? avatarUrl}
-								alt=""
-								className="w-16 h-16 rounded-2xl border-4 border-background object-cover"
+								alt={name || 'Creator'}
+								name={name}
+								className="h-16 w-16 rounded-2xl border-4 border-background"
 							/>
 							<button
 								type="button"

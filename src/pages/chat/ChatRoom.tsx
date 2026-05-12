@@ -129,23 +129,13 @@ export function ChatRoom() {
 
 	const onPresenceEvent = useCallback(
 		(ev: { type: 'join' | 'leave', user_id?: string }) => {
-			// De-spam join/leave toasts (some backends emit on reconnect; StrictMode dev can also re-run effects).
-			const key = `${ev.type}:${ev.user_id ?? ''}`;
-			const now = Date.now();
-			const last = (globalThis as unknown as { __cw_presence_toast?: { key: string, at: number } })?.__cw_presence_toast;
-			if (last?.key === key && now - (last.at ?? 0) < 1500) return;
-			(globalThis as unknown as { __cw_presence_toast?: { key: string, at: number } }).__cw_presence_toast = { key, at: now };
-
-			// Track other participant presence for WhatsApp-style delivery ticks.
 			const otherIdxLocal = conv?.participantIds?.indexOf(userId) === 0 ? 1 : 0;
 			const otherIdLocal = conv?.participantIds?.[otherIdxLocal] ?? '';
 			if (otherIdLocal && ev.user_id === otherIdLocal) {
 				setOtherInRoom(ev.type === 'join');
 			}
-			if (ev.type === 'join') showToast('User joined the session');
-			if (ev.type === 'leave') showToast('User left the session');
 		},
-		[showToast, conv, userId]
+		[conv, userId]
 	);
 
 	const roomId = convId ?? '';
@@ -414,7 +404,7 @@ export function ChatRoom() {
 					<button
 						type="button"
 						onClick={() => {
-							void navigate(-1);
+							void navigate('/messages');
 						}}
 						className="p-1.5 rounded-lg hover:bg-foreground/10 transition-colors"
 					>

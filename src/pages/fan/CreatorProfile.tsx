@@ -1,29 +1,27 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Star, Grid3x3, MessageCircle, Zap, Share2, MoreHorizontal, Lock, Image, Type, Phone, Video, ArrowLeft, Heart } from '../../components/icons';
+import { Star, Grid3x3, Zap, Share2, MoreHorizontal, Lock, Image, Type, ArrowLeft, Heart } from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';
 import { PostCard } from '../../components/ui/PostCard';
+import { MediaAvatar } from '../../components/ui/MediaAvatar';
+import { MediaBanner } from '../../components/ui/MediaBanner';
 import { TipModal } from '../../components/modals/TipModal';
 import { SubscribeModal } from '../../components/modals/SubscribeModal';
 import { useAuth } from '../../context/AuthContext';
 import { useContent } from '../../context/ContentContext';
-import { mockCreators } from '../../data/users';
 import { useNotifications } from '../../context/NotificationContext';
-import { ensureMediaPermissions, isDeviceInUseError } from '../../services/mediaPermissions';
-import { useChat } from '../../context/ChatContext';
-import { useCall } from '../../context/CallContext';
 import { useSession } from '../../context/SessionContext';
 import { SessionPickerModal, type SessionPayMode } from '../../components/modals/SessionPickerModal';
 import type { Creator, SessionType } from '../../types';
 import { ApiError } from '../../services/creatorsApi';
 import { creatorProfileDtoToCreator } from '../../services/creatorWsMap';
-import { randomUuid } from '../../utils/isUuid';
 import { formatINR } from '../../services/razorpay';
 import { useSessions } from '../../context/SessionsContext';
 import { useEnsureWsAuth, useWs, useWsAuthReady, useWsConnected } from '../../context/WsContext';
 import { creatorFollow, creatorUnfollow } from '../../services/creatorWsService';
 import { useSubscriptions } from '../../context/SubscriptionContext';
 import { subscriptionId, subscriptionUiStatus } from '../../services/subscriptionUi';
+import { buildSkeletonCreator, creatorFromCacheDisplay } from '../../utils/skeletonCreator';
 
 export function CreatorProfile() {
 	const { id: creatorUserId } = useParams<{ id: string }>();
@@ -31,8 +29,6 @@ export function CreatorProfile() {
 	const { state: authState } = useAuth();
 	const { state: contentState, isSubscribed, loadCreatorPosts, creatorWsGetByUserId } = useContent();
 	const { showToast } = useNotifications();
-	const { addConversation, getConversationForUser } = useChat();
-	const { startCall } = useCall();
 	useSession();
 	const { requestSession, state: sessionsState, clearOutgoing } = useSessions();
 	const ws = useWs();
@@ -51,31 +47,30 @@ export function CreatorProfile() {
 	const [profileLikedByMe, setProfileLikedByMe] = useState(false);
 	const [profileLikeBusy, setProfileLikeBusy] = useState(false);
 	const [profileLikePopKey, setProfileLikePopKey] = useState(0);
+	const [cancelBusy, setCancelBusy] = useState(false);
+	const [autoRenewBusy, setAutoRenewBusy] = useState(false);
+	const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+	const profileMenuRef = useRef<HTMLDivElement>(null);
 	const hasLoadedCreatorRef = useRef(false);
 
-	const maybeCreator = useMemo(() => mockCreators.find(c => c.id === creatorUserId), [creatorUserId]);
 	const cachedDisplay = useMemo(() => (creatorUserId ? contentState.creatorProfiles[creatorUserId] : undefined), [creatorUserId, contentState.creatorProfiles]);
-	const fallbackCreator = useMemo<Creator | null>(() => {
-		if (!creatorUserId) return null;
-		if (!cachedDisplay) return null;
-		const base = mockCreators[0];
-		return {
-			...base,
-			id: creatorUserId,
-			name: cachedDisplay.name || base.name,
-			username: cachedDisplay.username || base.username,
-			avatar: cachedDisplay.avatar || base.avatar,
-		};
-	}, [creatorUserId, cachedDisplay]);
+	const cacheCreator = useMemo(
+		() => (creatorUserId && cachedDisplay ? creatorFromCacheDisplay(creatorUserId, cachedDisplay) : null),
+		[creatorUserId, cachedDisplay],
+	);
+
+	useEffect(() => {
+		setRemoteCreator(null);
+		hasLoadedCreatorRef.current = false;
+	}, [creatorUserId]);
 
 	useEffect(() => {
 		if (!creatorUserId) return;
 		const ac = new AbortController();
-		const base = maybeCreator ?? mockCreators[0];
 
 		// creator WS commands are multiplexed over the posts socket; wait until it is ready.
 		if (contentState.postsWsStatus !== 'ready') {
-			setIsLoadingCreator(false);
+			setIsLoadingCreator(true);
 			return () => ac.abort();
 		}
 
@@ -89,15 +84,12 @@ export function CreatorProfile() {
 					const dto = r.creator;
 					setIsFollowed(Boolean(dto.is_followed));
 					setProfileLikedByMe(Boolean(dto.is_profile_liked));
-					setRemoteCreator(creatorProfileDtoToCreator(dto, base));
+					setRemoteCreator(creatorProfileDtoToCreator(dto, { postCount: 0 }));
 					return;
 				}
-				if (!hasLoadedCreatorRef.current && !fallbackCreator) {
+				hasLoadedCreatorRef.current = true;
+				if (!cacheCreator) {
 					showToast('Creator profile not found for this user.', 'error');
-				}
-				// Fall back to cached display from posts directory so the user can still view creator posts.
-				if (!hasLoadedCreatorRef.current && fallbackCreator) {
-					setRemoteCreator(fallbackCreator);
 				}
 			})
 			.catch((err: unknown) => {
@@ -110,13 +102,14 @@ export function CreatorProfile() {
 				if (!hasLoadedCreatorRef.current) {
 					showToast('Could not load creator profile. Please try again.', 'error');
 				}
+				hasLoadedCreatorRef.current = true;
 			})
 			.finally(() => {
 				if (!ac.signal.aborted) setIsLoadingCreator(false);
 			});
 
 		return () => ac.abort();
-	}, [creatorUserId, maybeCreator, creatorWsGetByUserId, contentState.postsWsStatus]);
+	}, [creatorUserId, creatorWsGetByUserId, contentState.postsWsStatus, cacheCreator, showToast]);
 
 	useEffect(() => {
 		if (!creatorUserId) return;
@@ -135,6 +128,28 @@ export function CreatorProfile() {
 		});
 		return () => { off(); };
 	}, [ws, wsConnected, creatorUserId]);
+
+	useEffect(() => {
+		if (!profileMenuOpen) return;
+		function onDoc(e: MouseEvent) {
+			const el = profileMenuRef.current;
+			if (el && !el.contains(e.target as Node)) setProfileMenuOpen(false);
+		}
+		document.addEventListener('mousedown', onDoc);
+		return () => { document.removeEventListener('mousedown', onDoc); };
+	}, [profileMenuOpen]);
+
+	useEffect(() => {
+		if (sessionsState.outgoing.state === 'rejected') {
+			showToast(sessionsState.outgoing.rejected.message || 'Session rejected', 'error');
+		}
+		if (sessionsState.outgoing.state === 'accepted') {
+			showToast('Session accepted!');
+		}
+		return () => {
+			clearOutgoing();
+		};
+	}, [sessionsState.outgoing.state, sessionsState.outgoing.rejected, showToast, clearOutgoing]);
 
 	function handleProfileLikeToggle() {
 		if (!authState.user || !creatorUserId) {
@@ -172,23 +187,21 @@ export function CreatorProfile() {
 		);
 	}
 
-	const creator = remoteCreator ?? fallbackCreator ?? maybeCreator ?? null;
+	const wsWait = contentState.postsWsStatus !== 'ready';
+	const waitingForRemoteProfile = !remoteCreator && (wsWait || isLoadingCreator);
+	const creator =
+		remoteCreator ??
+		(waitingForRemoteProfile ? (cacheCreator ?? buildSkeletonCreator(creatorUserId)) : null) ??
+		cacheCreator ??
+		null;
 
-	if (!creator && !isLoadingCreator) {
-		return (
-			<Layout>
-				<div className="flex items-center justify-center min-h-[50vh]">
-					<p className="text-muted">Creator not found</p>
-				</div>
-			</Layout>
-		);
-	}
+	const shellOnly = !remoteCreator;
 
 	if (!creator) {
 		return (
 			<Layout>
 				<div className="flex items-center justify-center min-h-[50vh]">
-					<p className="text-muted">Loading creator…</p>
+					<p className="text-muted">Creator not found</p>
 				</div>
 			</Layout>
 		);
@@ -217,34 +230,21 @@ export function CreatorProfile() {
 			return true;
 		});
 
+	const loadedPostCount = contentState.posts.filter(p => p.creatorId === creatorForDisplay.id).length;
+	const postCountShown = Math.max(creatorForDisplay.postCount, loadedPostCount);
+
 	function handleStartSession(type: SessionType, durationMinutes: number, _totalCost: number, _payMode: SessionPayMode) {
 		if (!authState.user) return;
-
-		// Sessions WS protocol: pricing & wallet rules are enforced server-side (SESSION_PRICE_CENTS).
-		// Spec: fan must have sufficient wallet balance to request; debit/credit happens on accept.
-		// This UI now sends a request and waits for creator accept/reject push.
 		const kind = type === 'chat' ? 'chat' : 'call';
 		const uiCallType = type === 'audio' ? 'audio' : type === 'video' ? 'video' : undefined;
 
-		const preflight =
-			kind === 'call' ?
-				ensureMediaPermissions({ audio: true, video: uiCallType === 'video' }).catch(e => {
-					if (isDeviceInUseError(e)) {
-						showToast('Camera/mic is busy in another tab. You can still request; join will be receive-only here.', 'error');
-						return;
-					}
-					throw e;
-				}) :
-				Promise.resolve();
-
-		void preflight
-			.then(() => requestSession({
-				creatorUserId: creatorForDisplay.id,
-				kind,
-				minutes: durationMinutes,
-				uiCallType,
-				creatorDisplay: { name: creatorForDisplay.name, avatar: creatorForDisplay.avatar },
-			}))
+		void requestSession({
+			creatorUserId: creatorForDisplay.id,
+			kind,
+			minutes: durationMinutes,
+			...(kind === 'call' && uiCallType ? { uiCallType } : {}),
+			creatorDisplay: { name: creatorForDisplay.name, avatar: creatorForDisplay.avatar },
+		})
 			.then(() => {
 				showToast('Session request sent. Waiting for creator…');
 			})
@@ -252,19 +252,6 @@ export function CreatorProfile() {
 				showToast(err instanceof Error ? err.message : 'Failed to request session', 'error');
 			});
 	}
-
-	useEffect(() => {
-		if (sessionsState.outgoing.state === 'rejected') {
-			showToast(sessionsState.outgoing.rejected.message || 'Session rejected', 'error');
-		}
-		if (sessionsState.outgoing.state === 'accepted') {
-			showToast('Session accepted!');
-		}
-		return () => {
-			// clear on unmount / profile change
-			clearOutgoing();
-		};
-	}, [sessionsState.outgoing.state]);
 
 	function handleWsFollow() {
 		if (!authState.user) {
@@ -295,7 +282,6 @@ export function CreatorProfile() {
 			});
 	}
 
-	const [cancelBusy, setCancelBusy] = useState(false);
 	function handleCancelSubscription() {
 		if (!subId) return;
 		setCancelBusy(true);
@@ -309,7 +295,6 @@ export function CreatorProfile() {
 			.finally(() => setCancelBusy(false));
 	}
 
-	const [autoRenewBusy, setAutoRenewBusy] = useState(false);
 	const autoRenew =
 		subDto && typeof (subDto as unknown as { auto_renew?: unknown }).auto_renew === 'boolean' ?
 			Boolean((subDto as unknown as { auto_renew: boolean }).auto_renew) :
@@ -328,34 +313,18 @@ export function CreatorProfile() {
 			.finally(() => setAutoRenewBusy(false));
 	}
 
-	function handleMessage() {
-		if (!authState.user) { navigate('/login'); return; }
-		const existing = getConversationForUser(creatorForDisplay.id);
-		if (existing) {
-			navigate(`/messages/${existing.id}`);
-		} else {
-			const convId = randomUuid();
-			addConversation({
-				id: convId,
-				participantIds: [authState.user.id, creatorForDisplay.id],
-				participantNames: [authState.user.name, creatorForDisplay.name],
-				participantAvatars: [authState.user.avatar, creatorForDisplay.avatar],
-				lastMessage: '',
-				lastMessageTime: new Date().toISOString(),
-				unreadCount: 0,
-				isOnline: creatorForDisplay.isOnline,
-			});
-			navigate(`/messages/${convId}`);
-		}
-	}
-
 	return (
 		<Layout>
 			<div className="max-w-2xl mx-auto">
 				<div className="relative z-0">
-					<div className="h-40 sm:h-52">
-						<img src={creatorForDisplay.banner} alt="" className="w-full h-full object-cover" />
-						<div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-background" />
+					<div className="h-40 sm:h-52 relative">
+						<MediaBanner src={creatorForDisplay.banner} className="h-full w-full object-cover" />
+						<div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-background pointer-events-none" />
+						{shellOnly && (
+							<div className="absolute bottom-3 left-1/2 z-20 -translate-x-1/2 pointer-events-none rounded-full bg-background/80 dark:bg-black/60 px-3 py-1 text-[11px] font-medium text-muted backdrop-blur-sm">
+								{wsWait ? 'Connecting…' : 'Loading profile…'}
+							</div>
+						)}
 					</div>
 
 					<div className="absolute top-3 left-3 z-20">
@@ -373,23 +342,71 @@ export function CreatorProfile() {
 						</button>
 					</div>
 
-					<div className="absolute top-3 right-3 z-10 flex gap-2">
-						<button className="w-8 h-8 bg-background/70 text-foreground hover:bg-background/90 dark:bg-black/40 dark:text-white dark:hover:bg-black/60 backdrop-blur-sm rounded-full flex items-center justify-center transition-colors">
+					<div className="absolute top-3 right-3 z-10 flex gap-2 items-start">
+						<button
+							type="button"
+							className="w-8 h-8 bg-background/70 text-foreground hover:bg-background/90 dark:bg-black/40 dark:text-white dark:hover:bg-black/60 backdrop-blur-sm rounded-full flex items-center justify-center transition-colors"
+						>
 							<Share2 className="w-4 h-4" />
 						</button>
-						<button className="w-8 h-8 bg-background/70 text-foreground hover:bg-background/90 dark:bg-black/40 dark:text-white dark:hover:bg-black/60 backdrop-blur-sm rounded-full flex items-center justify-center transition-colors">
-							<MoreHorizontal className="w-4 h-4" />
-						</button>
+						{subscribed && subId && !isOwner && !shellOnly ? (
+							<div className="relative" ref={profileMenuRef}>
+								<button
+									type="button"
+									onClick={() => { setProfileMenuOpen(o => !o); }}
+									className="w-8 h-8 bg-background/70 text-foreground hover:bg-background/90 dark:bg-black/40 dark:text-white dark:hover:bg-black/60 backdrop-blur-sm rounded-full flex items-center justify-center transition-colors"
+									aria-expanded={profileMenuOpen}
+									aria-haspopup="menu"
+									aria-label="Subscription options"
+								>
+									<MoreHorizontal className="w-4 h-4" />
+								</button>
+								{profileMenuOpen && (
+									<div
+										role="menu"
+										className="absolute right-0 top-10 min-w-[11rem] rounded-xl border border-border/30 bg-surface py-1 shadow-lg z-30"
+									>
+										<button
+											type="button"
+											role="menuitem"
+											disabled={autoRenewBusy}
+											onClick={() => {
+												handleToggleAutoRenew();
+												setProfileMenuOpen(false);
+											}}
+											className="w-full text-left px-3 py-2 text-sm text-foreground hover:bg-foreground/10 disabled:opacity-50"
+										>
+											{autoRenewBusy ? 'Updating…' : (autoRenew ? 'Turn off auto-renew' : 'Turn on auto-renew')}
+										</button>
+										<button
+											type="button"
+											role="menuitem"
+											disabled={cancelBusy}
+											onClick={() => {
+												if (window.confirm('Cancel your subscription to this creator?')) {
+													handleCancelSubscription();
+													setProfileMenuOpen(false);
+												}
+											}}
+											className="w-full text-left px-3 py-2 text-sm text-rose-300 hover:bg-rose-500/10 disabled:opacity-50"
+										>
+											{cancelBusy ? 'Cancelling…' : 'Cancel subscription'}
+										</button>
+									</div>
+								)}
+							</div>
+						) : null}
 					</div>
 				</div>
 
 				<div className="px-4 -mt-12 pb-4 relative z-10">
 					<div className="flex items-end justify-between mb-3">
 						<div className="relative">
-							<img
+							<MediaAvatar
 								src={creatorForDisplay.avatar}
 								alt={creatorForDisplay.name}
-								className="w-20 h-20 rounded-2xl border-4 border-background object-cover"
+								name={creatorForDisplay.name}
+								className="h-20 w-20 rounded-2xl border-4 border-background"
 							/>
 							{creatorForDisplay.isOnline && (
 								<div className="absolute bottom-1 right-1 w-3.5 h-3.5 bg-emerald-400 border-2 border-background rounded-full" />
@@ -401,48 +418,10 @@ export function CreatorProfile() {
 								{subscribed ? (
 									<>
 										<button
-											onClick={() => { startCall(creatorForDisplay.id, creatorForDisplay.name, creatorForDisplay.avatar, 'audio'); navigate('/call'); }}
-											className="w-9 h-9 bg-foreground/10 hover:bg-emerald-500/20 hover:text-emerald-400 text-muted rounded-xl flex items-center justify-center transition-all"
-										>
-											<Phone className="w-4 h-4" />
-										</button>
-										<button
-											onClick={() => { startCall(creatorForDisplay.id, creatorForDisplay.name, creatorForDisplay.avatar, 'video'); navigate('/call'); }}
-											className="w-9 h-9 bg-foreground/10 hover:bg-sky-500/20 hover:text-sky-400 text-muted rounded-xl flex items-center justify-center transition-all"
-										>
-											<Video className="w-4 h-4" />
-										</button>
-										<button
-											onClick={handleMessage}
-											className="flex items-center gap-1.5 bg-foreground/10 hover:bg-foreground/15 text-foreground text-sm font-semibold px-3 py-2 rounded-xl transition-all"
-										>
-											<MessageCircle className="w-4 h-4" />
-											Message
-										</button>
-										<button
 											type="button"
-											disabled={!subId || cancelBusy}
-											onClick={handleCancelSubscription}
-											className="flex items-center gap-1.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 text-sm font-semibold px-3 py-2 rounded-xl transition-all border border-rose-500/20 disabled:opacity-50"
-										>
-											Cancel
-										</button>
-										<button
-											type="button"
-											disabled={!subId || autoRenewBusy}
-											onClick={handleToggleAutoRenew}
-											className={
-												'flex items-center gap-2 text-sm font-semibold px-3 py-2 rounded-xl transition-all border disabled:opacity-50 ' +
-												(autoRenew ?
-													'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/20' :
-													'bg-foreground/10 hover:bg-foreground/15 text-foreground border-border/20')
-											}
-										>
-											<span className="text-xs">{autoRenew ? 'Auto-renew: On' : 'Auto-renew: Off'}</span>
-										</button>
-										<button
+											disabled={shellOnly}
 											onClick={() => setShowTipModal(true)}
-											className="flex items-center gap-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 text-sm font-semibold px-3 py-2 rounded-xl transition-all"
+											className="flex items-center gap-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 text-sm font-semibold px-3 py-2 rounded-xl transition-all disabled:opacity-40 disabled:pointer-events-none"
 										>
 											<Zap className="w-4 h-4 fill-amber-400" />
 											Tip
@@ -450,8 +429,10 @@ export function CreatorProfile() {
 									</>
 								) : (
 									<button
+										type="button"
+										disabled={shellOnly}
 										onClick={() => setShowSubscribeModal(true)}
-										className="bg-rose-500 hover:bg-rose-600 text-white font-bold px-5 py-2 rounded-xl text-sm transition-all active:scale-95 shadow-lg shadow-rose-500/25"
+										className="bg-rose-500 hover:bg-rose-600 text-white font-bold px-5 py-2 rounded-xl text-sm transition-all active:scale-95 shadow-lg shadow-rose-500/25 disabled:opacity-40 disabled:pointer-events-none"
 									>
 										Subscribe {formatINR(creatorForDisplay.subscriptionPrice)}/mo
 									</button>
@@ -459,15 +440,17 @@ export function CreatorProfile() {
 
 								{/* Booking sessions is not subscription-gated (v3 sessions spec). */}
 								<button
+									type="button"
+									disabled={shellOnly}
 									onClick={() => setShowSessionModal(true)}
-									className="flex items-center gap-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 text-sm font-semibold px-3 py-2 rounded-xl transition-all border border-rose-500/20"
+									className="flex items-center gap-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 text-sm font-semibold px-3 py-2 rounded-xl transition-all border border-rose-500/20 disabled:opacity-40 disabled:pointer-events-none"
 								>
 									Book Session
 								</button>
 								<button
 									type="button"
 									onClick={() => { handleWsFollow(); }}
-									disabled={followBusy}
+									disabled={followBusy || shellOnly}
 									className={
 										'flex items-center gap-1.5 ' +
 										(isFollowed ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/20 ' : 'bg-foreground/10 hover:bg-foreground/15 text-foreground border-border/20 ') +
@@ -491,7 +474,7 @@ export function CreatorProfile() {
 					</div>
 
 					<div className="flex items-center gap-2 mb-1">
-						<h1 className="text-xl font-bold text-foreground dark:text-white">{creatorForDisplay.name}</h1>
+						<h1 className={`text-xl font-bold text-foreground dark:text-white ${shellOnly ? 'motion-safe:animate-pulse' : ''}`}>{creatorForDisplay.name}</h1>
 						{creatorForDisplay.isKYCVerified && <Star className="w-5 h-5 text-amber-400 fill-amber-400" />}
 					</div>
 					<p className="text-muted text-sm mb-2 dark:text-white/40">@{creatorForDisplay.username}</p>
@@ -499,19 +482,19 @@ export function CreatorProfile() {
 
 					<div className="flex gap-4 mb-4">
 						<div className="text-center">
-							<p className="font-bold text-foreground">{creatorForDisplay.postCount}</p>
+							<p className="font-bold text-foreground">{postCountShown}</p>
 							<p className="text-xs text-muted">Posts</p>
 						</div>
 						<div className="text-center">
-							<p className="font-bold text-foreground dark:text-white">{creatorForDisplay.subscriberCount.toLocaleString()}</p>
-							<p className="text-xs text-muted dark:text-white/40">Subscribers</p>
+							<p className="font-bold text-foreground dark:text-white">{creatorForDisplay.followerCount.toLocaleString()}</p>
+							<p className="text-xs text-muted dark:text-white/40">Followers</p>
 						</div>
 						<div className="text-center">
 							{!isOwner && authState.user ? (
 								<button
 									type="button"
 									onClick={() => { handleProfileLikeToggle(); }}
-									disabled={profileLikeBusy}
+									disabled={profileLikeBusy || shellOnly}
 									className="flex flex-col items-center gap-0.5 mx-auto disabled:opacity-50 motion-safe:active:scale-95 transition-transform"
 								>
 									<span
@@ -532,7 +515,7 @@ export function CreatorProfile() {
 						</div>
 					</div>
 
-					{!subscribed && !isOwner && (
+					{!subscribed && !isOwner && !shellOnly && (
 						<div className="bg-rose-500/10 border border-rose-500/20 rounded-2xl p-4 mb-4">
 							<div className="flex items-center gap-3">
 								<div className="w-10 h-10 bg-rose-500/20 rounded-xl flex items-center justify-center">
@@ -540,11 +523,13 @@ export function CreatorProfile() {
 								</div>
 								<div className="flex-1">
 									<p className="text-sm font-semibold text-foreground dark:text-white mb-0.5">Subscribe to unlock all content</p>
-									<p className="text-xs text-muted dark:text-white/40">{creatorForDisplay.postCount} posts · Starting at {formatINR(creatorForDisplay.subscriptionPrice)}/mo</p>
+									<p className="text-xs text-muted dark:text-white/40">{postCountShown} posts · Starting at {formatINR(creatorForDisplay.subscriptionPrice)}/mo</p>
 								</div>
 								<button
+									type="button"
+									disabled={shellOnly}
 									onClick={() => setShowSubscribeModal(true)}
-									className="bg-rose-500 hover:bg-rose-600 text-white text-sm font-bold px-3 py-1.5 rounded-xl transition-all"
+									className="bg-rose-500 hover:bg-rose-600 text-white text-sm font-bold px-3 py-1.5 rounded-xl transition-all disabled:opacity-40 disabled:pointer-events-none"
 								>
 									Subscribe
 								</button>

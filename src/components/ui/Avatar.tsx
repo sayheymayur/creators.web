@@ -1,9 +1,13 @@
+import { MediaAvatar } from './MediaAvatar';
+
 interface AvatarProps {
-	src: string;
+	src?: string | null;
 	alt: string;
 	size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl';
 	isOnline?: boolean;
 	className?: string;
+	/** Letter fallback in tiny lists; default is WhatsApp-style silhouette. */
+	preferInitial?: boolean;
 }
 
 const sizes = {
@@ -24,13 +28,16 @@ const dotSizes = {
 	'2xl': 'w-4 h-4',
 };
 
-export function Avatar({ src, alt, size = 'md', isOnline, className = '' }: AvatarProps) {
+export function Avatar({ src, alt, size = 'md', isOnline, className = '', preferInitial = false }: AvatarProps) {
+	const box = sizes[size];
 	return (
-		<div className={`relative shrink-0 ${sizes[size]} ${className}`}>
-			<img
+		<div className={`relative shrink-0 ${box} ${className}`}>
+			<MediaAvatar
 				src={src}
 				alt={alt}
-				className={`${sizes[size]} rounded-full object-cover`}
+				name={alt}
+				preferInitial={preferInitial}
+				className={`${box} rounded-full`}
 			/>
 			{isOnline !== undefined && (
 				<span

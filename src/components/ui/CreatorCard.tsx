@@ -2,6 +2,8 @@ import { Users, Star, Zap } from '../icons';
 import { useNavigate } from 'react-router-dom';
 import type { Creator } from '../../types';
 import { formatINR } from '../../services/razorpay';
+import { MediaAvatar } from './MediaAvatar';
+import { MediaBanner } from './MediaBanner';
 
 interface CreatorCardProps {
 	creator: Creator;
@@ -31,7 +33,7 @@ export function CreatorCard({ creator }: CreatorCardProps) {
 			}
 		>
 			<div className="relative h-24">
-				<img src={creator.banner} alt="" className="w-full h-full object-cover" />
+				<MediaBanner src={creator.banner} className="h-full w-full object-cover" />
 				<div className="absolute inset-0 bg-gradient-to-b from-transparent to-surface" />
 				{creator.isOnline && (
 					<div className="absolute top-2 right-2 bg-emerald-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
@@ -43,10 +45,11 @@ export function CreatorCard({ creator }: CreatorCardProps) {
 			<div className="px-3 pb-4">
 				<div className="flex items-end gap-2 -mt-5 mb-2">
 					<div className="relative">
-						<img
+						<MediaAvatar
 							src={creator.avatar}
 							alt={creator.name}
-							className="w-10 h-10 rounded-full border-2 border-surface object-cover"
+							name={creator.name}
+							className="h-10 w-10 rounded-full border-2 border-surface"
 						/>
 					</div>
 					<div className="flex-1 min-w-0">

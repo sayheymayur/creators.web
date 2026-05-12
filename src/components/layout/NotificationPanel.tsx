@@ -1,9 +1,19 @@
 import { useNavigate } from 'react-router-dom';
-import { Bell, CheckCheck } from '../icons';
+import { Bell } from '../icons';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { formatDistanceToNow } from '../../utils/date';
 import { formatINRFromMinor } from '../../utils/money';
+
+/** Tip payloads use `amount_cents` (minor string) per API; values are INR paise in this product. */
+function tipMinorFromNotificationData(data: Record<string, unknown>): string | null {
+	for (const key of ['amount_cents', 'amount_minor', 'price_minor'] as const) {
+		const v = data[key];
+		if (typeof v === 'number' && Number.isFinite(v) && v >= 0) return String(Math.round(v));
+		if (typeof v === 'string' && /^\d+$/.test(v.trim())) return v.trim();
+	}
+	return null;
+}
 
 interface NotificationPanelProps {
 	onClose: () => void;
@@ -30,13 +40,12 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
 					<Bell className="w-4 h-4 text-muted" />
 					<span className="text-sm font-semibold text-foreground">Notifications</span>
 				</div>
-				<button onClick={markAllRead} className="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1">
-					<CheckCheck className="w-3.5 h-3.5" />
+				<button onClick={markAllRead} className="text-xs text-rose-400 hover:text-rose-300">
 					Mark all read
 				</button>
 			</div>
 
-			<div className="max-h-80 overflow-y-auto">
+			<div className="max-h-80 overflow-y-auto scrollbar-hide">
 				{notifications.length === 0 ? (
 					<div className="text-center py-8 text-muted text-sm">No notifications</div>
 				) : (
@@ -49,13 +58,13 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
 							undefined;
 						const isRead = n.read_at != null;
 						const kind = typeof data.kind === 'string' ? data.kind : '';
-						const tipMinor = kind === 'tip' && typeof data.amount_cents === 'string' ? data.amount_cents : null;
-						const tipSubtitle = tipMinor != null ? (
-							<span className="text-amber-400/90">
-								Tip · {formatINRFromMinor(tipMinor)}
-								{typeof data.currency === 'string' && data.currency && data.currency !== 'INR' ? ` (${data.currency})` : ''}
-							</span>
-						) : null;
+						const tipMinor = kind === 'tip' ? tipMinorFromNotificationData(data as Record<string, unknown>) : null;
+						const tipSubtitle =
+							tipMinor != null ?
+								<span className="text-amber-400/90">Tip · {formatINRFromMinor(tipMinor)}</span> :
+								null;
+						const tipBody =
+							kind === 'tip' && tipMinor != null ? '' : (n.body ?? '');
 						return (
 							<button
 								key={n.id}
@@ -76,7 +85,7 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
 									{tipSubtitle ? (
 										<p className="text-[11px] truncate mt-0.5">{tipSubtitle}</p>
 									) : null}
-									<p className="text-xs text-white/40 truncate mt-0.5">{n.body ?? ''}</p>
+									{tipBody ? <p className="text-xs text-white/40 truncate mt-0.5">{tipBody}</p> : null}
 									<p className="text-[10px] text-white/25 mt-1">{formatDistanceToNow(n.created_at)}</p>
 								</div>
 								{!isRead && <div className="w-2 h-2 bg-rose-500 rounded-full mt-1 shrink-0" />}

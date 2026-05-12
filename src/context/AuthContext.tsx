@@ -56,10 +56,9 @@ function normalizeUserFromApi(payload: User): User {
 		typeof raw.walletBalanceMinor === 'number' ? String(raw.walletBalanceMinor) :
 		'';
 	if (!minor && raw.walletBalance != null) {
-		// Backend spec: `walletBalance` on GET /me user payload.
-		// Treat numeric as INR rupees and convert to paise; accept stringified minor as-is.
+		// Spec (session user): walletBalance is minor units (e.g. INR paise) as number or digit string.
 		if (typeof raw.walletBalance === 'number') {
-			minor = String(Math.max(0, Math.round(raw.walletBalance * 100)));
+			minor = String(Math.max(0, Math.round(raw.walletBalance)));
 		} else if (typeof raw.walletBalance === 'string' && /^\d+$/.test(raw.walletBalance.trim())) {
 			minor = raw.walletBalance.trim();
 		}
@@ -85,12 +84,13 @@ function createCreatorProfileFromUser(user: User): Creator {
 		status: user.status,
 		walletBalanceMinor: user.walletBalanceMinor,
 		bio: 'Tell fans about your content and what they can expect.',
-		banner: 'https://images.pexels.com/photos/3756766/pexels-photo-3756766.jpeg?auto=compress&cs=tinysrgb&w=1200&h=400&fit=crop',
+		banner: '',
 		subscriptionPrice: 9.99,
 		totalEarnings: 0,
 		monthlyEarnings: 0,
 		tipsReceived: 0,
 		subscriberCount: 0,
+		followerCount: 0,
 		kycStatus: 'not_submitted',
 		isKYCVerified: false,
 		category: 'Lifestyle',
@@ -552,7 +552,7 @@ export function useCurrentCreator(): Creator | null {
 		username: currentUser.username,
 		avatar: currentUser.avatar,
 		bio: currentUser.bio ?? mockCreators[0].bio,
-		banner: currentUser.banner ?? mockCreators[0].banner,
+		banner: currentUser.banner?.trim() ? currentUser.banner : '',
 		category: currentUser.category ?? mockCreators[0].category,
 		createdAt: currentUser.createdAt,
 		status: currentUser.status,

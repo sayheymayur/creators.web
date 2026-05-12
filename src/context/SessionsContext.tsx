@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useWs, useWsAuthReady, useWsConnected } from './WsContext';
 import { useAuth } from './AuthContext';
 import { useChat } from './ChatContext';
@@ -293,6 +293,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 	const wsConnected = useWsConnected();
 	const wsAuthReady = useWsAuthReady();
 	const navigate = useNavigate();
+	const location = useLocation();
 	const { state: authState } = useAuth();
 	const { addConversation, addRoomMessage } = useChat();
 	const { showToast } = useNotifications();
@@ -307,7 +308,8 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 	const joinedBookedRoomRef = useRef<string | null>(null);
 	const didPromptActiveRequestIdRef = useRef<string | null>(null);
 	const didHydrateLocalRef = useRef(false);
-	const hydratedLocalAtMsRef = useRef<number | null>(null);
+	/** Set when `sessions|accepted` (or `acceptSession` ack) is for a live chat accept — triggers one auto-open to the thread. */
+	const pendingOpenBookedChatRequestIdRef = useRef<string | null>(null);
 	const localTimerRef = useRef<{ requestId: string, roomId: string, endsAtMs: number, t: number | null } | null>(null);
 	const stateSyncRef = useRef<{ atMs: number, reason: string } | null>(null);
 
@@ -405,6 +407,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 						peerIds: fan && me?.role === 'creator' ? { fan_user_id: fan.userId, creator_user_id: me.id } : undefined,
 					},
 				});
+				if (res.kind === 'chat') pendingOpenBookedChatRequestIdRef.current = res.request_id;
 				return res;
 			});
 		},
@@ -468,15 +471,13 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 
 		const snap = loadLocalSessionsSnapshot();
 		if (!snap) return;
-		hydratedLocalAtMsRef.current = Date.now();
 		dispatch({ type: 'HYDRATE_LOCAL', payload: snap });
 
 		// Notify user on reopen if there is a live chat session or a pending request.
 		const me = authState.user;
 		if (!me) return;
-		if (snap.active?.accepted?.kind === 'chat' && snap.active.accepted.room_id && !snap.endedRooms?.[snap.active.accepted.room_id]) {
-			showToast('Chat session is still active. Open Messages to resume.');
-		} else if (snap.outgoing?.state === 'pending') {
+		// Active booked chat: toast is handled once `state.active` is applied (avoid duplicate with remote hydrate).
+		if (snap.outgoing?.state === 'pending') {
 			showToast('Your session request is still pending.');
 		} else if (Array.isArray(snap.incoming) && snap.incoming.length) {
 			showToast('You have a pending session request.');
@@ -756,6 +757,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 			// If the server isn't pushing `sessions|timer` reliably, we can still show a timer from the known minutes.
 			// This covers the fan role (minutes known from request) and any backend that includes minutes in the request event.
 			if (payload.kind === 'chat') {
+				pendingOpenBookedChatRequestIdRef.current = payload.request_id;
 				const mins = minutesByRequestIdRef.current[payload.request_id];
 				if (typeof mins === 'number' && Number.isFinite(mins) && mins > 0) {
 					startLocalTimer({ requestId: payload.request_id, roomId: payload.room_id, minutes: mins });
@@ -873,6 +875,51 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 		startLocalTimer({ requestId: active.request_id, roomId, minutes: mins });
 	}, [wsConnected, state.active?.accepted?.request_id, state.active?.minutes, state.timer?.room_id, state.endedRooms, startLocalTimer]);
 
+	// Ensure a Messages row exists before join / global `chat|c` listener (unread needs a conversation row).
+	useEffect(() => {
+		const active = state.active?.accepted;
+		if (!active || active.kind !== 'chat') return;
+		const roomId = active.room_id;
+		if (!roomId || state.endedRooms[roomId]) return;
+		const me = authState.user;
+		if (!me) return;
+
+		const creatorMeta = creatorMetaByRequestIdRef.current[active.request_id];
+		const fanMeta = fanMetaByRequestIdRef.current[active.request_id];
+		const otherFromState = state.active?.otherDisplay;
+		const other =
+			me.role === 'creator' ?
+				{
+					id: fanMeta?.userId ?? 'fan',
+					name: fanMeta?.name ?? otherFromState?.name ?? 'Fan',
+					avatar: otherFromState?.avatar ?? '',
+				} :
+				{
+					id: creatorMeta?.userId ?? 'creator',
+					name: creatorMeta?.name ?? otherFromState?.name ?? 'Creator',
+					avatar: creatorMeta?.avatar ?? otherFromState?.avatar ?? '',
+				};
+
+		addConversation({
+			id: roomId,
+			participantIds: [me.id, other.id],
+			participantNames: [me.name, other.name],
+			participantAvatars: [me.avatar, other.avatar],
+			lastMessage: '',
+			lastMessageTime: new Date().toISOString(),
+			unreadCount: 0,
+			isOnline: true,
+		});
+	}, [
+		state.active?.accepted?.request_id,
+		state.active?.accepted?.kind,
+		state.active?.accepted?.room_id,
+		state.active?.otherDisplay,
+		state.endedRooms,
+		authState.user,
+		addConversation,
+	]);
+
 	// When an accepted chat booking is active, keep the room joined so messages arrive
 	// even if the user is on the Messages list (WhatsApp-like unread behavior).
 	useEffect(() => {
@@ -939,7 +986,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 		return offEnded;
 	}, [ws, state.active?.accepted?.kind, state.active?.accepted?.call_session_id]);
 
-	// Auto-navigate to chat on accept (but don't force-redirect immediately after local restore).
+	// Live `sessions|accepted` (or acceptSession ack) can auto-open the thread; restore from `/state` never does.
 	useEffect(() => {
 		const active = state.active?.accepted;
 		if (!active) {
@@ -952,54 +999,28 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 
 		if (active.kind === 'chat') {
 			const roomId = active.room_id;
-			const me = authState.user;
-			const creatorMeta = creatorMetaByRequestIdRef.current[active.request_id];
-			const fanMeta = fanMetaByRequestIdRef.current[active.request_id];
+			if (!roomId) return;
 
-			// Ensure ChatRoom can render by pre-creating a conversation for this room_id.
-			// (ChatRoom is room-based; for sessions we treat the room_id as the conversation id.)
-			const otherFromState = state.active?.otherDisplay;
-			const other =
-				me.role === 'creator' ?
-					{
-						id: fanMeta?.userId ?? 'fan',
-						name: fanMeta?.name ?? otherFromState?.name ?? 'Fan',
-						avatar: otherFromState?.avatar ?? '',
-					} :
-					{
-						id: creatorMeta?.userId ?? 'creator',
-						name: creatorMeta?.name ?? otherFromState?.name ?? 'Creator',
-						avatar: creatorMeta?.avatar ?? otherFromState?.avatar ?? '',
-					};
-
-			addConversation({
-				id: roomId,
-				participantIds: [me.id, other.id],
-				participantNames: [me.name, other.name],
-				participantAvatars: [me.avatar, other.avatar],
-				lastMessage: '',
-				lastMessageTime: new Date().toISOString(),
-				unreadCount: 0,
-				isOnline: true,
-			});
-
-			const hydratedAt = hydratedLocalAtMsRef.current;
-			const isLikelyLocalRestore = hydratedAt ? Date.now() - hydratedAt < 1500 : false;
-			if (isLikelyLocalRestore) {
-				showToast('Chat session is still active. Open Messages to resume.');
-			} else {
+			const onThread = location.pathname === `/messages/${roomId}`;
+			const pending = pendingOpenBookedChatRequestIdRef.current === active.request_id;
+			if (pending) {
+				pendingOpenBookedChatRequestIdRef.current = null;
 				void navigate(`/messages/${roomId}`);
+				return;
 			}
+			if (!onThread) {
+				showToast('Chat session is still active. Open Messages to resume.');
+			}
+			return;
 		}
 		// No prompt for call sessions (chat-only prompt requested).
 	}, [
 		state.active?.accepted?.request_id,
 		state.active?.accepted?.kind,
 		authState.user,
-		addConversation,
 		showToast,
-		state.active?.otherDisplay,
 		navigate,
+		location.pathname,
 	]);
 
 	const value = useMemo<SessionsContextValue>(() => ({

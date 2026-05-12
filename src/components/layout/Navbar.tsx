@@ -64,6 +64,12 @@ export function Navbar() {
 									onClick={() => { void navigate('/explore'); }}
 								/>
 								<NavLink
+									label="Saved"
+									path="/saved"
+									current={location.pathname}
+									onClick={() => { void navigate('/saved'); }}
+								/>
+								<NavLink
 									label="Messages"
 									path="/messages"
 									current={location.pathname}

@@ -77,13 +77,17 @@ export function mergePostDtoIntoPost(
 
 export function commentDtoToComment(dto: CommentDTO, profile: CreatorDisplay | undefined): Comment {
 	const userId = String(dto.user_id);
+	const pid = dto.parent_comment_id;
+	const text = String(dto.text ?? '').replace(/\\n/g, '\n');
 	return {
 		id: dto.id,
 		userId,
 		userName: profile?.name ?? `User ${userId.slice(0, 8)}`,
 		userAvatar: profile?.avatar ?? '',
-		text: dto.text,
+		text,
 		createdAt: dto.created_at,
 		likes: 0,
+		parentCommentId: pid == null || pid === '' ? null : String(pid),
+		heartCount: typeof dto.heart_count === 'number' ? dto.heart_count : 0,
 	};
 }

@@ -231,6 +231,20 @@ export class ApiError extends Error {
 	}
 }
 
+/** Reads `{ error: string }` from API error bodies when present. */
+export function apiErrorMessage(err: unknown, fallback: string): string {
+	if (err instanceof ApiError) {
+		const b = err.body;
+		if (b && typeof b === 'object' && 'error' in b) {
+			const msg = (b as Record<string, unknown>).error;
+			if (typeof msg === 'string') return msg;
+		}
+		return err.message;
+	}
+	if (err instanceof Error) return err.message;
+	return fallback;
+}
+
 function apiBaseUrl(): string {
 	return (import.meta.env.VITE_CREATORS_API_URL?.trim() || 'https://creatorsapi.pnine.me').replace(/\/+$/, '');
 }
@@ -267,6 +281,35 @@ function requestJson<T>(
 	return globalThis.fetch(url, { ...(init as RequestInit), headers, body })
 		.then(res => {
 			if (res.ok) return readJsonSafe(res).then(v => v as T);
+			return readJsonSafe(res).then(errorBody => {
+				throw new ApiError(`HTTP ${res.status} for ${path}`, res.status, errorBody);
+			});
+		});
+}
+
+function requestJsonAllow201<T>(
+	path: string,
+	init: Omit<RequestInit, 'body'> & { body?: unknown, auth?: boolean } = {}
+): Promise<T> {
+	const url = `${apiBaseUrl()}${path.startsWith('/') ? '' : '/'}${path}`;
+	const headers = new Headers(init.headers);
+	headers.set('Accept', 'application/json');
+
+	const auth = init.auth ?? false;
+	if (auth) {
+		const token = getSessionToken();
+		if (token) headers.set('Authorization', `Bearer ${token}`);
+	}
+
+	let body: BodyInit | null | undefined = init.body as BodyInit | null | undefined;
+	if (body && typeof body === 'object' && !(body instanceof FormData) && !(body instanceof Blob) && !(body instanceof URLSearchParams)) {
+		headers.set('Content-Type', 'application/json');
+		body = JSON.stringify(body);
+	}
+
+	return globalThis.fetch(url, { ...(init as RequestInit), headers, body })
+		.then(res => {
+			if (res.status >= 200 && res.status < 300) return readJsonSafe(res).then(v => v as T);
 			return readJsonSafe(res).then(errorBody => {
 				throw new ApiError(`HTTP ${res.status} for ${path}`, res.status, errorBody);
 			});
@@ -337,7 +380,7 @@ export const creatorsApi = {
 			return requestJson<RazorpayConfirmResponse>('/payments/razorpay/confirm', { method: 'POST', body, auth: true });
 		},
 		tip(body: PaymentsTipRequest): Promise<PaymentsTipResponse> {
-			return requestJson<PaymentsTipResponse>('/payments/tip', { method: 'POST', body, auth: true });
+			return requestJsonAllow201<PaymentsTipResponse>('/payments/tip', { method: 'POST', body, auth: true });
 		},
 		/** When backend is ready: implement POST /payments/stripe/create-payment-intent */
 		stripeCreatePaymentIntent(body: StripeCreatePaymentIntentRequest): Promise<StripeCreatePaymentIntentResponse> {

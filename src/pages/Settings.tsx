@@ -5,9 +5,16 @@ import { Layout } from '../components/layout/Layout';
 import { Button } from '../components/ui/Button';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
-import { ApiError, creatorsApi } from '../services/creatorsApi';
+import { ApiError, apiErrorMessage, creatorsApi, type NotificationSettings } from '../services/creatorsApi';
 import { uploadMediaAsset } from '../services/mediaUpload';
-import { delayMs } from '../utils/delay';
+
+const defaultNotifPrefs: NotificationSettings = {
+	messages: true,
+	subscriptions: true,
+	tips: true,
+	likes: true,
+	system: true,
+};
 
 export function Settings() {
 	const { state: authState, logout, updateUser } = useAuth();
@@ -20,7 +27,8 @@ export function Settings() {
 	const [newPassword, setNewPassword] = useState('');
 	const [showCurrent, setShowCurrent] = useState(false);
 	const [showNew, setShowNew] = useState(false);
-	const [isSaving, setIsSaving] = useState(false);
+	const [isSavingProfile, setIsSavingProfile] = useState(false);
+	const [isChangingPassword, setIsChangingPassword] = useState(false);
 	const [avatarFile, setAvatarFile] = useState<File | null>(null);
 	const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 	const avatarInputRef = useRef<HTMLInputElement | null>(null);
@@ -58,7 +66,7 @@ export function Settings() {
 	}, []);
 
 	function handleSaveProfile() {
-		setIsSaving(true);
+		setIsSavingProfile(true);
 		void creatorsApi.me.updateProfile({ name: name.trim() || undefined })
 			.then(({ user: updated }) => {
 				updateUser(updated);
@@ -71,7 +79,7 @@ export function Settings() {
 				}
 				showToast('Save failed.', 'error');
 			})
-			.finally(() => setIsSaving(false));
+			.finally(() => setIsSavingProfile(false));
 	}
 
 	const avatarPreviewUrl = useMemo(() => {
@@ -102,18 +110,31 @@ export function Settings() {
 	function handleChangePassword() {
 		if (!currentPassword || !newPassword) { showToast('Please fill in both fields', 'error'); return; }
 		if (newPassword.length < 8) { showToast('New password must be at least 8 characters', 'error'); return; }
-		setIsSaving(true);
-		void delayMs(700).then(() => {
-			showToast('Password changed successfully!');
-			setCurrentPassword('');
-			setNewPassword('');
-			setIsSaving(false);
-		});
+		setIsChangingPassword(true);
+		void creatorsApi.me.changePassword({ currentPassword, newPassword })
+			.then(() => {
+				showToast('Password changed successfully!');
+				setCurrentPassword('');
+				setNewPassword('');
+			})
+			.catch(err => {
+				showToast(apiErrorMessage(err, 'Could not change password'), 'error');
+			})
+			.finally(() => setIsChangingPassword(false));
 	}
 
 	function handleLogout() {
 		logout();
 		navigate('/');
+	}
+
+	function toggleNotifPref(key: keyof NotificationSettings) {
+		setNotifPrefs(p => {
+			const next = { ...p, [key]: !p[key] };
+			notifPrefsRef.current = next;
+			return next;
+		});
+		scheduleNotifPersist();
 	}
 
 	if (!user) return null;
@@ -188,7 +209,7 @@ export function Settings() {
 						variant="primary"
 						size="sm"
 						onClick={() => { handleSaveProfile(); }}
-						isLoading={isSaving}
+						isLoading={isSavingProfile}
 						leftIcon={<Save className="w-3.5 h-3.5" />}
 					>
 						Save
@@ -211,7 +232,7 @@ export function Settings() {
 									placeholder="••••••••"
 									className="w-full bg-input border border-border/20 rounded-xl px-4 pr-10 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
 								/>
-								<button onClick={() => setShowCurrent(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted">
+								<button type="button" onClick={() => setShowCurrent(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted">
 									{showCurrent ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
 								</button>
 							</div>
@@ -226,12 +247,12 @@ export function Settings() {
 									placeholder="Min 8 characters"
 									className="w-full bg-input border border-border/20 rounded-xl px-4 pr-10 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
 								/>
-								<button onClick={() => setShowNew(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted">
+								<button type="button" onClick={() => setShowNew(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted">
 									{showNew ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
 								</button>
 							</div>
 						</div>
-						<Button variant="outline" size="sm" onClick={() => { handleChangePassword(); }} isLoading={isSaving}>
+						<Button variant="outline" size="sm" onClick={() => { handleChangePassword(); }} isLoading={isChangingPassword}>
 							Change Password
 						</Button>
 					</div>
@@ -246,7 +267,7 @@ export function Settings() {
 						Follow/unfollow alerts are controlled by <span className="text-foreground/80 font-medium">Likes</span> (per backend spec).
 					</p>
 					<div className="space-y-3">
-						{(Object.keys(notifPrefs) as (keyof typeof notifPrefs)[]).map(key => (
+						{(Object.keys(notifPrefs) as (keyof NotificationSettings)[]).map(key => (
 							<div key={key} className="flex items-center justify-between">
 								<span className="text-sm text-muted capitalize">{key}</span>
 								<label className="relative inline-flex items-center cursor-pointer select-none">

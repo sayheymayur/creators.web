@@ -3,6 +3,7 @@ import { Bell, CheckCheck } from '../icons';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { formatDistanceToNow } from '../../utils/date';
+import { formatINRFromMinor } from '../../utils/money';
 
 interface NotificationPanelProps {
 	onClose: () => void;
@@ -47,6 +48,14 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
 							typeof data.fromAvatar === 'string' ? data.fromAvatar :
 							undefined;
 						const isRead = n.read_at != null;
+						const kind = typeof data.kind === 'string' ? data.kind : '';
+						const tipMinor = kind === 'tip' && typeof data.amount_cents === 'string' ? data.amount_cents : null;
+						const tipSubtitle = tipMinor != null ? (
+							<span className="text-amber-400/90">
+								Tip · {formatINRFromMinor(tipMinor)}
+								{typeof data.currency === 'string' && data.currency && data.currency !== 'INR' ? ` (${data.currency})` : ''}
+							</span>
+						) : null;
 						return (
 							<button
 								key={n.id}
@@ -64,6 +73,9 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
 								)}
 								<div className="flex-1 min-w-0">
 									<p className={`text-xs font-medium ${isRead ? 'text-white/60' : 'text-white'} truncate`}>{n.title}</p>
+									{tipSubtitle ? (
+										<p className="text-[11px] truncate mt-0.5">{tipSubtitle}</p>
+									) : null}
 									<p className="text-xs text-white/40 truncate mt-0.5">{n.body ?? ''}</p>
 									<p className="text-[10px] text-white/25 mt-1">{formatDistanceToNow(n.created_at)}</p>
 								</div>

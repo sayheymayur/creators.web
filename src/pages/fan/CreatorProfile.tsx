@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Star, Grid3x3, MessageCircle, Zap, Share2, MoreHorizontal, Lock, Image, Type, Phone, Video, ArrowLeft } from '../../components/icons';
+import { Star, Grid3x3, MessageCircle, Zap, Share2, MoreHorizontal, Lock, Image, Type, Phone, Video, ArrowLeft, Heart } from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';
 import { PostCard } from '../../components/ui/PostCard';
 import { TipModal } from '../../components/modals/TipModal';
@@ -48,6 +48,9 @@ export function CreatorProfile() {
 	const [isLoadingCreator, setIsLoadingCreator] = useState(false);
 	const [followBusy, setFollowBusy] = useState(false);
 	const [isFollowed, setIsFollowed] = useState<boolean>(false);
+	const [profileLikedByMe, setProfileLikedByMe] = useState(false);
+	const [profileLikeBusy, setProfileLikeBusy] = useState(false);
+	const [profileLikePopKey, setProfileLikePopKey] = useState(0);
 	const hasLoadedCreatorRef = useRef(false);
 
 	const maybeCreator = useMemo(() => mockCreators.find(c => c.id === creatorUserId), [creatorUserId]);
@@ -83,8 +86,10 @@ export function CreatorProfile() {
 				if (ac.signal.aborted) return;
 				if (r.creator) {
 					hasLoadedCreatorRef.current = true;
-					setIsFollowed(Boolean((r.creator as unknown as { is_followed?: boolean | null }).is_followed));
-					setRemoteCreator(creatorProfileDtoToCreator(r.creator, base));
+					const dto = r.creator;
+					setIsFollowed(Boolean(dto.is_followed));
+					setProfileLikedByMe(Boolean(dto.is_profile_liked));
+					setRemoteCreator(creatorProfileDtoToCreator(dto, base));
 					return;
 				}
 				if (!hasLoadedCreatorRef.current && !fallbackCreator) {
@@ -117,6 +122,45 @@ export function CreatorProfile() {
 		if (!creatorUserId) return;
 		void loadCreatorPosts(creatorUserId, true);
 	}, [creatorUserId, loadCreatorPosts]);
+
+	useEffect(() => {
+		if (!wsConnected) return;
+		const off = ws.on('creator', 'profilelikeupdate', (data: unknown) => {
+			const pl = data as { creator_user_id?: string, profile_like_count?: number };
+			if (!pl?.creator_user_id || String(pl.creator_user_id) !== String(creatorUserId)) return;
+			const n = Number(pl.profile_like_count);
+			if (Number.isFinite(n)) {
+				setRemoteCreator(c => (c ? { ...c, likeCount: n } : c));
+			}
+		});
+		return () => { off(); };
+	}, [ws, wsConnected, creatorUserId]);
+
+	function handleProfileLikeToggle() {
+		if (!authState.user || !creatorUserId) {
+			void navigate('/login');
+			return;
+		}
+		if (isOwner) return;
+		setProfileLikeBusy(true);
+		const cmd = profileLikedByMe ? 'unlikeprofile' : 'likeprofile';
+		void ensureWsAuth()
+			.then(() => ws.request('creator', cmd, [creatorUserId]))
+			.then((json: unknown) => {
+				const b = json as { profile_like_count?: number };
+				if (typeof b.profile_like_count === 'number') {
+					const n = b.profile_like_count;
+					setRemoteCreator(c => (c ? { ...c, likeCount: n } : c));
+				}
+				const nextLiked = cmd === 'likeprofile';
+				if (nextLiked) setProfileLikePopKey(k => k + 1);
+				setProfileLikedByMe(nextLiked);
+			})
+			.catch((err: unknown) => {
+				showToast(err instanceof Error ? err.message : 'Could not update profile like', 'error');
+			})
+			.finally(() => setProfileLikeBusy(false));
+	}
 
 	if (!creatorUserId) {
 		return (
@@ -463,8 +507,28 @@ export function CreatorProfile() {
 							<p className="text-xs text-muted dark:text-white/40">Subscribers</p>
 						</div>
 						<div className="text-center">
-							<p className="font-bold text-foreground dark:text-white">{creatorForDisplay.likeCount.toLocaleString()}</p>
-							<p className="text-xs text-muted dark:text-white/40">Likes</p>
+							{!isOwner && authState.user ? (
+								<button
+									type="button"
+									onClick={() => { handleProfileLikeToggle(); }}
+									disabled={profileLikeBusy}
+									className="flex flex-col items-center gap-0.5 mx-auto disabled:opacity-50 motion-safe:active:scale-95 transition-transform"
+								>
+									<span
+										key={profileLikePopKey}
+										className={profileLikePopKey > 0 ? 'inline-flex motion-safe:animate-cw-heart-pop' : 'inline-flex'}
+									>
+										<Heart className={`w-5 h-5 mx-auto ${profileLikedByMe ? 'text-rose-500 fill-rose-500' : 'text-muted'}`} />
+									</span>
+									<p className="font-bold text-foreground dark:text-white">{creatorForDisplay.likeCount.toLocaleString()}</p>
+									<p className="text-xs text-muted dark:text-white/40">Profile likes</p>
+								</button>
+							) : (
+								<>
+									<p className="font-bold text-foreground dark:text-white">{creatorForDisplay.likeCount.toLocaleString()}</p>
+									<p className="text-xs text-muted dark:text-white/40">Profile likes</p>
+								</>
+							)}
 						</div>
 					</div>
 

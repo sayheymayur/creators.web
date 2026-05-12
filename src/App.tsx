@@ -25,6 +25,7 @@ import { PartnerApply } from './pages/partner/PartnerApply';
 import { Feed } from './pages/fan/Feed';
 import { Explore } from './pages/fan/Explore';
 import { CreatorProfile } from './pages/fan/CreatorProfile';
+import { Saved } from './pages/fan/Saved';
 
 import { MessagesList } from './pages/chat/MessagesList';
 import { ChatRoom } from './pages/chat/ChatRoom';
@@ -198,6 +199,7 @@ function AppRoutes() {
 
 			<Route path="/explore" element={<ProtectedRoute><Explore /></ProtectedRoute>} />
 			<Route path="/feed" element={<ProtectedRoute roles={['fan']}><Feed /></ProtectedRoute>} />
+			<Route path="/saved" element={<ProtectedRoute roles={['fan']}><Saved /></ProtectedRoute>} />
 			<Route path="/creator/:id" element={<ProtectedRoute><CreatorProfile /></ProtectedRoute>} />
 
 			<Route path="/messages" element={<ProtectedRoute><MessagesList /></ProtectedRoute>} />

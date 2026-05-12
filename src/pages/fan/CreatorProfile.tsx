@@ -20,7 +20,7 @@ import { creatorProfileDtoToCreator } from '../../services/creatorWsMap';
 import { randomUuid } from '../../utils/isUuid';
 import { formatINR } from '../../services/razorpay';
 import { useSessions } from '../../context/SessionsContext';
-import { useWs, useWsConnected } from '../../context/WsContext';
+import { useEnsureWsAuth, useWs, useWsAuthReady, useWsConnected } from '../../context/WsContext';
 import { creatorFollow, creatorUnfollow } from '../../services/creatorWsService';
 import { useSubscriptions } from '../../context/SubscriptionContext';
 import { subscriptionId, subscriptionUiStatus } from '../../services/subscriptionUi';
@@ -37,7 +37,9 @@ export function CreatorProfile() {
 	const { requestSession, state: sessionsState, clearOutgoing } = useSessions();
 	const ws = useWs();
 	const wsConnected = useWsConnected();
-	const { getSubscriptionForCreator, cancel: cancelWsSubscription } = useSubscriptions();
+	const wsAuthReady = useWsAuthReady();
+	const ensureWsAuth = useEnsureWsAuth();
+	const { getSubscriptionForCreator, cancel: cancelWsSubscription, toggleAutoRenew } = useSubscriptions();
 	const [showTipModal, setShowTipModal] = useState(false);
 	const [showSubscribeModal, setShowSubscribeModal] = useState(false);
 	const [showSessionModal, setShowSessionModal] = useState(false);
@@ -229,9 +231,14 @@ export function CreatorProfile() {
 			showToast('Connect to the server before following.', 'error');
 			return;
 		}
+		if (!wsAuthReady) {
+			showToast('Authenticating… try again in a moment.', 'error');
+			return;
+		}
 		setFollowBusy(true);
 		const op = isFollowed ? creatorUnfollow : creatorFollow;
-		void op(ws, creatorForDisplay.id)
+		void ensureWsAuth()
+			.then(() => op(ws, creatorForDisplay.id))
 			.then(() => {
 				setIsFollowed(prev => !prev);
 				showToast(isFollowed ? 'Unfollowed.' : 'You are now following this creator.');
@@ -256,6 +263,25 @@ export function CreatorProfile() {
 				showToast(err instanceof Error ? err.message : 'Cancel failed', 'error');
 			})
 			.finally(() => setCancelBusy(false));
+	}
+
+	const [autoRenewBusy, setAutoRenewBusy] = useState(false);
+	const autoRenew =
+		subDto && typeof (subDto as unknown as { auto_renew?: unknown }).auto_renew === 'boolean' ?
+			Boolean((subDto as unknown as { auto_renew: boolean }).auto_renew) :
+			true;
+	function handleToggleAutoRenew() {
+		if (!subId) return;
+		if (autoRenewBusy) return;
+		setAutoRenewBusy(true);
+		void toggleAutoRenew(subId)
+			.then(() => {
+				showToast('Auto-renew updated.');
+			})
+			.catch(err => {
+				showToast(err instanceof Error ? err.message : 'Failed to update auto-renew', 'error');
+			})
+			.finally(() => setAutoRenewBusy(false));
 	}
 
 	function handleMessage() {
@@ -356,6 +382,19 @@ export function CreatorProfile() {
 											className="flex items-center gap-1.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 text-sm font-semibold px-3 py-2 rounded-xl transition-all border border-rose-500/20 disabled:opacity-50"
 										>
 											Cancel
+										</button>
+										<button
+											type="button"
+											disabled={!subId || autoRenewBusy}
+											onClick={handleToggleAutoRenew}
+											className={
+												'flex items-center gap-2 text-sm font-semibold px-3 py-2 rounded-xl transition-all border disabled:opacity-50 ' +
+												(autoRenew ?
+													'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/20' :
+													'bg-foreground/10 hover:bg-foreground/15 text-foreground border-border/20')
+											}
+										>
+											<span className="text-xs">{autoRenew ? 'Auto-renew: On' : 'Auto-renew: Off'}</span>
 										</button>
 										<button
 											onClick={() => setShowTipModal(true)}

@@ -4,6 +4,8 @@ import type { CreatorProfileDTO, CreatorSummaryDTO } from './creatorWsTypes';
 /** Map WS creator row → UI Creator (fill required Creator fields with defaults). */
 export function creatorProfileDtoToCreator(dto: CreatorProfileDTO, base?: Partial<Creator>): Creator {
 	const category0 = dto.categories[0] ?? 'Lifestyle';
+	const priceMinor = typeof dto.subscription_price_minor === 'string' ? dto.subscription_price_minor.trim() : '';
+	const priceRupees = /^\d+$/.test(priceMinor) ? (Number(priceMinor) / 100) : (base?.subscriptionPrice ?? 0);
 	return {
 		id: dto.user_id,
 		email: base?.email ?? '',
@@ -12,7 +14,7 @@ export function creatorProfileDtoToCreator(dto: CreatorProfileDTO, base?: Partia
 		avatar: dto.avatar_url ?? '',
 		bio: dto.bio ?? '',
 		banner: dto.banner_url ?? '',
-		subscriptionPrice: base?.subscriptionPrice ?? 0,
+		subscriptionPrice: priceRupees,
 		totalEarnings: base?.totalEarnings ?? 0,
 		monthlyEarnings: base?.monthlyEarnings ?? 0,
 		tipsReceived: base?.tipsReceived ?? 0,

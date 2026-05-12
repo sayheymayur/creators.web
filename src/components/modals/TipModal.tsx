@@ -22,8 +22,8 @@ interface TipModalProps {
 type PayMode = 'external' | 'wallet';
 
 export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvatar }: TipModalProps) {
-	const { state: authState } = useAuth();
-	const { tip } = useWallet();
+	const { state: authState, refreshMe } = useAuth();
+	const { payExternally } = useWallet();
 	const { showToast, refresh } = useNotifications();
 	const [amount, setAmount] = useState<number>(10);
 	const [customAmount, setCustomAmount] = useState('');
@@ -43,22 +43,21 @@ export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvata
 		void delayMs(800).then(() => {
 			setError('');
 
-			const amountCents = tipMinor; // already minor-unit integer string
-			void tip(String(creatorId), amountCents)
-				.then(result => {
-					if (!result.ok) {
-						setError(result.error || 'Tip failed.');
-						return;
-					}
-					setSuccess(true);
-					showToast(`Sent ${formatINR(tipAmount)} tip to ${creatorName}!`);
-					void refresh({ unreadOnly: true });
-					setTimeout(onClose, 1500);
-				})
-				.catch(err => {
-					setError(err instanceof Error ? err.message : 'Tip failed.');
-				})
-				.finally(() => setIsLoading(false));
+			// Backend-backed flow: even when the user selects "wallet", we still route through the
+			// payment gateway confirmation so the server can record the tip and reflect it in creatorDashboard.
+			void payExternally(tipAmount, 'tip', `Tip to ${creatorName}`, creatorId, creatorName).then(result => {
+				if (!result.ok) {
+					if (!result.cancelled) setError(result.error || 'Payment failed.');
+					setIsLoading(false);
+					return;
+				}
+				setSuccess(true);
+				showToast(`Sent ${formatINR(tipAmount)} tip to ${creatorName}!`);
+				void refresh({ unreadOnly: true });
+				void refreshMe();
+				setTimeout(onClose, 1500);
+				setIsLoading(false);
+			});
 		});
 	}
 

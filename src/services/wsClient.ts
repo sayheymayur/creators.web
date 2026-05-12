@@ -291,9 +291,10 @@ export class WsClient {
 		if (!this.isConnected) {
 			this.currentService = null;
 			this.rejectAllPending('Socket closed');
-			return;
+		} else {
+			// Auth handshake is managed by WsContext (`client.authenticate(token)` with ACK).
+			// Avoid sending una-acked background auth frames here, which can race with request() traffic.
 		}
-		this.refreshAuth();
 	}
 
 	private rejectAllPending(message: string): void {

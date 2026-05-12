@@ -3,15 +3,23 @@ import { DollarSign, TrendingUp, Zap, Users, ArrowUpRight, CheckCircle } from '.
 import { Layout } from '../../components/layout/Layout';
 import { Modal } from '../../components/ui/Toast';
 import { Button } from '../../components/ui/Button';
-import { useCurrentCreator } from '../../context/AuthContext';
+import { useAuth, useCurrentCreator } from '../../context/AuthContext';
 import { mockCreators } from '../../data/users';
 import { useNotifications } from '../../context/NotificationContext';
 import { delayMs } from '../../utils/delay';
 import { formatINRFromMinor, parseMinor } from '../../utils/money';
 import { formatINR } from '../../services/razorpay';
 
+function parseMinorToRupees(minor: string | number | null | undefined): number {
+	const raw = typeof minor === 'number' ? String(minor) : (minor ?? '').toString();
+	const t = raw.trim();
+	if (!/^\d+$/.test(t)) return 0;
+	return Number(t) / 100;
+}
+
 export function Earnings() {
 	const creator = useCurrentCreator();
+	const { state: authState } = useAuth();
 	const { showToast } = useNotifications();
 	const [showWithdraw, setShowWithdraw] = useState(false);
 	const [withdrawAmount, setWithdrawAmount] = useState('');
@@ -21,6 +29,19 @@ export function Earnings() {
 	const [accountNumber, setAccountNumber] = useState('');
 
 	const creatorData = creator ?? mockCreators[0];
+	const dashboard = authState.user?.creatorDashboard;
+
+	const totalEarnings = dashboard ? parseMinorToRupees(dashboard.totalEarningsCents) : creatorData.totalEarnings;
+	const monthlyEarnings = dashboard ? parseMinorToRupees(dashboard.monthlyEarningsCents) : creatorData.monthlyEarnings;
+	const tipsReceived = dashboard ? parseMinorToRupees(dashboard.tipsReceivedCents) : creatorData.tipsReceived;
+	const subscriberCount = dashboard?.subscriberCount ?? creatorData.subscriberCount;
+	const monthlyStats = dashboard?.monthlyStats?.length ?
+		dashboard.monthlyStats.map(s => ({ month: s.month, earnings: parseMinorToRupees(s.earningsCents) })) :
+		creatorData.monthlyStats.map(s => ({ month: s.month, earnings: s.earnings }));
+	const bySource = dashboard?.earningsBySource;
+	const sourceSubscriptions = bySource ? parseMinorToRupees(bySource.subscriptionsCents) : Math.max(0, monthlyEarnings - tipsReceived);
+	const sourceTips = bySource ? parseMinorToRupees(bySource.tipsCents) : tipsReceived;
+	const sourceSessions = bySource ? parseMinorToRupees(bySource.sessionsCents) : 0;
 
 	function handleWithdraw() {
 		if (!withdrawAmount || !bankName || !accountNumber) {
@@ -50,10 +71,10 @@ export function Earnings() {
 
 				<div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
 					{[
-						{ label: 'Total Earnings', value: formatINR(creatorData.totalEarnings), icon: DollarSign, color: 'text-emerald-400', bg: 'bg-emerald-500/15' },
-						{ label: 'This Month', value: formatINR(creatorData.monthlyEarnings), icon: TrendingUp, color: 'text-rose-400', bg: 'bg-rose-500/15' },
-						{ label: 'Tips Received', value: formatINR(creatorData.tipsReceived), icon: Zap, color: 'text-amber-400', bg: 'bg-amber-500/15' },
-						{ label: 'Subscribers', value: creatorData.subscriberCount.toLocaleString(), icon: Users, color: 'text-blue-400', bg: 'bg-blue-500/15' },
+						{ label: 'Total Earnings', value: formatINR(totalEarnings), icon: DollarSign, color: 'text-emerald-400', bg: 'bg-emerald-500/15' },
+						{ label: 'This Month', value: formatINR(monthlyEarnings), icon: TrendingUp, color: 'text-rose-400', bg: 'bg-rose-500/15' },
+						{ label: 'Tips Received', value: formatINR(sourceTips), icon: Zap, color: 'text-amber-400', bg: 'bg-amber-500/15' },
+						{ label: 'Subscribers', value: subscriberCount.toLocaleString(), icon: Users, color: 'text-blue-400', bg: 'bg-blue-500/15' },
 					].map(({ label, value, icon: Icon, color, bg }) => (
 						<div key={label} className="bg-surface border border-border/20 rounded-2xl p-4">
 							<div className={`w-9 h-9 ${bg} rounded-xl flex items-center justify-center mb-2`}>
@@ -71,8 +92,8 @@ export function Earnings() {
 						Monthly Breakdown
 					</h3>
 					<div className="space-y-3">
-						{creatorData.monthlyStats.map((stat, i) => {
-							const max = Math.max(...creatorData.monthlyStats.map(s => s.earnings));
+						{monthlyStats.map((stat, i) => {
+							const max = Math.max(...monthlyStats.map(s => s.earnings));
 							const pct = (stat.earnings / max) * 100;
 							return (
 								<div key={i} className="flex items-center gap-3">
@@ -96,9 +117,9 @@ export function Earnings() {
 					<h3 className="font-semibold text-foreground mb-4">Revenue Sources</h3>
 					<div className="space-y-3">
 						{[
-							{ label: 'Subscriptions', value: creatorData.monthlyEarnings - creatorData.tipsReceived * 0.1, color: 'bg-rose-500', pct: 80 },
-							{ label: 'Tips', value: creatorData.tipsReceived, color: 'bg-amber-500', pct: 16 },
-							{ label: 'PPV Content', value: Math.round(creatorData.monthlyEarnings * 0.04), color: 'bg-blue-500', pct: 4 },
+							{ label: 'Subscriptions', value: sourceSubscriptions, color: 'bg-rose-500', pct: 60 },
+							{ label: 'Tips', value: sourceTips, color: 'bg-amber-500', pct: 20 },
+							{ label: 'Sessions', value: sourceSessions, color: 'bg-blue-500', pct: 20 },
 						].map(({ label, value, color, pct }) => (
 							<div key={label} className="flex items-center gap-3">
 								<div className={`w-3 h-3 rounded-full ${color} shrink-0`} />

@@ -23,8 +23,8 @@ type PayMode = 'external' | 'wallet';
 
 export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvatar }: TipModalProps) {
 	const { state: authState } = useAuth();
-	const { deductFunds, payExternally } = useWallet();
-	const { showToast } = useNotifications();
+	const { tip } = useWallet();
+	const { showToast, refresh } = useNotifications();
 	const [amount, setAmount] = useState<number>(10);
 	const [customAmount, setCustomAmount] = useState('');
 	const [isLoading, setIsLoading] = useState(false);
@@ -43,33 +43,22 @@ export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvata
 		void delayMs(800).then(() => {
 			setError('');
 
-			if (payMode === 'external') {
-				void payExternally(tipAmount, 'tip', `Tip to ${creatorName}`, creatorId, creatorName).then(result => {
+			const amountCents = tipMinor; // already minor-unit integer string
+			void tip(String(creatorId), amountCents)
+				.then(result => {
 					if (!result.ok) {
-						if (!result.cancelled) setError(result.error || 'Payment failed.');
-						setIsLoading(false);
+						setError(result.error || 'Tip failed.');
 						return;
 					}
-
 					setSuccess(true);
 					showToast(`Sent ${formatINR(tipAmount)} tip to ${creatorName}!`);
+					void refresh({ unreadOnly: true });
 					setTimeout(onClose, 1500);
-					setIsLoading(false);
-				});
-				return;
-			}
-
-			const ok = deductFunds(tipAmount, 'tip', `Tip to ${creatorName}`, creatorId, creatorName);
-			if (!ok) {
-				setError('Insufficient wallet balance.');
-				setIsLoading(false);
-				return;
-			}
-
-			setSuccess(true);
-			showToast(`Sent ${formatINR(tipAmount)} tip to ${creatorName}!`);
-			setTimeout(onClose, 1500);
-			setIsLoading(false);
+				})
+				.catch(err => {
+					setError(err instanceof Error ? err.message : 'Tip failed.');
+				})
+				.finally(() => setIsLoading(false));
 		});
 	}
 
@@ -126,7 +115,7 @@ export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvata
 									payMode === 'external' ? 'border-amber-500/40 bg-amber-500/10 text-amber-500' : 'border-border/20 bg-foreground/5 text-muted hover:bg-foreground/10'
 								}`}
 							>
-								Pay {tipAmount > 0 ? formatINR(tipAmount) : 'Checkout'}
+								Tip via wallet
 							</button>
 							<button
 								onClick={() => setPayMode('wallet')}

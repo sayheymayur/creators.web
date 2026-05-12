@@ -215,7 +215,7 @@ interface ChatContextValue {
 	addConversation: (conv: Conversation) => void;
 	/** Merge/replace messages by id (e.g. WebSocket `/getmessages`). */
 	upsertRoomMessages: (conversationId: string, messages: Message[]) => void;
-	/** Append one message if id is new (e.g. `chat|newmessage`). */
+	/** Append one message if id is new (e.g. `chat|c`). */
 	addRoomMessage: (message: Message) => void;
 	/** Replace a local optimistic message with the server-acknowledged message. */
 	replaceMessage: (conversationId: string, localId: string, message: Message) => void;

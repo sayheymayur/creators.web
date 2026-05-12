@@ -54,7 +54,7 @@ export function chatGetMessages(
 }
 
 /**
- * @param withAck If true, uses `> chat <requestId>` and resolves with server ack. If false, fire-and-forget (only `newmessage` broadcast).
+ * @param withAck If true, uses `> chat <requestId>` and resolves with server ack. If false, fire-and-forget (delivery via `chat|c`).
  */
 export function chatSendMsg(
 	client: CreatorsMultiplexWs,

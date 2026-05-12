@@ -98,7 +98,10 @@ export function CreatorDashboard() {
 	const sessionEarnings = creatorSessions.reduce((sum, s) => sum + s.earnings, 0);
 
 	const kycStatus = dashboard?.kycStatus ?? creatorData.kycStatus;
-	if (kycStatus !== 'approved') {
+	const skipCreatorKycGate =
+		import.meta.env.DEV ||
+		import.meta.env.VITE_SKIP_CREATOR_KYC === 'true';
+	if (!skipCreatorKycGate && kycStatus !== 'approved') {
 		return (
 			<Layout>
 				<div className="max-w-lg mx-auto px-4 py-12 text-center">

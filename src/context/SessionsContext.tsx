@@ -131,6 +131,11 @@ function loadLocalSessionsSnapshot(): LocalSessionsSnapshot | null {
 	}
 }
 
+function isBrowserReloadNavigation(): boolean {
+	const nav = globalThis.performance?.getEntriesByType?.('navigation')?.[0] as PerformanceNavigationTiming | undefined;
+	return nav?.type === 'reload';
+}
+
 type SessionsState = {
 	outgoing: OutgoingRequestState,
 	incoming: IncomingRequestState[],
@@ -310,6 +315,8 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 	const didHydrateLocalRef = useRef(false);
 	/** Set when `sessions|accepted` (or `acceptSession` ack) is for a live chat accept — triggers one auto-open to the thread. */
 	const pendingOpenBookedChatRequestIdRef = useRef<string | null>(null);
+	/** Same as chat, for booked calls — avoids auto `/call` on reconnect when `sessions|accepted` replays. */
+	const pendingOpenBookedCallRequestIdRef = useRef<string | null>(null);
 	const localTimerRef = useRef<{ requestId: string, roomId: string, endsAtMs: number, t: number | null } | null>(null);
 	const stateSyncRef = useRef<{ atMs: number, reason: string } | null>(null);
 
@@ -408,6 +415,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 					},
 				});
 				if (res.kind === 'chat') pendingOpenBookedChatRequestIdRef.current = res.request_id;
+				if (res.kind === 'call') pendingOpenBookedCallRequestIdRef.current = res.request_id;
 				return res;
 			});
 		},
@@ -742,17 +750,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 				},
 			});
 			if (payload.kind === 'call') {
-				const uiCallType = uiCallTypeByRequestIdRef.current[payload.request_id] ?? 'video';
-				void ensureMediaPermissions({ audio: true, video: uiCallType === 'video' }).catch(e => {
-					if (isDeviceInUseError(e)) return;
-					throw e;
-				})
-					.then(() => {
-						void navigate('/call');
-					})
-					.catch(e => {
-						showToast(e instanceof Error ? e.message : 'Unable to access microphone/camera', 'error');
-					});
+				pendingOpenBookedCallRequestIdRef.current = payload.request_id;
 			}
 			// If the server isn't pushing `sessions|timer` reliably, we can still show a timer from the known minutes.
 			// This covers the fan role (minutes known from request) and any backend that includes minutes in the request event.
@@ -1013,14 +1011,72 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 			}
 			return;
 		}
-		// No prompt for call sessions (chat-only prompt requested).
+		if (active.kind === 'call') {
+			const pending = pendingOpenBookedCallRequestIdRef.current === active.request_id;
+			if (pending) {
+				pendingOpenBookedCallRequestIdRef.current = null;
+				const uiCallType = state.active?.uiCallType ?? uiCallTypeByRequestIdRef.current[active.request_id] ?? 'video';
+				void ensureMediaPermissions({ audio: true, video: uiCallType === 'video' })
+					.catch(e => {
+						if (isDeviceInUseError(e)) return;
+						throw e;
+					})
+					.then(() => {
+						void navigate('/call');
+					})
+					.catch(e => {
+						showToast(e instanceof Error ? e.message : 'Unable to access microphone/camera', 'error');
+					});
+				return;
+			}
+			// Restore: `ActiveCallBanner` offers Continue / End; do not auto-open `/call`.
+			return;
+		}
 	}, [
 		state.active?.accepted?.request_id,
 		state.active?.accepted?.kind,
+		state.active?.uiCallType,
 		authState.user,
 		showToast,
 		navigate,
 		location.pathname,
+	]);
+
+	const didBounceHomeAfterReloadRef = useRef<string | null>(null);
+	useEffect(() => {
+		if (!isBrowserReloadNavigation()) return;
+		const act = state.active?.accepted;
+		if (!act) {
+			didBounceHomeAfterReloadRef.current = null;
+			return;
+		}
+		const me = authState.user;
+		if (!me) return;
+
+		const reqId = act.request_id;
+		if (pendingOpenBookedChatRequestIdRef.current === reqId || pendingOpenBookedCallRequestIdRef.current === reqId) {
+			return;
+		}
+		if (didBounceHomeAfterReloadRef.current === reqId) return;
+
+		const path = location.pathname;
+		const isDeepCall = act.kind === 'call' && path === '/call';
+		const isDeepChat = act.kind === 'chat' && !!act.room_id && path === `/messages/${act.room_id}`;
+		if (!isDeepCall && !isDeepChat) return;
+
+		didBounceHomeAfterReloadRef.current = reqId;
+		const home =
+			me.role === 'admin' ? '/admin' :
+				me.role === 'creator' ? '/creator-dashboard' :
+					'/feed';
+		void navigate(home, { replace: true });
+	}, [
+		state.active?.accepted?.request_id,
+		state.active?.accepted?.kind,
+		state.active?.accepted?.room_id,
+		authState.user,
+		location.pathname,
+		navigate,
 	]);
 
 	const value = useMemo<SessionsContextValue>(() => ({

@@ -124,6 +124,22 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
 			return { ...state, loginError: '' };
 		case 'UPDATE_USER':
 			if (!state.user) return state;
+			// `AuthState.user` is a `User`, but `creatorProfiles` stores `Creator`.
+			// Some fields overlap but have different constraints (e.g. `perMinuteRate` can be nullable on `User`).
+			// Only project safe, compatible fields into the creator profile cache.
+			const creatorPatch: Partial<Creator> = {
+				name: action.payload.name ?? undefined,
+				username: action.payload.username ?? undefined,
+				avatar: action.payload.avatar ?? undefined,
+				banner: action.payload.banner ?? undefined,
+				bio: action.payload.bio ?? undefined,
+				category: action.payload.category ?? undefined,
+				walletBalanceMinor: action.payload.walletBalanceMinor ?? undefined,
+			};
+			const maybePerMinuteRate = (action.payload as Partial<Creator>).perMinuteRate;
+			if (typeof maybePerMinuteRate === 'number') creatorPatch.perMinuteRate = maybePerMinuteRate;
+			const maybeLiveStreamEnabled = (action.payload as Partial<Creator>).liveStreamEnabled;
+			if (typeof maybeLiveStreamEnabled === 'boolean') creatorPatch.liveStreamEnabled = maybeLiveStreamEnabled;
 			return {
 				...state,
 				user: { ...state.user, ...action.payload },
@@ -132,7 +148,7 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
 						...state.creatorProfiles,
 						[state.user.id]: {
 							...state.creatorProfiles[state.user.id],
-							...action.payload,
+							...creatorPatch,
 						},
 					} :
 					state.creatorProfiles,
@@ -443,6 +459,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 	}, []);
 
 	const refreshMe = useCallback((): Promise<void> => {
+		// Spec Phase 4: dashboard data is delivered via GET /me; refresh this after server-ledger events.
 		const token = getSessionToken();
 		if (!token) return Promise.resolve();
 		return creatorsApi.auth.me()
@@ -451,7 +468,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 				updateUser(user);
 				setStoredUser(user);
 			})
-			.catch(() => {});
+			.catch(() => {
+				// Keep refresh best-effort; session restore logic handles hard failures.
+			});
 	}, [updateUser]);
 
 	const updateCreatorProfile = useCallback((data: Partial<Creator>) => {

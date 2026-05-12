@@ -3,39 +3,58 @@ export type WsFrame =
 	{ type: 'response', service: string, command: string, requestId: string, data: unknown } |
 	{ type: 'error', service: string, requestId: string, message: string };
 
-function unescapePipes(value: string): string {
-	return value.replace(/\\\|/g, '|');
-}
-
 export function parseFrame(raw: string): WsFrame | null {
-	if (!raw.startsWith('|')) return null;
-	const parts = raw.split('|');
+	const trimmed = raw.trim();
+	if (!trimmed.startsWith('|')) return null;
+	const parts = trimmed.split('|');
+	// Expected minimum: ["", service, kind, ...]
+	if (parts.length < 4) return null;
 
-	// Event: |service|event|json  => split gives ["", service, event, json]
-	if (parts.length === 4) {
-		const [, service, event, json] = parts;
-		try {
-			return { type: 'event', service, event, data: JSON.parse(json) };
-		} catch {
-			return null;
-		}
+	const service = (parts[1] ?? '').trim();
+	const kind = (parts[2] ?? '').trim();
+	if (!service || !kind) return null;
+
+	// Error: |service|error|requestId|message(with optional pipes...)
+	if (kind === 'error') {
+		const requestId = String(parts[3] ?? '').trim();
+		if (!requestId) return null;
+		const message = parts.slice(4).join('|');
+		return { type: 'error', service, requestId, message };
 	}
 
-	// Response: |service|command|requestId|json => ["", service, command, requestId, json]
-	// Error:    |service|error|requestId|message
-	if (parts.length === 5) {
-		const [, service, kind, requestId, payload] = parts;
-		if (kind === 'error') {
-			return { type: 'error', service, requestId, message: unescapePipes(payload) };
-		}
+	// Find the start of JSON payload (may contain pipes).
+	const jsonStartIdx = parts.findIndex((p, idx) => {
+		if (idx < 3) return false;
+		const t = (p ?? '').trim();
+		return t.startsWith('{') || t.startsWith('[');
+	});
+	if (jsonStartIdx === -1) return null;
+
+	// Grow until JSON.parse succeeds.
+	let data: unknown = null;
+	let jsonEndIdx = -1;
+	for (let end = jsonStartIdx; end < parts.length; end++) {
+		const cand = parts.slice(jsonStartIdx, end + 1).join('|');
 		try {
-			return { type: 'response', service, command: kind, requestId, data: JSON.parse(payload) };
+			data = JSON.parse(cand) as unknown;
+			jsonEndIdx = end;
+			break;
 		} catch {
-			return null;
+			// keep extending
 		}
 	}
+	if (jsonEndIdx === -1) return null;
 
-	return null;
+	// Event: |service|event|<json>
+	// In events, JSON typically starts at index 3.
+	if (jsonStartIdx === 3) {
+		return { type: 'event', service, event: kind, data };
+	}
+
+	// Response: |service|command|requestId|<json>
+	const requestId = String(parts[3] ?? '').trim();
+	if (!requestId) return null;
+	return { type: 'response', service, command: kind, requestId, data };
 }
 
 export function formatServiceLine(service: string, requestId?: string): string {

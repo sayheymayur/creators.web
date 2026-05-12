@@ -6,7 +6,6 @@ import { useAuth } from '../../context/AuthContext';
 import { useWallet } from '../../context/WalletContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { formatINR } from '../../services/razorpay';
-import { ApiError, apiErrorMessage, creatorsApi } from '../../services/creatorsApi';
 import { compareMinor, formatINRFromMinor, inrRupeesToMinor } from '../../utils/money';
 import { delayMs } from '../../utils/delay';
 
@@ -18,16 +17,14 @@ interface TipModalProps {
 	creatorId: string;
 	creatorName: string;
 	creatorAvatar: string;
-	/** When tipping from a post, pass id so the backend can attach context. */
-	postId?: string;
 }
 
 type PayMode = 'external' | 'wallet';
 
-export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvatar, postId }: TipModalProps) {
-	const { state: authState, updateWalletMinor } = useAuth();
-	const { payExternally } = useWallet();
-	const { showToast } = useNotifications();
+export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvatar }: TipModalProps) {
+	const { state: authState } = useAuth();
+	const { tip } = useWallet();
+	const { showToast, refresh } = useNotifications();
 	const [amount, setAmount] = useState<number>(10);
 	const [customAmount, setCustomAmount] = useState('');
 	const [isLoading, setIsLoading] = useState(false);
@@ -43,11 +40,12 @@ export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvata
 	function handleSendTip() {
 		if (!tipAmount || tipAmount <= 0) return;
 		setIsLoading(true);
-		setError('');
+		void delayMs(800).then(() => {
+			setError('');
 
-		if (payMode === 'external') {
-			void delayMs(400).then(() => {
-				void payExternally(tipAmount, 'tip', `Tip to ${creatorName}`, creatorId, creatorName).then(result => {
+			const amountCents = tipMinor; // already minor-unit integer string
+			void tip(String(creatorId), amountCents)
+				.then(result => {
 					if (!result.ok) {
 						setError(result.error || 'Tip failed.');
 						return;
@@ -56,35 +54,12 @@ export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvata
 					showToast(`Sent ${formatINR(tipAmount)} tip to ${creatorName}!`);
 					void refresh({ unreadOnly: true });
 					setTimeout(onClose, 1500);
-					setIsLoading(false);
-				});
-			});
-			return;
-		}
-
-		if (!authState.user) {
-			setError('Sign in to tip from your wallet.');
-			setIsLoading(false);
-			return;
-		}
-
-		void creatorsApi.payments.tip({
-			creatorUserId: creatorId,
-			amountCents: tipMinor,
-			...(postId ? { postId } : {}),
-			currency: 'INR',
-		})
-			.then(res => {
-				updateWalletMinor(String(res.from_balance_after));
-				setSuccess(true);
-				showToast(`Sent ${formatINR(tipAmount)} tip to ${creatorName}!`);
-				setTimeout(onClose, 1500);
-			})
-			.catch(err => {
-				const msg = err instanceof ApiError ? apiErrorMessage(err, 'Tip failed') : (err instanceof Error ? err.message : 'Tip failed');
-				setError(msg);
-			})
-			.finally(() => setIsLoading(false));
+				})
+				.catch(err => {
+					setError(err instanceof Error ? err.message : 'Tip failed.');
+				})
+				.finally(() => setIsLoading(false));
+		});
 	}
 
 	return (

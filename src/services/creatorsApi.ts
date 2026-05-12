@@ -81,22 +81,15 @@ export interface UpdateMyProfileRequest {
 	bannerAssetId?: string;
 	bannerUrl?: string;
 	category?: string;
+	/** Spec: integer minor units (e.g. paise/cents). */
+	subscriptionPriceMinor?: number;
+	/** Spec: integer minor units per minute for timed sessions. */
+	perMinuteRate?: number;
 }
 
 export interface UpdateMyProfileResponse {
 	user: User;
 }
-
-export interface ChangePasswordRequest {
-	currentPassword: string;
-	newPassword: string;
-}
-
-export interface ChangePasswordResponse {
-	ok: true;
-}
-
-export type NotificationSettingsKeys = 'messages' | 'subscriptions' | 'tips' | 'likes' | 'system';
 
 export interface NotificationSettings {
 	messages: boolean;
@@ -106,12 +99,16 @@ export interface NotificationSettings {
 	system: boolean;
 }
 
-export interface NotificationSettingsResponse {
+export interface GetNotificationSettingsResponse {
 	settings: NotificationSettings;
 }
 
-export interface PutNotificationSettingsRequest {
+export interface UpdateNotificationSettingsRequest {
 	settings: Partial<NotificationSettings>;
+}
+
+export interface UpdateNotificationSettingsResponse {
+	settings: NotificationSettings;
 }
 
 export interface CreateReportRequest {
@@ -354,14 +351,13 @@ export const creatorsApi = {
 		updateProfile(body: UpdateMyProfileRequest): Promise<UpdateMyProfileResponse> {
 			return requestJson<UpdateMyProfileResponse>('/me/profile', { method: 'POST', body, auth: true });
 		},
-		changePassword(body: ChangePasswordRequest): Promise<ChangePasswordResponse> {
-			return requestJson<ChangePasswordResponse>('/me/password', { method: 'POST', body, auth: true });
-		},
-		getNotificationSettings(signal?: AbortSignal): Promise<NotificationSettingsResponse> {
-			return requestJson<NotificationSettingsResponse>('/me/notification-settings', { method: 'GET', auth: true, signal });
-		},
-		putNotificationSettings(body: PutNotificationSettingsRequest): Promise<NotificationSettingsResponse> {
-			return requestJson<NotificationSettingsResponse>('/me/notification-settings', { method: 'PUT', body, auth: true });
+		notificationSettings: {
+			get(): Promise<GetNotificationSettingsResponse> {
+				return requestJson<GetNotificationSettingsResponse>('/me/notification-settings', { method: 'GET', auth: true });
+			},
+			update(body: UpdateNotificationSettingsRequest): Promise<UpdateNotificationSettingsResponse> {
+				return requestJson<UpdateNotificationSettingsResponse>('/me/notification-settings', { method: 'PUT', body, auth: true });
+			},
 		},
 	},
 	payments: {

@@ -378,6 +378,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 					updateWalletMinor(conf.balance_after_cents);
 					void refreshLedger();
 					void refreshOrders();
+					void refreshMe();
 				});
 			}
 
@@ -409,10 +410,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 					updateWalletMinor(conf.balance_after_cents);
 					void refreshLedger();
 					void refreshOrders();
+					void refreshMe();
 				});
 			});
 		});
-	}, [wsConnected, payment, updateWalletMinor, refreshLedger, refreshOrders]);
+	}, [wsConnected, payment, updateWalletMinor, refreshLedger, refreshOrders, refreshMe]);
 
 	const addFundsViaRazorpay = useCallback((amountInr: number): Promise<boolean> => {
 		const user = authState.user;

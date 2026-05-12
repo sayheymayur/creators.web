@@ -20,6 +20,10 @@ export interface SubscriptionCancelResponse {
 	subscription: SubscriptionDTO;
 }
 
+export interface SubscriptionToggleAutoRenewResponse {
+	subscription: SubscriptionDTO;
+}
+
 export interface SubscriptionSubscriberRow {
 	fan: {
 		id: string,
@@ -107,6 +111,10 @@ export function createSubscriptionWs(client: WsClient) {
 		cancel(subscriptionId: string): Promise<SubscriptionCancelResponse> {
 			const id = ensureNoWhitespace('subscriptionId', subscriptionId);
 			return requestWithFallback<SubscriptionCancelResponse>('cancel', [id]);
+		},
+		toggleAutoRenew(subscriptionId: string): Promise<SubscriptionToggleAutoRenewResponse> {
+			const id = ensureNoWhitespace('subscriptionId', subscriptionId);
+			return requestWithFallback<SubscriptionToggleAutoRenewResponse>('toggleautorenew', [id]);
 		},
 		listSubscribers(limit = 30, beforeCursor?: string): Promise<SubscriptionListSubscribersResponse> {
 			const lim = Math.min(50, Math.max(1, Number.isFinite(limit) ? limit : 30));

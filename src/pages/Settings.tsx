@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { User, Bell, Shield, LogOut, Eye, EyeOff, Save, Camera } from '../components/icons';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
@@ -32,54 +32,37 @@ export function Settings() {
 	const [avatarFile, setAvatarFile] = useState<File | null>(null);
 	const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 	const avatarInputRef = useRef<HTMLInputElement | null>(null);
-	const [notifPrefs, setNotifPrefs] = useState<NotificationSettings>(defaultNotifPrefs);
-	const notifPrefsRef = useRef(notifPrefs);
-	notifPrefsRef.current = notifPrefs;
-	const notifDebounceRef = useRef<number | null>(null);
-	const [notifLoadError, setNotifLoadError] = useState<string | null>(null);
-	const [isNotifSettingsLoading, setIsNotifSettingsLoading] = useState(true);
-
-	const scheduleNotifPersist = useCallback(() => {
-		if (notifDebounceRef.current != null) {
-			window.clearTimeout(notifDebounceRef.current);
-		}
-		notifDebounceRef.current = window.setTimeout(() => {
-			notifDebounceRef.current = null;
-			const payload = notifPrefsRef.current;
-			void creatorsApi.me.putNotificationSettings({ settings: payload })
-				.then(res => {
-					setNotifPrefs(res.settings);
-					showToast('Notification preferences saved');
-				})
-				.catch(err => {
-					showToast(apiErrorMessage(err, 'Could not save notification settings'), 'error');
-				});
-		}, 400);
-	}, [showToast]);
+	const [notifPrefs, setNotifPrefs] = useState({
+		messages: true,
+		subscriptions: true,
+		tips: true,
+		likes: true,
+		system: true,
+	});
+	const [notifLoading, setNotifLoading] = useState(false);
+	const [notifDirty, setNotifDirty] = useState(false);
 
 	useEffect(() => {
 		if (!user) return;
-		const ac = new AbortController();
-		setIsNotifSettingsLoading(true);
-		setNotifLoadError(null);
-		void creatorsApi.me.getNotificationSettings(ac.signal)
+		setNotifLoading(true);
+		void creatorsApi.me.notificationSettings.get()
 			.then(res => {
-				setNotifPrefs(res.settings ?? defaultNotifPrefs);
+				if (!res?.settings) return;
+				setNotifPrefs({
+					messages: Boolean(res.settings.messages),
+					subscriptions: Boolean(res.settings.subscriptions),
+					tips: Boolean(res.settings.tips),
+					likes: Boolean(res.settings.likes),
+					system: Boolean(res.settings.system),
+				});
+				setNotifDirty(false);
 			})
-			.catch(err => {
-				if (err instanceof Error && err.name === 'AbortError') return;
-				setNotifLoadError(apiErrorMessage(err, 'Could not load notification settings'));
+			.catch(() => {
+				// Per spec: defaults are true when nothing saved yet.
+				// If the endpoint is unavailable in some env, keep local defaults and avoid blocking Settings.
 			})
-			.finally(() => {
-				if (!ac.signal.aborted) setIsNotifSettingsLoading(false);
-			});
-		return () => {
-			ac.abort();
-		};
-	}, [user?.id]);
-
-	useEffect(() => () => {
-		if (notifDebounceRef.current != null) window.clearTimeout(notifDebounceRef.current);
+			.finally(() => setNotifLoading(false));
+		// We intentionally load once per Settings mount.
 	}, []);
 
 	function handleSaveProfile() {
@@ -280,12 +263,9 @@ export function Settings() {
 						<Bell className="w-4 h-4 text-rose-400" />
 						<h2 className="font-semibold text-foreground">Notifications</h2>
 					</div>
-					{isNotifSettingsLoading && (
-						<p className="text-sm text-muted mb-3">Loading preferences…</p>
-					)}
-					{notifLoadError && (
-						<p className="text-sm text-rose-400 mb-3">{notifLoadError}</p>
-					)}
+					<p className="text-xs text-muted mb-4">
+						Follow/unfollow alerts are controlled by <span className="text-foreground/80 font-medium">Likes</span> (per backend spec).
+					</p>
 					<div className="space-y-3">
 						{(Object.keys(notifPrefs) as (keyof NotificationSettings)[]).map(key => (
 							<div key={key} className="flex items-center justify-between">
@@ -295,8 +275,11 @@ export function Settings() {
 										type="checkbox"
 										className="sr-only peer"
 										checked={notifPrefs[key]}
-										disabled={isNotifSettingsLoading}
-										onChange={() => toggleNotifPref(key)}
+										disabled={notifLoading}
+										onChange={() => {
+											setNotifDirty(true);
+											setNotifPrefs(p => ({ ...p, [key]: !p[key] }));
+										}}
 										role="switch"
 										aria-label={`${String(key)} notifications`}
 									/>
@@ -313,6 +296,32 @@ export function Settings() {
 								</label>
 							</div>
 						))}
+					</div>
+					<div className="flex items-center justify-end gap-2 mt-4">
+						<Button
+							variant="outline"
+							size="sm"
+							disabled={!notifDirty || notifLoading}
+							isLoading={notifLoading}
+							onClick={() => {
+								setNotifLoading(true);
+								void creatorsApi.me.notificationSettings.update({ settings: notifPrefs })
+									.then(() => {
+										showToast('Notification preferences saved!');
+										setNotifDirty(false);
+									})
+									.catch(err => {
+										const msg =
+											err instanceof ApiError ? `Save failed (HTTP ${err.status}).` :
+											err instanceof Error ? err.message :
+											'Save failed.';
+										showToast(msg, 'error');
+									})
+									.finally(() => setNotifLoading(false));
+							}}
+						>
+							Save notification settings
+						</Button>
 					</div>
 				</section>
 

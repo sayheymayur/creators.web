@@ -114,6 +114,16 @@ export interface User {
 	status: AccountStatus;
 	/** INR paise as decimal string (API `balance_cents` / `amount_cents` scale). */
 	walletBalanceMinor: string;
+	/**
+	 * Optional creator dashboard object returned by `GET /me` for creators/admins with a creator profile
+	 * (see missing_apis_v1 spec).
+	 */
+	creatorDashboard?: CreatorDashboard;
+	/**
+	 * Optional timed-session rate in minor units per minute (spec: `perMinuteRate` on POST /me/profile).
+	 * Kept optional to avoid breaking existing UI-only creator models.
+	 */
+	perMinuteRate?: number | null;
 }
 
 export interface Creator extends User {
@@ -252,6 +262,102 @@ export interface Notification {
 	data: Record<string, unknown>;
 	created_at: string;
 	read_at: string | null;
+}
+
+/**
+ * Spec types (missing_apis_v1.pdf)
+ */
+export type NotificationSettingsKey = 'messages' | 'subscriptions' | 'tips' | 'likes' | 'system';
+
+export type NotificationSettings = Record<NotificationSettingsKey, boolean>;
+
+export interface NotificationSettingsResponse {
+	settings: NotificationSettings;
+}
+
+export type SubscriptionStatus = 'active' | 'cancelled' | 'expired';
+
+export interface SubscriptionDTO {
+	id: string;
+	fan_user_id: string;
+	creator_user_id: string;
+	status: SubscriptionStatus;
+	auto_renew: boolean;
+	price_cents: number;
+	currency: string;
+	started_at: string;
+	created_at: string;
+	updated_at: string;
+	ends_at: string | null;
+	cancelled_at: string | null;
+}
+
+export interface SubscriberRow {
+	fan: {
+		id: string;
+		name: string;
+		username: string;
+		avatar_url: string | null;
+	};
+	subscription: SubscriptionDTO;
+}
+
+export interface CreatorProfileWithFollowStats {
+	id: string;
+	user_id: string;
+	username: string;
+	name: string;
+	avatar_url: string | null;
+	categories: string[];
+	bio: string | null;
+	banner_url: string | null;
+	socials: Record<string, unknown> | null;
+	/** Integer string, minor units. */
+	subscription_price_minor: string | null;
+	created_at: string;
+	follower_count: number;
+	is_followed: boolean;
+	profile_like_count: number;
+	is_profile_liked: boolean;
+}
+
+export interface UserSummary {
+	id: string;
+	name: string;
+	username: string;
+	avatar_url: string | null;
+}
+
+export type CreatorKycStatus = 'not_submitted' | 'pending' | 'approved' | 'rejected';
+
+export interface CreatorDashboardSessionHistoryRow {
+	requestId: string;
+	type: 'chat' | 'call';
+	status: string;
+	fanUserId: string;
+	fanName: string;
+	durationMinutes: number | null;
+	earningsCents: string;
+	actualDurationSeconds: null;
+	createdAt: string;
+	completedAt: string | null;
+}
+
+export interface CreatorDashboard {
+	kycStatus: CreatorKycStatus;
+	followerCount: number;
+	subscriberCount: number;
+	totalEarningsCents: string;
+	monthlyEarningsCents: string;
+	tipsReceivedCents: string;
+	earningsBySource: {
+		subscriptionsCents: string;
+		tipsCents: string;
+		sessionsCents: string;
+	};
+	monthlyStats: { month: string; earningsCents: string }[];
+	sessionHistory: CreatorDashboardSessionHistoryRow[];
+	perMinuteRateCents: number | null;
 }
 
 export interface KYCApplication {

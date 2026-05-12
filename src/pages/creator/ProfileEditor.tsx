@@ -9,6 +9,7 @@ import { mockCreators } from '../../data/users';
 import { ApiError, creatorsApi } from '../../services/creatorsApi';
 import { uploadMediaAsset } from '../../services/mediaUpload';
 import { formatINR } from '../../services/razorpay';
+import { inrRupeesToMinor } from '../../utils/money';
 
 export function ProfileEditor() {
 	const creator = useCurrentCreator();
@@ -27,6 +28,7 @@ export function ProfileEditor() {
 	const [username, setUsername] = useState(isNewGoogleCreator && currentUser ? currentUser.username : creatorData.username);
 	const [bio, setBio] = useState(creatorData.bio);
 	const [price, setPrice] = useState(String(creatorData.subscriptionPrice));
+	const [perMinuteRate, setPerMinuteRate] = useState(String(creatorData.perMinuteRate ?? 0));
 	const [category, setCategory] = useState(creatorData.category);
 	const [avatarUrl, setAvatarUrl] = useState(isNewGoogleCreator && currentUser ? currentUser.avatar : creatorData.avatar);
 	const [bannerUrl, setBannerUrl] = useState(creatorData.banner);
@@ -67,6 +69,13 @@ export function ProfileEditor() {
 		const avatarPromise = avatarFile ? uploadMediaAsset('avatar', avatarFile).then(r => r.assetId) : Promise.resolve(undefined);
 		const bannerPromise = bannerFile ? uploadMediaAsset('banner', bannerFile).then(r => r.assetId) : Promise.resolve(undefined);
 
+		const subscriptionPriceMinorStr = inrRupeesToMinor(parseFloat(price) || 0);
+		const perMinuteRateMinorStr = inrRupeesToMinor(parseFloat(perMinuteRate) || 0);
+		const subscriptionPriceMinor =
+			/^\d+$/.test(subscriptionPriceMinorStr) ? Number(subscriptionPriceMinorStr) : undefined;
+		const perMinuteRateMinor =
+			/^\d+$/.test(perMinuteRateMinorStr) ? Number(perMinuteRateMinorStr) : undefined;
+
 		void Promise.all([avatarPromise, bannerPromise])
 			.then(([avatarAssetId, bannerAssetId]) =>
 				creatorsApi.me.updateProfile({
@@ -76,6 +85,8 @@ export function ProfileEditor() {
 					category: category?.trim() || undefined,
 					avatarAssetId,
 					bannerAssetId,
+					subscriptionPriceMinor,
+					perMinuteRate: perMinuteRateMinor,
 				})
 			)
 			.then(({ user }) => {
@@ -254,6 +265,22 @@ export function ProfileEditor() {
 							/>
 						</div>
 						<p className="text-xs text-muted/80 mt-1">Platform fee 20%. You receive {formatINR((parseFloat(price) || 0) * 0.8)} per subscriber.</p>
+					</div>
+
+					<div>
+						<label className="block text-sm font-medium text-muted mb-1.5">Per-minute rate for timed sessions (₹/min)</label>
+						<div className="relative">
+							<span className="absolute left-4 top-1/2 -translate-y-1/2 text-muted">₹</span>
+							<input
+								type="number"
+								value={perMinuteRate}
+								onChange={e => setPerMinuteRate(e.target.value)}
+								min="0"
+								step="0.5"
+								className="w-full bg-input border border-border/20 rounded-xl pl-8 pr-4 py-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
+							/>
+						</div>
+						<p className="text-xs text-muted/80 mt-1">Used for timed chat/call sessions. Saved as minor units per minute per backend spec.</p>
 					</div>
 
 					<Button variant="primary" fullWidth isLoading={isSaving} onClick={() => { void handleSave(); }} leftIcon={<Save className="w-4 h-4" />}>

@@ -133,7 +133,7 @@ const WalletContext = createContext<WalletContextValue | null>(null);
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
 	const [state, dispatch] = useReducer(walletReducer, initialState);
-	const { state: authState, updateWalletMinor } = useAuth();
+	const { state: authState, updateWalletMinor, refreshMe } = useAuth();
 	const ws = useWs();
 	const wsConnected = useWsConnected();
 	const payment = useMemo(() => createPaymentWs(ws), [ws]);
@@ -343,6 +343,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 					updateWalletMinor(conf.balance_after_cents);
 					void refreshLedger();
 					void refreshOrders();
+					void refreshMe();
 				});
 			}
 
@@ -374,10 +375,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 					updateWalletMinor(conf.balance_after_cents);
 					void refreshLedger();
 					void refreshOrders();
+					void refreshMe();
 				});
 			});
 		});
-	}, [wsConnected, payment, updateWalletMinor, refreshLedger, refreshOrders]);
+	}, [wsConnected, payment, updateWalletMinor, refreshLedger, refreshOrders, refreshMe]);
 
 	const addFundsViaRazorpay = useCallback((amountInr: number): Promise<boolean> => {
 		const user = authState.user;

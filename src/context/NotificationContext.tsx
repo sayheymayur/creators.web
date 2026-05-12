@@ -297,6 +297,25 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 		return off;
 	}, [userId, ws]);
 
+	// Spec: backend may also emit service-level events (creator followed/unfollowed, subscription created/cancelled/expired)
+	// while creating a notification row. To keep the UI consistent with the server truth, trigger a lightweight refresh.
+	useEffect(() => {
+		if (!userId || !wsConnected || !wsAuthReady) return;
+		const off: Array<() => void> = [];
+
+		off.push(ws.on('creator', 'followed', () => { void refresh({ unreadOnly: true }); }));
+		off.push(ws.on('creator', 'unfollowed', () => { void refresh({ unreadOnly: true }); }));
+
+		const subsSvcs = ['subscription', 'subscriptions'];
+		for (const svc of subsSvcs) {
+			off.push(ws.on(svc, 'created', () => { void refresh({ unreadOnly: true }); }));
+			off.push(ws.on(svc, 'cancelled', () => { void refresh({ unreadOnly: true }); }));
+			off.push(ws.on(svc, 'expired', () => { void refresh({ unreadOnly: true }); }));
+		}
+
+		return () => { off.forEach(fn => fn()); };
+	}, [refresh, userId, ws, wsConnected, wsAuthReady]);
+
 	const value = useMemo<NotificationContextValue>(() => ({
 		state,
 		addNotification,

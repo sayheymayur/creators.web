@@ -22,9 +22,9 @@ interface TipModalProps {
 type PayMode = 'external' | 'wallet';
 
 export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvatar }: TipModalProps) {
-	const { state: authState } = useAuth();
-	const { deductFunds, payExternally } = useWallet();
-	const { showToast } = useNotifications();
+	const { state: authState, refreshMe } = useAuth();
+	const { payExternally } = useWallet();
+	const { showToast, refresh } = useNotifications();
 	const [amount, setAmount] = useState<number>(10);
 	const [customAmount, setCustomAmount] = useState('');
 	const [isLoading, setIsLoading] = useState(false);
@@ -53,23 +53,29 @@ export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvata
 
 					setSuccess(true);
 					showToast(`Sent ${formatINR(tipAmount)} tip to ${creatorName}!`);
+					void refresh({ unreadOnly: true });
+					void refreshMe();
 					setTimeout(onClose, 1500);
 					setIsLoading(false);
 				});
 				return;
 			}
 
-			const ok = deductFunds(tipAmount, 'tip', `Tip to ${creatorName}`, creatorId, creatorName);
-			if (!ok) {
-				setError('Insufficient wallet balance.');
+			// Backend-backed flow: even when the user selects "wallet", we still route through the
+			// payment gateway confirmation so the server can record the tip and reflect it in creatorDashboard.
+			void payExternally(tipAmount, 'tip', `Tip to ${creatorName}`, creatorId, creatorName).then(result => {
+				if (!result.ok) {
+					if (!result.cancelled) setError(result.error || 'Payment failed.');
+					setIsLoading(false);
+					return;
+				}
+				setSuccess(true);
+				showToast(`Sent ${formatINR(tipAmount)} tip to ${creatorName}!`);
+				void refresh({ unreadOnly: true });
+				void refreshMe();
+				setTimeout(onClose, 1500);
 				setIsLoading(false);
-				return;
-			}
-
-			setSuccess(true);
-			showToast(`Sent ${formatINR(tipAmount)} tip to ${creatorName}!`);
-			setTimeout(onClose, 1500);
-			setIsLoading(false);
+			});
 		});
 	}
 

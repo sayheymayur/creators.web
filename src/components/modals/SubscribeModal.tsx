@@ -23,16 +23,14 @@ const PERKS = [
 	'Exclusive behind-the-scenes content',
 ];
 
-type PayMode = 'external' | 'wallet';
-
 export function SubscribeModal({ isOpen, onClose, creator }: SubscribeModalProps) {
 	const { state: authState } = useAuth();
 	const { showToast } = useNotifications();
-	const { subscribeWallet, subscribeViaCheckout } = useSubscriptions();
+	const { subscribeWallet } = useSubscriptions();
 	const [isLoading, setIsLoading] = useState(false);
 	const [success, setSuccess] = useState(false);
-	const [payMode, setPayMode] = useState<PayMode>('external');
 	const [error, setError] = useState('');
+	const [autoRenew, setAutoRenew] = useState(true);
 
 	const balanceMinor = authState.user?.walletBalanceMinor ?? '0';
 	const inrPrice = creator.subscriptionPrice;
@@ -51,28 +49,13 @@ export function SubscribeModal({ isOpen, onClose, creator }: SubscribeModalProps
 		void delayMs(900).then(() => {
 			setError('');
 
-			if (payMode === 'external') {
-				void subscribeViaCheckout(creator.id, creator.subscriptionPrice).then(result => {
-					if (result.ok) {
-						completeSubscription();
-					} else if (!result.cancelled) {
-						setError(result.error || 'Payment failed. Please try again.');
-					}
-					setIsLoading(false);
-				}).catch(err => {
-					setError(err instanceof Error ? err.message : 'Payment failed. Please try again.');
-					setIsLoading(false);
-				});
-				return;
-			}
-
 			if (!canAffordWallet) {
 				setError('Insufficient wallet balance.');
 				setIsLoading(false);
 				return;
 			}
 
-			void subscribeWallet(creator.id, true)
+			void subscribeWallet(creator.id, autoRenew)
 				.then(() => {
 					completeSubscription();
 				})
@@ -121,24 +104,38 @@ export function SubscribeModal({ isOpen, onClose, creator }: SubscribeModalProps
 						</div>
 
 						<p className="text-xs font-semibold text-muted uppercase tracking-widest mb-2">Payment Method</p>
-						<div className="flex gap-2 mb-4">
-							<button
-								onClick={() => setPayMode('external')}
-								className={`flex-1 py-2.5 rounded-xl text-xs font-semibold border transition-all ${
-									payMode === 'external' ? 'border-rose-500/40 bg-rose-500/10 text-rose-500' : 'border-border/20 bg-foreground/5 text-muted hover:bg-foreground/10'
-								}`}
-							>
-								Pay {formatINR(inrPrice)}
-							</button>
-							<button
-								onClick={() => setPayMode('wallet')}
-								className={`flex-1 py-2.5 rounded-xl text-xs font-semibold border transition-all ${
-									payMode === 'wallet' ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-500' : 'border-border/20 bg-foreground/5 text-muted hover:bg-foreground/10'
-								}`}
-							>
-								<Wallet className="w-3 h-3 inline mr-1" />
-								Wallet ({formatINRFromMinor(balanceMinor)})
-							</button>
+						<div className="bg-foreground/5 border border-border/20 rounded-xl p-3 mb-4 flex items-center justify-between gap-3">
+							<div className="flex items-center gap-2 text-muted">
+								<Wallet className="w-4 h-4" />
+								<span className="text-xs font-semibold">Wallet balance</span>
+							</div>
+							<span className="text-xs font-semibold text-foreground">{formatINRFromMinor(balanceMinor)}</span>
+						</div>
+
+						<div className="flex items-center justify-between mb-4">
+							<div>
+								<p className="text-xs font-semibold text-muted uppercase tracking-widest">Auto-renew</p>
+								<p className="text-xs text-muted/80 mt-1">You can cancel anytime.</p>
+							</div>
+							<label className="relative inline-flex items-center cursor-pointer select-none">
+								<input
+									type="checkbox"
+									className="sr-only peer"
+									checked={autoRenew}
+									onChange={() => setAutoRenew(v => !v)}
+									role="switch"
+									aria-label="Auto-renew subscription"
+								/>
+								<span
+									className={[
+										'relative inline-flex h-6 w-11 rounded-full border transition-colors',
+										'bg-foreground/10 border-border/30',
+										'peer-checked:bg-rose-500 peer-checked:border-rose-500/40',
+										"after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow-sm after:transition-transform after:duration-200",
+										'peer-checked:after:translate-x-5',
+									].join(' ')}
+								/>
+							</label>
 						</div>
 
 						{error && (
@@ -152,16 +149,16 @@ export function SubscribeModal({ isOpen, onClose, creator }: SubscribeModalProps
 							fullWidth
 							isLoading={isLoading}
 							onClick={() => { void handleSubscribe(); }}
-							disabled={payMode === 'wallet' && !canAffordWallet}
+							disabled={!canAffordWallet}
 						>
 							Subscribe for {formatINR(creator.subscriptionPrice)}/month
 						</Button>
-						{payMode === 'wallet' && !canAffordWallet && (
+						{!canAffordWallet && (
 							<p className="text-center text-xs text-rose-400 mt-2">
-								Insufficient balance. Use checkout or add funds.
+								Insufficient balance. Please add funds to your wallet.
 							</p>
 						)}
-						<p className="text-center text-xs text-muted/80 mt-2">Auto-renews monthly. Cancel anytime.</p>
+						<p className="text-center text-xs text-muted/80 mt-2">Billing and expiry are handled server-side; you’ll see updates in-app.</p>
 					</>
 				)}
 			</div>

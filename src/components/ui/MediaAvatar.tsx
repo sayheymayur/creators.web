@@ -3,15 +3,15 @@ import { User } from '../icons';
 import { isRenderableImageUrl } from '../../utils/imageUrl';
 
 type Props = {
-	src?: string | null;
-	alt: string;
-	name?: string;
-	className?: string;
+	src?: string | null,
+	alt: string,
+	name?: string,
+	className?: string,
 	/**
 	 * When false (default), missing/broken images show a neutral silhouette like WhatsApp.
 	 * When true, shows the first letter of `name` if present instead of the icon.
 	 */
-	preferInitial?: boolean;
+	preferInitial?: boolean,
 };
 
 /**

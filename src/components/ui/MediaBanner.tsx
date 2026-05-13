@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { isRenderableImageUrl } from '../../utils/imageUrl';
 
 type Props = {
-	src?: string | null;
-	alt?: string;
-	className?: string;
+	src?: string | null,
+	alt?: string,
+	className?: string,
 };
 
 /** Centered landscape placeholder when no banner image (or load error). */

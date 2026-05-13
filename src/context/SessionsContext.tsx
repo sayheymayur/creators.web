@@ -876,7 +876,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 	// Ensure a Messages row exists before join / global `chat|c` listener (unread needs a conversation row).
 	useEffect(() => {
 		const active = state.active?.accepted;
-		if (!active || active.kind !== 'chat') return;
+		if (active?.kind !== 'chat') return;
 		const roomId = active.room_id;
 		if (!roomId || state.endedRooms[roomId]) return;
 		const me = authState.user;
@@ -1027,10 +1027,10 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 					.catch(e => {
 						showToast(e instanceof Error ? e.message : 'Unable to access microphone/camera', 'error');
 					});
-				return;
+
 			}
 			// Restore: `ActiveCallBanner` offers Continue / End; do not auto-open `/call`.
-			return;
+
 		}
 	}, [
 		state.active?.accepted?.request_id,
@@ -1067,8 +1067,8 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 		didBounceHomeAfterReloadRef.current = reqId;
 		const home =
 			me.role === 'admin' ? '/admin' :
-				me.role === 'creator' ? '/creator-dashboard' :
-					'/feed';
+			me.role === 'creator' ? '/creator-dashboard' :
+			'/feed';
 		void navigate(home, { replace: true });
 	}, [
 		state.active?.accepted?.request_id,

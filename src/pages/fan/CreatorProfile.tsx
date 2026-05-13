@@ -56,7 +56,7 @@ export function CreatorProfile() {
 	const cachedDisplay = useMemo(() => (creatorUserId ? contentState.creatorProfiles[creatorUserId] : undefined), [creatorUserId, contentState.creatorProfiles]);
 	const cacheCreator = useMemo(
 		() => (creatorUserId && cachedDisplay ? creatorFromCacheDisplay(creatorUserId, cachedDisplay) : null),
-		[creatorUserId, cachedDisplay],
+		[creatorUserId, cachedDisplay]
 	);
 
 	useEffect(() => {
@@ -149,7 +149,7 @@ export function CreatorProfile() {
 		return () => {
 			clearOutgoing();
 		};
-	}, [sessionsState.outgoing.state, sessionsState.outgoing.rejected, showToast, clearOutgoing]);
+	}, [sessionsState.outgoing, showToast, clearOutgoing]);
 
 	function handleProfileLikeToggle() {
 		if (!authState.user || !creatorUserId) {

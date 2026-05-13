@@ -58,7 +58,7 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
 							undefined;
 						const isRead = n.read_at != null;
 						const kind = typeof data.kind === 'string' ? data.kind : '';
-						const tipMinor = kind === 'tip' ? tipMinorFromNotificationData(data as Record<string, unknown>) : null;
+						const tipMinor = kind === 'tip' ? tipMinorFromNotificationData(data) : null;
 						const tipSubtitle =
 							tipMinor != null ?
 								<span className="text-amber-400/90">Tip · {formatINRFromMinor(tipMinor)}</span> :

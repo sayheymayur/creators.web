@@ -39,6 +39,7 @@ export function Earnings() {
 	const sourceSubscriptions = bySource ? parseMinorToRupees(bySource.subscriptionsCents) : Math.max(0, monthlyEarnings - tipsReceived);
 	const sourceTips = bySource ? parseMinorToRupees(bySource.tipsCents) : tipsReceived;
 	const sourceSessions = bySource ? parseMinorToRupees(bySource.sessionsCents) : 0;
+	const revenueSourcesTotal = sourceSubscriptions + sourceTips + sourceSessions;
 
 	function handleWithdraw() {
 		if (!withdrawAmount || !bankName || !accountNumber) {
@@ -113,19 +114,24 @@ export function Earnings() {
 					<h3 className="font-semibold text-foreground mb-4">Revenue Sources</h3>
 					<div className="space-y-3">
 						{[
-							{ label: 'Subscriptions', value: sourceSubscriptions, color: 'bg-rose-500', pct: 60 },
-							{ label: 'Tips', value: sourceTips, color: 'bg-amber-500', pct: 20 },
-							{ label: 'Sessions', value: sourceSessions, color: 'bg-blue-500', pct: 20 },
-						].map(({ label, value, color, pct }) => (
-							<div key={label} className="flex items-center gap-3">
-								<div className={`w-3 h-3 rounded-full ${color} shrink-0`} />
-								<p className="text-sm text-muted flex-1">{label}</p>
-								<div className="flex-1 h-2 bg-foreground/10 rounded-full overflow-hidden">
-									<div className={`h-full ${color} rounded-full transition-all`} style={{ width: `${pct}%` }} />
+							{ label: 'Subscriptions', value: sourceSubscriptions, color: 'bg-rose-500' },
+							{ label: 'Tips', value: sourceTips, color: 'bg-amber-500' },
+							{ label: 'Sessions', value: sourceSessions, color: 'bg-blue-500' },
+						].map(({ label, value, color }) => {
+							const widthPct = revenueSourcesTotal > 0 ?
+								Math.min(100, (value / revenueSourcesTotal) * 100) :
+								0;
+							return (
+								<div key={label} className="flex items-center gap-3 min-w-0">
+									<div className={`w-3 h-3 rounded-full ${color} shrink-0`} />
+									<p className="w-[7.25rem] shrink-0 text-sm text-muted sm:w-32">{label}</p>
+									<div className="min-w-0 flex-1 h-2 bg-foreground/10 rounded-full overflow-hidden">
+										<div className={`h-full ${color} rounded-full transition-all`} style={{ width: `${widthPct}%` }} />
+									</div>
+									<p className="w-24 shrink-0 text-right text-sm font-semibold tabular-nums text-foreground/80 sm:w-28">{formatINR(value)}</p>
 								</div>
-								<p className="text-sm font-semibold text-foreground/80 w-20 text-right">{formatINR(value)}</p>
-							</div>
-						))}
+							);
+						})}
 					</div>
 				</div>
 			</div>

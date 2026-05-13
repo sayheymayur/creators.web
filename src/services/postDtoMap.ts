@@ -102,7 +102,7 @@ function commentAuthorNameFromDto(dto: CommentDTO): string | null {
 		const t = v.trim();
 		if (t) return t;
 	}
-	const raw = dto as Record<string, unknown>;
+	const raw = dto as unknown as Record<string, unknown>;
 	for (const key of [
 		'author_display', 'fan_display', 'fan_name', 'author_name',
 		'userDisplayName', 'displayName', 'userName', 'authorName',
@@ -124,7 +124,7 @@ function commentAuthorAvatarFromDto(dto: CommentDTO): string | null {
 			if (t) return t;
 		}
 	}
-	const raw = dto as Record<string, unknown>;
+	const raw = dto as unknown as Record<string, unknown>;
 	for (const key of ['user_avatar', 'avatarUrl', 'userAvatar'] as const) {
 		const v = raw[key];
 		if (typeof v === 'string') {

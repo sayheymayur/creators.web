@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Sparkles, Zap, Users } from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';

@@ -8,7 +8,7 @@ type Options = {
 	 * When true (default), when posts WS is ready, load each subscribed creator's posts once
 	 * (deduped) so `creatorProfiles` hydrates — Feed behavior.
 	 */
-	eagerHydrate?: boolean;
+	eagerHydrate?: boolean,
 };
 
 export function useSubscribedCreatorsForFan(options?: Options) {
@@ -19,7 +19,7 @@ export function useSubscribedCreatorsForFan(options?: Options) {
 
 	const subscribedCreatorIds = useMemo(
 		() => Object.keys(activeByCreatorUserId),
-		[activeByCreatorUserId],
+		[activeByCreatorUserId]
 	);
 
 	const subscribedCreators: Creator[] = useMemo(() => {

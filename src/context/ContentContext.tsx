@@ -532,7 +532,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 			}
 			const row = profiles[userId];
 			// Legacy bug: unknown users were cached as post-author-looking "Creator"; treat as unresolved.
-			if (row && row.name === 'Creator' && row.username === 'creator') {
+			if (row?.name === 'Creator' && row.username === 'creator') {
 				return undefined;
 			}
 			return row;

@@ -114,7 +114,7 @@ export function CreatorDashboard() {
 
 	const chartMonthlyRows = useMemo(
 		() => creatorDashboardMonthlyRupeeRows(dashboard),
-		[dashboard],
+		[dashboard]
 	);
 
 	const chartMaxEarnings = useMemo(() => {
@@ -124,7 +124,7 @@ export function CreatorDashboard() {
 
 	const sixMonthTotal = useMemo(
 		() => chartMonthlyRows.reduce((sum, r) => sum + r.earnings, 0),
-		[chartMonthlyRows],
+		[chartMonthlyRows]
 	);
 
 	const earningsGrowth = useMemo(() => {
@@ -151,7 +151,7 @@ export function CreatorDashboard() {
 	const kycStatus = dashboard?.kycStatus ?? creatorData.kycStatus;
 	const skipCreatorKycGate =
 		import.meta.env.DEV ||
-		import.meta.env.VITE_SKIP_CREATOR_KYC === 'true';
+			import.meta.env.VITE_SKIP_CREATOR_KYC === 'true';
 	if (!skipCreatorKycGate && kycStatus !== 'approved') {
 		return (
 			<Layout>

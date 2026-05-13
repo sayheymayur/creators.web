@@ -146,10 +146,14 @@ export function CreatorProfile() {
 		if (sessionsState.outgoing.state === 'accepted') {
 			showToast('Session accepted!');
 		}
+	}, [sessionsState.outgoing, showToast, clearOutgoing]);
+
+	// Clear outgoing state only when leaving this page (avoid infinite effect loop).
+	useEffect(() => {
 		return () => {
 			clearOutgoing();
 		};
-	}, [sessionsState.outgoing, showToast, clearOutgoing]);
+	}, [clearOutgoing]);
 
 	function handleProfileLikeToggle() {
 		if (!authState.user || !creatorUserId) {

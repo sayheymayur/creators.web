@@ -210,10 +210,9 @@ export function ChatRoom() {
 	useEffect(() => {
 		// Auto-send seen for the latest message from the other user (throttled).
 		if (!realtimeActive || !convId) return;
-		const otherIdxLocal = conv?.participantIds?.indexOf(userId) === 0 ? 1 : 0;
-		const otherIdLocal = conv?.participantIds?.[otherIdxLocal] ?? '';
-		if (!otherIdLocal) return;
-		const latestFromOther = [...messages].reverse().find(m => m.senderId === otherIdLocal && /^\d+$/.test(m.id));
+		// For booked session rooms, a Conversation row may not exist yet; don't rely on participantIds.
+		// Mark the latest numeric message from anyone other than the current user as seen.
+		const latestFromOther = [...messages].reverse().find(m => m.senderId !== userId && /^\d+$/.test(m.id));
 		const mid = latestFromOther?.id;
 		if (!mid) return;
 		const now = Date.now();

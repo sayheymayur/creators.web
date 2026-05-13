@@ -1,19 +1,8 @@
 import { useNavigate } from 'react-router-dom';
 import { Bell } from '../icons';
+import { NotificationRow } from '../notifications/NotificationRow';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
-import { formatDistanceToNow } from '../../utils/date';
-import { formatINRFromMinor } from '../../utils/money';
-
-/** Tip payloads use `amount_cents` (minor string) per API; values are INR paise in this product. */
-function tipMinorFromNotificationData(data: Record<string, unknown>): string | null {
-	for (const key of ['amount_cents', 'amount_minor', 'price_minor'] as const) {
-		const v = data[key];
-		if (typeof v === 'number' && Number.isFinite(v) && v >= 0) return String(Math.round(v));
-		if (typeof v === 'string' && /^\d+$/.test(v.trim())) return v.trim();
-	}
-	return null;
-}
 
 interface NotificationPanelProps {
 	onClose: () => void;
@@ -27,10 +16,15 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
 	const userId = authState.user?.id ?? '';
 	const notifications = getUserNotifications(userId).slice(0, 10);
 
-	function handleClick(id: string, link?: string) {
+	function handleRowClick(id: string, link?: string) {
 		markRead(id);
 		onClose();
 		if (link) navigate(link);
+	}
+
+	function goToAll() {
+		onClose();
+		void navigate('/notifications');
 	}
 
 	return (
@@ -40,7 +34,7 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
 					<Bell className="w-4 h-4 text-muted" />
 					<span className="text-sm font-semibold text-foreground">Notifications</span>
 				</div>
-				<button onClick={markAllRead} className="text-xs text-rose-400 hover:text-rose-300">
+				<button type="button" onClick={markAllRead} className="text-xs text-rose-500 hover:text-rose-600 dark:text-rose-400 dark:hover:text-rose-300">
 					Mark all read
 				</button>
 			</div>
@@ -52,47 +46,25 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
 					notifications.map(n => {
 						const data = n.data ?? {};
 						const link = typeof data.link === 'string' ? data.link : undefined;
-						const fromAvatar =
-							typeof data.from_avatar === 'string' ? data.from_avatar :
-							typeof data.fromAvatar === 'string' ? data.fromAvatar :
-							undefined;
-						const isRead = n.read_at != null;
-						const kind = typeof data.kind === 'string' ? data.kind : '';
-						const tipMinor = kind === 'tip' ? tipMinorFromNotificationData(data) : null;
-						const tipSubtitle =
-							tipMinor != null ?
-								<span className="text-amber-400/90">Tip · {formatINRFromMinor(tipMinor)}</span> :
-								null;
-						const tipBody =
-							kind === 'tip' && tipMinor != null ? '' : (n.body ?? '');
 						return (
-							<button
+							<NotificationRow
 								key={n.id}
-								onClick={() => handleClick(n.id, link)}
-								className={`w-full flex gap-3 px-4 py-3 hover:bg-white/5 transition-colors text-left border-b border-white/5 last:border-0 ${
-									!isRead ? 'bg-rose-500/5' : ''
-								}`}
-							>
-								{fromAvatar ? (
-									<img src={fromAvatar} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" />
-								) : (
-									<div className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center shrink-0">
-										<Bell className="w-4 h-4 text-white/40" />
-									</div>
-								)}
-								<div className="flex-1 min-w-0">
-									<p className={`text-xs font-medium ${isRead ? 'text-white/60' : 'text-white'} truncate`}>{n.title}</p>
-									{tipSubtitle ? (
-										<p className="text-[11px] truncate mt-0.5">{tipSubtitle}</p>
-									) : null}
-									{tipBody ? <p className="text-xs text-white/40 truncate mt-0.5">{tipBody}</p> : null}
-									<p className="text-[10px] text-white/25 mt-1">{formatDistanceToNow(n.created_at)}</p>
-								</div>
-								{!isRead && <div className="w-2 h-2 bg-rose-500 rounded-full mt-1 shrink-0" />}
-							</button>
+								notification={n}
+								onClick={() => handleRowClick(n.id, link)}
+							/>
 						);
 					})
 				)}
+			</div>
+
+			<div className="border-t border-border/10 px-2 py-2">
+				<button
+					type="button"
+					onClick={goToAll}
+					className="w-full text-center text-xs font-semibold text-rose-500 hover:text-rose-600 dark:text-rose-400 dark:hover:text-rose-300 py-2 rounded-xl hover:bg-foreground/5 transition-colors"
+				>
+					View all
+				</button>
 			</div>
 		</div>
 	);

@@ -45,6 +45,7 @@ import { UserManagement } from './pages/admin/UserManagement';
 import { ContentModeration } from './pages/admin/ContentModeration';
 import { SubscriptionWsSimulation } from './pages/admin/SubscriptionWsSimulation';
 
+import { Notifications } from './pages/Notifications';
 import { Settings } from './pages/Settings';
 import { ActiveCallScreen } from './pages/call/ActiveCallScreen';
 import { CallHistory } from './pages/call/CallHistory';
@@ -210,6 +211,7 @@ function AppRoutes() {
 
 				<Route path="/messages" element={<ProtectedRoute><MessagesList /></ProtectedRoute>} />
 				<Route path="/messages/:id" element={<ProtectedRoute><ChatRoom /></ProtectedRoute>} />
+				<Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
 
 				<Route path="/wallet" element={<ProtectedRoute roles={['fan']}><Wallet /></ProtectedRoute>} />
 

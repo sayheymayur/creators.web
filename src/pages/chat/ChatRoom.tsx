@@ -434,22 +434,27 @@ export function ChatRoom() {
 								End session
 							</button>
 						)}
-						<button
-							type="button"
-							onClick={() => { if (!otherId) return; startCall(otherId, otherName, otherAvatar, 'audio'); void navigate('/call'); }}
-							disabled={!otherId}
-							className="w-8 h-8 rounded-xl bg-foreground/10 hover:bg-emerald-500/20 hover:text-emerald-400 text-muted flex items-center justify-center transition-all"
-						>
-							<Phone className="w-4 h-4" />
-						</button>
-						<button
-							type="button"
-							onClick={() => { if (!otherId) return; startCall(otherId, otherName, otherAvatar, 'video'); void navigate('/call'); }}
-							disabled={!otherId}
-							className="w-8 h-8 rounded-xl bg-foreground/10 hover:bg-sky-500/20 hover:text-sky-400 text-muted flex items-center justify-center transition-all"
-						>
-							<Video className="w-4 h-4" />
-						</button>
+						{/* For booked sessions, the session type is already fixed; hide ad-hoc call actions. */}
+						{!isBookedActive && (
+							<>
+								<button
+									type="button"
+									onClick={() => { if (!otherId) return; startCall(otherId, otherName, otherAvatar, 'audio'); void navigate('/call'); }}
+									disabled={!otherId}
+									className="w-8 h-8 rounded-xl bg-foreground/10 hover:bg-emerald-500/20 hover:text-emerald-400 text-muted flex items-center justify-center transition-all"
+								>
+									<Phone className="w-4 h-4" />
+								</button>
+								<button
+									type="button"
+									onClick={() => { if (!otherId) return; startCall(otherId, otherName, otherAvatar, 'video'); void navigate('/call'); }}
+									disabled={!otherId}
+									className="w-8 h-8 rounded-xl bg-foreground/10 hover:bg-sky-500/20 hover:text-sky-400 text-muted flex items-center justify-center transition-all"
+								>
+									<Video className="w-4 h-4" />
+								</button>
+							</>
+						)}
 						{authState.user?.role === 'fan' ? (
 							<button
 								onClick={() => setShowTipModal(true)}

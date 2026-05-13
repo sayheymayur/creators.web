@@ -188,13 +188,6 @@ function AppRoutes() {
 
 	return (
 		<>
-			{import.meta.env.DEV && (
-				<div
-					className="fixed bottom-2 left-2 z-[10000] rounded-full bg-black/70 px-3 py-1 text-[11px] font-semibold text-white pointer-events-none"
-				>
-					{location.pathname}
-				</div>
-			)}
 			<Routes location={location} key={location.key}>
 				<Route path="/" element={<GuestRoute><Landing /></GuestRoute>} />
 				<Route path="/contact" element={<Contact />} />

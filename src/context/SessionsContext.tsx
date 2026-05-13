@@ -310,6 +310,8 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 	const creatorMetaByRequestIdRef = useRef<Record<string, { userId: string, name: string, avatar: string }>>({});
 	const fanMetaByRequestIdRef = useRef<Record<string, { userId: string, name: string }>>({});
 	const roomIdByRequestIdRef = useRef<Record<string, string>>({});
+	/** When a fan requests a session, remember intent so hydrate-only accept can still auto-open once. */
+	const lastOutgoingIntentRef = useRef<{ requestId: string, atMs: number, kind: SessionKind } | null>(null);
 	const joinedBookedRoomRef = useRef<string | null>(null);
 	const didPromptActiveRequestIdRef = useRef<string | null>(null);
 	const didHydrateLocalRef = useRef(false);
@@ -369,6 +371,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 			return sessionsRequest(ws, { creatorUserId: opts.creatorUserId, kind: opts.kind, minutes: opts.minutes })
 				.then(res => {
 					minutesByRequestIdRef.current[res.request_id] = opts.minutes;
+					lastOutgoingIntentRef.current = { requestId: res.request_id, atMs: Date.now(), kind: opts.kind };
 					if (opts.kind === 'call' && opts.uiCallType) {
 						uiCallTypeByRequestIdRef.current[res.request_id] = opts.uiCallType;
 					}
@@ -615,6 +618,31 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 					};
 				}
 
+				// If the fan missed the `|accepted` push and only /state shows the active booking,
+				// auto-open once only when it matches the user's outgoing request intent.
+				// Guard against reload auto-open (banners should handle restore UX).
+				if (
+					activeAccepted &&
+					authState.user?.role === 'fan' &&
+					!isBrowserReloadNavigation()
+				) {
+					const intent = lastOutgoingIntentRef.current;
+					// Accept can happen much later than request; keep a generous window to cover normal usage.
+					const isIntentMatch =
+						!!intent &&
+						intent.requestId === activeAccepted.id &&
+						(Date.now() - intent.atMs) < 12 * 60 * 60_000;
+					const isOutgoingMatch =
+						state.outgoing.state === 'pending' &&
+						state.outgoing.request.request_id === activeAccepted.id;
+					if (isIntentMatch || isOutgoingMatch) {
+						if (activeAccepted.kind === 'chat') pendingOpenBookedChatRequestIdRef.current = activeAccepted.id;
+						if (activeAccepted.kind === 'call') pendingOpenBookedCallRequestIdRef.current = activeAccepted.id;
+						// Avoid re-triggering if /state polls again.
+						lastOutgoingIntentRef.current = null;
+					}
+				}
+
 				const nextTimer =
 					activeAccepted ?
 						deriveTimerFromEndsAt({ requestId: activeAccepted.id, roomId: activeAccepted.room_id ?? '', endsAt: activeAccepted.ends_at }) :
@@ -709,7 +737,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 			};
 			dispatch({ type: 'INCOMING_ADD', payload });
 		});
-		const offAccepted = ws.on('sessions', 'accepted', data => {
+		const onAccepted = (data: unknown) => {
 			const payload = data as SessionsAcceptedPayload;
 			roomIdByRequestIdRef.current[payload.request_id] = payload.room_id;
 
@@ -761,7 +789,9 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 					startLocalTimer({ requestId: payload.request_id, roomId: payload.room_id, minutes: mins });
 				}
 			}
-		});
+		};
+		const offAccepted = ws.on('sessions', 'accepted', onAccepted);
+		const offAccepted2 = ws.on('session', 'accepted', onAccepted);
 		const offRejected = ws.on('sessions', 'rejected', data => {
 			const payload = data as SessionsRejectedPayload;
 			dispatch({ type: 'OUTGOING_REJECTED', payload });
@@ -839,6 +869,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 			offAny?.();
 			offReq();
 			offAccepted();
+			offAccepted2();
 			offRejected();
 			offPrompt();
 			offPrompt2();
@@ -1042,12 +1073,16 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 		location.pathname,
 	]);
 
-	const didBounceHomeAfterReloadRef = useRef<string | null>(null);
+	const initialPathRef = useRef<string>(location.pathname);
+	const initialWasReloadRef = useRef<boolean>(isBrowserReloadNavigation());
+	const didHandleInitialReloadBounceRef = useRef(false);
 	useEffect(() => {
-		if (!isBrowserReloadNavigation()) return;
+		// Only handle the reload-bounce once, and only based on the initial path at page load.
+		// This prevents overriding fresh navigations (e.g. auto-open after `sessions|accepted`).
+		if (!initialWasReloadRef.current) return;
+		if (didHandleInitialReloadBounceRef.current) return;
 		const act = state.active?.accepted;
 		if (!act) {
-			didBounceHomeAfterReloadRef.current = null;
 			return;
 		}
 		const me = authState.user;
@@ -1057,14 +1092,13 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 		if (pendingOpenBookedChatRequestIdRef.current === reqId || pendingOpenBookedCallRequestIdRef.current === reqId) {
 			return;
 		}
-		if (didBounceHomeAfterReloadRef.current === reqId) return;
 
-		const path = location.pathname;
+		const path = initialPathRef.current;
 		const isDeepCall = act.kind === 'call' && path === '/call';
 		const isDeepChat = act.kind === 'chat' && !!act.room_id && path === `/messages/${act.room_id}`;
 		if (!isDeepCall && !isDeepChat) return;
 
-		didBounceHomeAfterReloadRef.current = reqId;
+		didHandleInitialReloadBounceRef.current = true;
 		const home =
 			me.role === 'admin' ? '/admin' :
 			me.role === 'creator' ? '/creator-dashboard' :
@@ -1075,7 +1109,6 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 		state.active?.accepted?.kind,
 		state.active?.accepted?.room_id,
 		authState.user,
-		location.pathname,
 		navigate,
 	]);
 

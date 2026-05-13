@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Sparkles, Zap, Users } from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';
@@ -7,77 +7,21 @@ import { MediaAvatar } from '../../components/ui/MediaAvatar';
 import { useContent } from '../../context/ContentContext';
 import { useSubscriptions } from '../../context/SubscriptionContext';
 import { useDragScroll } from '../../hooks/useDragScroll';
-import type { Creator } from '../../types';
+import { useSubscribedCreatorsForFan } from '../../hooks/useSubscribedCreatorsForFan';
 
 export function Feed() {
-	const { state: contentState, loadMoreFeed, refreshFeed, loadCreatorPosts } = useContent();
-	const { isSubscribed: isWsSubscribed, activeByCreatorUserId } = useSubscriptions();
+	const { state: contentState, loadMoreFeed, refreshFeed } = useContent();
+	const { isSubscribed: isWsSubscribed } = useSubscriptions();
+	const { subscribedCreators, bumpHydrate } = useSubscribedCreatorsForFan();
 	const navigate = useNavigate();
 	const [filter, setFilter] = useState<'all' | 'subscribed'>('all');
 	const followingRef = useDragScroll();
-	const lastSubscribedLoadKey = useRef<string>('');
-
-	const subscribedCreatorIds = useMemo(
-		() => Object.keys(activeByCreatorUserId),
-		[activeByCreatorUserId]
-	);
-
-	const subscribedCreators: Creator[] = useMemo(() => {
-		return subscribedCreatorIds.map(id => {
-			const prof = contentState.creatorProfiles[id];
-			const fromPost = contentState.posts.find(p => p.creatorId === id);
-			return {
-				id,
-				email: '',
-				name: prof?.name ?? fromPost?.creatorName ?? 'Creator',
-				username: prof?.username ?? fromPost?.creatorUsername ?? id,
-				avatar: prof?.avatar ?? fromPost?.creatorAvatar ?? '',
-				role: 'creator' as const,
-				createdAt: '',
-				isAgeVerified: true,
-				status: 'active' as const,
-				walletBalanceMinor: '0',
-				bio: '',
-				banner: '',
-				subscriptionPrice: 0,
-				totalEarnings: 0,
-				monthlyEarnings: 0,
-				tipsReceived: 0,
-				subscriberCount: 0,
-				followerCount: 0,
-				kycStatus: 'approved' as const,
-				isKYCVerified: false,
-				category: 'Lifestyle',
-				isOnline: false,
-				postCount: 0,
-				likeCount: 0,
-				monthlyStats: [],
-				perMinuteRate: 0,
-				liveStreamEnabled: false,
-			};
-		});
-	}, [subscribedCreatorIds, contentState.creatorProfiles, contentState.posts]);
-
-	const loadSubscribedCreatorPosts = useCallback(() => {
-		if (subscribedCreatorIds.length === 0) return Promise.resolve();
-		const key = subscribedCreatorIds.slice().sort().join(',');
-		if (lastSubscribedLoadKey.current === key) return Promise.resolve();
-		lastSubscribedLoadKey.current = key;
-		return Promise.all(subscribedCreatorIds.map(id => loadCreatorPosts(id, true))).then(() => {});
-	}, [subscribedCreatorIds, loadCreatorPosts]);
-
-	useEffect(() => {
-		if (contentState.postsWsStatus !== 'ready') return;
-		if (subscribedCreatorIds.length === 0) return;
-		void loadSubscribedCreatorPosts();
-	}, [contentState.postsWsStatus, subscribedCreatorIds, loadSubscribedCreatorPosts]);
 
 	useEffect(() => {
 		if (filter !== 'subscribed') return;
 		if (contentState.postsWsStatus !== 'ready') return;
-		lastSubscribedLoadKey.current = '';
-		void loadSubscribedCreatorPosts();
-	}, [filter, contentState.postsWsStatus, loadSubscribedCreatorPosts]);
+		bumpHydrate();
+	}, [filter, contentState.postsWsStatus, bumpHydrate]);
 
 	const posts = contentState.posts.filter(p => {
 		if (filter === 'subscribed') return isWsSubscribed(p.creatorId);

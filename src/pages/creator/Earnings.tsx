@@ -9,12 +9,10 @@ import { useNotifications } from '../../context/NotificationContext';
 import { delayMs } from '../../utils/delay';
 import { formatINRFromMinor, parseMinor } from '../../utils/money';
 import { formatINR } from '../../services/razorpay';
+import { earningsPageMonthlyRupeeRows, parseMinorStringToRupees } from '../../utils/creatorDashboardMonthlyStats';
 
 function parseMinorToRupees(minor: string | number | null | undefined): number {
-	const raw = typeof minor === 'number' ? String(minor) : (minor ?? '').toString();
-	const t = raw.trim();
-	if (!/^\d+$/.test(t)) return 0;
-	return Number(t) / 100;
+	return parseMinorStringToRupees(minor);
 }
 
 export function Earnings() {
@@ -35,9 +33,8 @@ export function Earnings() {
 	const monthlyEarnings = dashboard ? parseMinorToRupees(dashboard.monthlyEarningsCents) : creatorData.monthlyEarnings;
 	const tipsReceived = dashboard ? parseMinorToRupees(dashboard.tipsReceivedCents) : creatorData.tipsReceived;
 	const subscriberCount = dashboard?.subscriberCount ?? creatorData.subscriberCount;
-	const monthlyStats = dashboard?.monthlyStats?.length ?
-		dashboard.monthlyStats.map(s => ({ month: s.month, earnings: parseMinorToRupees(s.earningsCents) })) :
-		creatorData.monthlyStats.map(s => ({ month: s.month, earnings: s.earnings }));
+	const monthlyStats = earningsPageMonthlyRupeeRows(dashboard, creatorData.monthlyStats);
+	const monthlyBarMax = Math.max(1, ...monthlyStats.map(s => s.earnings));
 	const bySource = dashboard?.earningsBySource;
 	const sourceSubscriptions = bySource ? parseMinorToRupees(bySource.subscriptionsCents) : Math.max(0, monthlyEarnings - tipsReceived);
 	const sourceTips = bySource ? parseMinorToRupees(bySource.tipsCents) : tipsReceived;
@@ -93,8 +90,7 @@ export function Earnings() {
 					</h3>
 					<div className="space-y-3">
 						{monthlyStats.map((stat, i) => {
-							const max = Math.max(...monthlyStats.map(s => s.earnings));
-							const pct = (stat.earnings / max) * 100;
+							const pct = (stat.earnings / monthlyBarMax) * 100;
 							return (
 								<div key={i} className="flex items-center gap-3">
 									<p className="text-xs text-muted w-8 shrink-0">{stat.month}</p>

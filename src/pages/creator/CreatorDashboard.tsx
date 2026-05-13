@@ -22,13 +22,11 @@ import { useNotifications } from '../../context/NotificationContext';
 import { mockCreators } from '../../data/users';
 import { ApiError, creatorsApi } from '../../services/creatorsApi';
 import { formatINR } from '../../services/razorpay';
+import { creatorDashboardMonthlyRupeeRows, parseMinorStringToRupees } from '../../utils/creatorDashboardMonthlyStats';
 import { inrRupeesToMinor } from '../../utils/money';
 
 function parseMinorToRupees(minor: string | number | null | undefined): number {
-	const raw = typeof minor === 'number' ? String(minor) : (minor ?? '').toString();
-	const t = raw.trim();
-	if (!/^\d+$/.test(t)) return 0;
-	return Number(t) / 100;
+	return parseMinorStringToRupees(minor);
 }
 
 function StatCard({ label, value, sub, icon, color, onClick }: {
@@ -64,10 +62,22 @@ function formatDuration(secs: number): string {
 	return s > 0 ? `${m}m ${s}s` : `${m}m`;
 }
 
+/** Turn `YYYY-MM` (API) into compact labels like `May '26`. */
+function shortMonthLabel(raw: string): string {
+	const t = raw.trim();
+	const m = /^(\d{4})-(\d{2})$/.exec(t);
+	if (!m) return t;
+	const y = m[1];
+	const mo = parseInt(m[2], 10);
+	const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+	if (mo < 1 || mo > 12) return t;
+	return `${names[mo - 1]} '${y.slice(2)}`;
+}
+
 export function CreatorDashboard() {
 	const navigate = useNavigate();
 	const creator = useCurrentCreator();
-	const { state: authState, updateUser } = useAuth();
+	const { state: authState, updateUser, refreshMe } = useAuth();
 	const { state: contentState, loadCreatorPosts } = useContent();
 	const { state: sessionState } = useSession();
 	const { showToast } = useNotifications();
@@ -92,10 +102,51 @@ export function CreatorDashboard() {
 		void loadCreatorPosts(creatorUserIdForPosts, true);
 	}, [creatorUserIdForPosts, loadCreatorPosts]);
 
+	useEffect(() => {
+		if (authState.user?.role !== 'creator') return;
+		void refreshMe();
+	}, [authState.user?.role, authState.user?.id, refreshMe]);
+
 	const creatorPosts = contentState.posts.filter(p => p.creatorId === creatorUserIdForPosts);
 
 	const creatorSessions = sessionState.sessionHistory.filter(s => s.creatorId === creatorUserIdForPosts);
 	const sessionEarnings = creatorSessions.reduce((sum, s) => sum + s.earnings, 0);
+
+	const chartMonthlyRows = useMemo(
+		() => creatorDashboardMonthlyRupeeRows(dashboard),
+		[dashboard],
+	);
+
+	const chartMaxEarnings = useMemo(() => {
+		if (!chartMonthlyRows.length) return 1;
+		return Math.max(1, ...chartMonthlyRows.map(s => s.earnings));
+	}, [chartMonthlyRows]);
+
+	const sixMonthTotal = useMemo(
+		() => chartMonthlyRows.reduce((sum, r) => sum + r.earnings, 0),
+		[chartMonthlyRows],
+	);
+
+	const earningsGrowth = useMemo(() => {
+		const lastMonth = chartMonthlyRows[chartMonthlyRows.length - 2];
+		const thisMonth = chartMonthlyRows[chartMonthlyRows.length - 1];
+		if (!lastMonth || lastMonth.earnings <= 0) return '0';
+		return (((thisMonth?.earnings ?? 0) - lastMonth.earnings) / lastMonth.earnings * 100).toFixed(1);
+	}, [chartMonthlyRows]);
+
+	const recentSessions = useMemo(() => {
+		if (dashboard?.sessionHistory?.length) {
+			return dashboard.sessionHistory.map(row => ({
+				id: row.requestId,
+				type: row.type === 'call' ? 'audio' : 'chat',
+				fanName: row.fanName,
+				durationMinutes: row.durationMinutes ?? 0,
+				actualDurationSeconds: null as number | null,
+				earnings: parseMinorToRupees(row.earningsCents),
+			}));
+		}
+		return creatorSessions;
+	}, [dashboard?.sessionHistory, creatorSessions]);
 
 	const kycStatus = dashboard?.kycStatus ?? creatorData.kycStatus;
 	const skipCreatorKycGate =
@@ -132,44 +183,11 @@ export function CreatorDashboard() {
 		);
 	}
 
-	const dashboardMonthly = dashboard?.monthlyStats ?? [];
-	const monthlyStatsForChart = useMemo(() => {
-		if (dashboardMonthly.length) {
-			return dashboardMonthly.map(s => ({
-				month: s.month,
-				earnings: parseMinorToRupees(s.earningsCents),
-				subscribers: 0,
-				tips: 0,
-			}));
-		}
-		return creatorData.monthlyStats;
-	}, [dashboardMonthly, creatorData.monthlyStats]);
-
-	const lastMonth = monthlyStatsForChart[monthlyStatsForChart.length - 2];
-	const thisMonth = monthlyStatsForChart[monthlyStatsForChart.length - 1];
-	const earningsGrowth = lastMonth && lastMonth.earnings > 0 ?
-		(((thisMonth?.earnings ?? 0) - lastMonth.earnings) / lastMonth.earnings * 100).toFixed(1) :
-		0;
-
 	const subscriberCount = dashboard?.subscriberCount ?? creatorData.subscriberCount;
 	const monthlyEarnings = dashboard ? parseMinorToRupees(dashboard.monthlyEarningsCents) : creatorData.monthlyEarnings;
 	const totalEarnings = dashboard ? parseMinorToRupees(dashboard.totalEarningsCents) : creatorData.totalEarnings;
 	const dashboardSessionEarnings = dashboard ? parseMinorToRupees(dashboard.earningsBySource?.sessionsCents) : sessionEarnings;
 	const perMinuteRateRupees = dashboard?.perMinuteRateCents != null ? parseMinorToRupees(dashboard.perMinuteRateCents) : creatorData.perMinuteRate;
-
-	const recentSessions = useMemo(() => {
-		if (dashboard?.sessionHistory?.length) {
-			return dashboard.sessionHistory.map(row => ({
-				id: row.requestId,
-				type: row.type === 'call' ? 'audio' : 'chat',
-				fanName: row.fanName,
-				durationMinutes: row.durationMinutes ?? 0,
-				actualDurationSeconds: null as number | null,
-				earnings: parseMinorToRupees(row.earningsCents),
-			}));
-		}
-		return creatorSessions;
-	}, [dashboard?.sessionHistory, creatorSessions]);
 
 	return (
 		<Layout>
@@ -314,26 +332,77 @@ export function CreatorDashboard() {
 				</div>
 
 				<div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-					<div className="bg-surface border border-border/20 rounded-2xl p-4">
-						<div className="flex items-center justify-between mb-3">
-							<h3 className="text-sm font-semibold text-foreground">Earnings (6 months)</h3>
-							<TrendingUp className="w-4 h-4 text-rose-400" />
+					<div className="bg-surface border border-border/15 rounded-2xl p-5 sm:p-6 shadow-sm shadow-black/5">
+						<div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+							<div className="flex items-start gap-3">
+								<div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-rose-500/10 ring-1 ring-rose-500/20">
+									<TrendingUp className="h-4 w-4 text-rose-400" aria-hidden />
+								</div>
+								<div>
+									<h3 className="text-base font-semibold tracking-tight text-foreground">Earnings overview</h3>
+									<p className="text-xs text-muted mt-0.5">Trailing six months from your dashboard</p>
+								</div>
+							</div>
+							{chartMonthlyRows.length > 0 && (
+								<div className="text-left sm:text-right">
+									<p className="text-[10px] font-medium uppercase tracking-wider text-muted">Period total</p>
+									<p className="text-lg font-semibold tabular-nums tracking-tight text-foreground">{formatINR(sixMonthTotal)}</p>
+								</div>
+							)}
 						</div>
-						<div className="flex items-end gap-1.5 h-24">
-							{monthlyStatsForChart.map((stat, i) => {
-								const max = Math.max(...monthlyStatsForChart.map(s => s.earnings));
-								const pct = (stat.earnings / max) * 100;
-								return (
-									<div key={i} className="flex-1 flex flex-col items-center gap-1">
-										<div
-											className="w-full rounded-t-lg bg-gradient-to-t from-rose-600 to-rose-400 transition-all duration-500"
-											style={{ height: `${pct}%` }}
-										/>
-										<p className="text-[9px] text-muted/80">{stat.month}</p>
+
+						{chartMonthlyRows.length === 0 ? (
+							<p className="text-sm text-muted py-8 text-center border border-dashed border-border/25 rounded-xl bg-foreground/[0.02]">
+								No monthly breakdown yet. Totals will appear here once data is available.
+							</p>
+						) : (
+							<>
+								{/* Column chart — baseline + proportional bars */}
+								<div className="rounded-xl bg-foreground/[0.03] ring-1 ring-border/10 px-3 pt-4 pb-2 sm:px-4">
+									<div className="flex h-[132px] items-end justify-between gap-1.5 sm:gap-2 border-b border-border/15">
+										{chartMonthlyRows.map((stat, i) => {
+											const ratio = stat.earnings / chartMaxEarnings;
+											const pct = stat.earnings <= 0 ? 0 : Math.max(ratio * 100, 4);
+											return (
+												<div key={i} className="flex h-full min-w-0 flex-1 flex-col items-stretch justify-end">
+													<div className="mx-auto flex w-full max-w-[40px] flex-1 flex-col justify-end sm:max-w-[48px]">
+														{stat.earnings > 0 ? (
+															<div
+																className="w-full rounded-t-[3px] bg-rose-500 shadow-[0_0_20px_-4px_rgba(244,63,94,0.45)] transition-[height] duration-500"
+																style={{ height: `${pct}%` }}
+																title={`${stat.month}: ${formatINR(stat.earnings)}`}
+															/>
+														) : (
+															<div
+																className="h-1 w-full rounded-full bg-foreground/[0.08]"
+																aria-hidden
+															/>
+														)}
+													</div>
+												</div>
+											);
+										})}
 									</div>
-								);
-							})}
-						</div>
+									<div className="mt-2 flex justify-between gap-1.5 sm:gap-2">
+										{chartMonthlyRows.map((stat, i) => (
+											<div key={i} className="min-w-0 flex-1 text-center">
+												<span className="block truncate text-[10px] font-medium text-muted sm:text-[11px]">
+													{shortMonthLabel(stat.month)}
+												</span>
+											</div>
+										))}
+									</div>
+								</div>
+
+								<button
+									type="button"
+									onClick={() => { void navigate('/creator-dashboard/earnings'); }}
+									className="mt-5 w-full rounded-lg border border-border/15 py-2 text-xs font-medium text-muted transition-colors hover:border-border/30 hover:bg-foreground/[0.04] hover:text-foreground"
+								>
+									View full earnings report
+								</button>
+							</>
+						)}
 					</div>
 
 					<div className="bg-surface border border-border/20 rounded-2xl p-4">

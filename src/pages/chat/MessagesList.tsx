@@ -16,7 +16,7 @@ import { isUuid, randomUuid } from '../../utils/isUuid';
 
 export function MessagesList() {
 	const { state: authState } = useAuth();
-	const { state: chatState, addConversation } = useChat();
+	const { state: chatState, addConversation, setActive } = useChat();
 	const { state: sessionsState } = useSessions();
 	const { state: contentState } = useContent();
 	const { subscribedCreators, bumpHydrate } = useSubscribedCreatorsForFan({ eagerHydrate: false });
@@ -29,6 +29,11 @@ export function MessagesList() {
 
 	const userId = authState.user?.id ?? '';
 	const isFan = authState.user?.role === 'fan';
+
+	useEffect(() => {
+		// Ensure unread counts increment while on the list (WhatsApp-like).
+		setActive(null);
+	}, [setActive]);
 
 	// If there's an active booked chat session, show a pinned "Resume session" row
 	// even if subscription state resets on reload. Do not use `timer.room_id` while a

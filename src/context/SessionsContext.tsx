@@ -300,7 +300,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 	const navigate = useNavigate();
 	const location = useLocation();
 	const { state: authState } = useAuth();
-	const { addConversation, addRoomMessage } = useChat();
+	const { state: chatState, addConversation, addRoomMessage } = useChat();
 	const { showToast } = useNotifications();
 	const [state, dispatch] = useReducer(sessionsReducer, initialState);
 	const callAgoraCredsByUserRef = useRef<CallAgoraCredsByUserMap>(loadCallAgoraCredsByUser());
@@ -922,6 +922,9 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 		const me = authState.user;
 		if (!me) return;
 
+		// Do not overwrite an existing conversation row, otherwise unread/lastMessage can reset on sync/reconnect.
+		if (chatState.conversations.some(c => c.id === roomId)) return;
+
 		const creatorMeta = creatorMetaByRequestIdRef.current[active.request_id];
 		const fanMeta = fanMetaByRequestIdRef.current[active.request_id];
 		const otherFromState = state.active?.otherDisplay;
@@ -955,6 +958,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 		state.active?.otherDisplay,
 		state.endedRooms,
 		authState.user,
+		chatState.conversations,
 		addConversation,
 	]);
 
@@ -967,14 +971,17 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 		ensureBookedRoomJoined(active.room_id);
 	}, [wsConnected, state.active?.accepted?.request_id]);
 
-	// Global chat listener for the joined booked room (so Messages list gets live updates).
+	// Global chat listener for any joined room.
+	// `chat|c` is only delivered for rooms that are currently joined; we join:
+	// - active booked room via `ensureBookedRoomJoined`
+	// - list rooms from `MessagesList`
+	// This ensures WhatsApp-like unread + last message updates even when the thread is not open.
 	useEffect(() => {
 		if (!wsConnected) return;
 		const off = ws.on('chat', 'c', data => {
 			const dto = data as { id: string, room_id: string, user_id: string, body: string, created_at: string };
 			const roomId = dto?.room_id ?? '';
 			if (!roomId) return;
-			if (joinedBookedRoomRef.current !== roomId) return;
 			addRoomMessage({
 				id: dto.id,
 				conversationId: roomId,

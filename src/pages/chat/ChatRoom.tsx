@@ -190,6 +190,8 @@ export function ChatRoom() {
 		onProtocolError,
 		sendWithAck: isBookedActive,
 		transport: isBookedActive ? 'ws' : 'multiplex',
+		// SessionsContext keeps the booked room joined in background for WhatsApp-like unread updates.
+		leaveOnCleanup: !isBookedActive,
 	});
 
 	useEffect(() => {

@@ -436,7 +436,7 @@ export function ChatRoom() {
 							</button>
 						)}
 						{/* For booked sessions, the session type is already fixed; hide ad-hoc call actions. */}
-						{!isBookedActive && (
+						{!isBookedChatRoom && (
 							<>
 								<button
 									type="button"

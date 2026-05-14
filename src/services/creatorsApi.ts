@@ -111,6 +111,11 @@ export interface UpdateNotificationSettingsResponse {
 	settings: NotificationSettings;
 }
 
+export interface ChangePasswordRequest {
+	currentPassword: string;
+	newPassword: string;
+}
+
 export interface CreateReportRequest {
 	targetType: 'post' | 'user' | 'message';
 	targetId: string;
@@ -350,6 +355,9 @@ export const creatorsApi = {
 	me: {
 		updateProfile(body: UpdateMyProfileRequest): Promise<UpdateMyProfileResponse> {
 			return requestJson<UpdateMyProfileResponse>('/me/profile', { method: 'POST', body, auth: true });
+		},
+		changePassword(body: ChangePasswordRequest): Promise<{ ok: true }> {
+			return requestJson<{ ok: true }>('/me/password', { method: 'POST', body, auth: true });
 		},
 		notificationSettings: {
 			get(): Promise<GetNotificationSettingsResponse> {

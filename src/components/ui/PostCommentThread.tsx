@@ -5,8 +5,9 @@ import { useContent } from '../../context/ContentContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { Avatar } from './Avatar';
 import { formatDistanceToNow } from '../../utils/date';
-import { Heart, ChevronDown } from '../icons';
+import { Heart, ChevronDown, AlertTriangle } from '../icons';
 import { buildCommentTree, type CommentTreeNode } from '../../services/commentTree';
+import { ReportTargetModal } from '../modals/ReportTargetModal';
 
 const MAX_VISUAL_DEPTH = 4;
 
@@ -52,6 +53,9 @@ interface CommentBranchProps {
 	onHeart: (commentId: string) => void;
 	heartingId: string | null;
 	expand: CommentExpandControls;
+	onDeleteComment?: (commentId: string) => void;
+	onReportComment?: (commentId: string) => void;
+	deletingCommentId?: string | null;
 }
 
 function CommentBranch({
@@ -69,6 +73,9 @@ function CommentBranch({
 	onHeart,
 	heartingId,
 	expand,
+	onDeleteComment,
+	onReportComment,
+	deletingCommentId,
 }: CommentBranchProps) {
 	const { state: authState } = useAuth();
 	const { comment } = node;
@@ -126,6 +133,26 @@ function CommentBranch({
 								className="text-[11px] sm:text-xs font-semibold text-foreground/75 dark:text-foreground/70 hover:text-foreground min-h-[44px] sm:min-h-0 py-2 sm:py-0 px-1 -mx-1 rounded-lg sm:rounded-none active:bg-foreground/5 sm:active:bg-transparent"
 							>
 								Reply
+							</button>
+						)}
+						{authState.user && comment.userId !== authState.user.id && onReportComment && (
+							<button
+								type="button"
+								onClick={() => onReportComment(comment.id)}
+								className="text-[11px] sm:text-xs font-medium text-muted hover:text-amber-500 min-h-[44px] sm:min-h-0 py-2 sm:py-0 px-1 -mx-1 rounded-lg sm:rounded-none inline-flex items-center gap-1"
+							>
+								<AlertTriangle className="w-3.5 h-3.5 shrink-0 opacity-70" aria-hidden />
+								Report
+							</button>
+						)}
+						{isPostAuthor && onDeleteComment && (
+							<button
+								type="button"
+								onClick={() => onDeleteComment(comment.id)}
+								disabled={deletingCommentId === comment.id}
+								className="text-[11px] sm:text-xs font-medium text-muted hover:text-red-500 min-h-[44px] sm:min-h-0 py-2 sm:py-0 px-1 -mx-1 rounded-lg sm:rounded-none disabled:opacity-50"
+							>
+								{deletingCommentId === comment.id ? 'Deleting…' : 'Delete'}
 							</button>
 						)}
 						{creatorHeartedComment && !isPostAuthor && (
@@ -257,6 +284,9 @@ function CommentBranch({
 							onHeart={onHeart}
 							heartingId={heartingId}
 							expand={expand}
+							onDeleteComment={onDeleteComment}
+							onReportComment={onReportComment}
+							deletingCommentId={deletingCommentId}
 						/>
 					))}
 				</div>
@@ -273,7 +303,7 @@ interface PostCommentThreadProps {
 
 export function PostCommentThread({ post, commentNext, onCommentPosted }: PostCommentThreadProps) {
 	const { state: authState } = useAuth();
-	const { addComment, addReply, heartComment, loadMorePostComments } = useContent();
+	const { addComment, addReply, heartComment, loadMorePostComments, deleteCommentAsAuthor } = useContent();
 	const { showToast } = useNotifications();
 	const [rootText, setRootText] = useState('');
 	const [replyingToId, setReplyingToId] = useState<string | null>(null);
@@ -282,6 +312,8 @@ export function PostCommentThread({ post, commentNext, onCommentPosted }: PostCo
 	const [submittingReply, setSubmittingReply] = useState(false);
 	const [heartingId, setHeartingId] = useState<string | null>(null);
 	const [expandedThreads, setExpandedThreads] = useState<Record<string, true>>({});
+	const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
+	const [reportCommentId, setReportCommentId] = useState<string | null>(null);
 	const rootInputRef = useRef<HTMLTextAreaElement | null>(null);
 
 	const expand = useMemo<CommentExpandControls>(
@@ -301,6 +333,26 @@ export function PostCommentThread({ post, commentNext, onCommentPosted }: PostCo
 		}),
 		[expandedThreads]
 	);
+
+	const handleDeleteComment = useCallback(
+		(commentId: string) => {
+			if (!window.confirm('Delete this comment and all replies?')) return;
+			setDeletingCommentId(commentId);
+			void deleteCommentAsAuthor(post.id, commentId)
+				.then(() => {
+					showToast('Comment removed');
+				})
+				.catch(() => {
+					showToast('Could not delete comment', 'error');
+				})
+				.finally(() => {
+					setDeletingCommentId(null);
+				});
+		},
+		[deleteCommentAsAuthor, post.id, showToast]
+	);
+
+	const isPostAuthorViewer = authState.user?.id === post.creatorId;
 
 	const tree = useMemo(() => buildCommentTree(post.comments), [post.comments]);
 
@@ -443,6 +495,9 @@ export function PostCommentThread({ post, commentNext, onCommentPosted }: PostCo
 								onHeart={handleHeart}
 								heartingId={heartingId}
 								expand={expand}
+								onDeleteComment={isPostAuthorViewer ? handleDeleteComment : undefined}
+								onReportComment={authState.user ? (id: string) => setReportCommentId(id) : undefined}
+								deletingCommentId={deletingCommentId}
 							/>
 						);
 					})
@@ -457,6 +512,14 @@ export function PostCommentThread({ post, commentNext, onCommentPosted }: PostCo
 					Load older comments
 				</button>
 			) : null}
+			<ReportTargetModal
+				isOpen={reportCommentId != null}
+				onClose={() => setReportCommentId(null)}
+				targetType="comment"
+				targetId={reportCommentId ?? ''}
+				title="Report comment"
+				onToast={(msg, t) => showToast(msg, t ?? 'success')}
+			/>
 		</div>
 	);
 }

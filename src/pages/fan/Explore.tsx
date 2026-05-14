@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Search, SlidersHorizontal, TrendingUp, Star, Users, Eye, Compass } from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';
@@ -8,7 +8,7 @@ import { mockCreators } from '../../data/users';
 import type { Creator } from '../../types';
 import { useContent } from '../../context/ContentContext';
 import { useLiveStream } from '../../context/LiveStreamContext';
-import { creatorSummaryToCardCreator } from '../../services/creatorWsMap';
+import { creatorSummaryToCardCreator, hydrateCreatorCardsFromHttp } from '../../services/creatorWsMap';
 import { useDragScroll } from '../../hooks/useDragScroll';
 import { normalizeHashtagTag, textHasHashtag } from '../../utils/hashtag';
 
@@ -30,6 +30,10 @@ export function Explore() {
 	const [sortBy, setSortBy] = useState<'popular' | 'new' | 'price'>('popular');
 	const tagFilter = normalizeHashtagTag(searchParams.get('tag') ?? '');
 	const [wsCreators, setWsCreators] = useState<Creator[]>([]);
+	const wsCreatorsRef = useRef<Creator[]>([]);
+	useEffect(() => {
+		wsCreatorsRef.current = wsCreators;
+	}, [wsCreators]);
 	const [wsDirCursor, setWsDirCursor] = useState<string | null>(null);
 	const [wsDirLoading, setWsDirLoading] = useState(false);
 	const { getLiveStreams } = useLiveStream();
@@ -40,20 +44,64 @@ export function Explore() {
 
 	useEffect(() => {
 		if (contentState.postsWsStatus !== 'ready') return;
+		const ac = new AbortController();
+		let cancelled = false;
 		setWsDirLoading(true);
 		const cat = category === 'All' ? undefined : category;
 		const q = search.trim() || undefined;
 		void creatorWsSearch({ q, category: cat, limit: 30 })
 			.then(r => {
-				setWsCreators(r.creators.map(d => creatorSummaryToCardCreator(d, mockCreators[0])));
+				if (cancelled) return null;
+				const base = r.creators.map(d => creatorSummaryToCardCreator(d, mockCreators[0]));
+				setWsCreators(base);
 				setWsDirCursor(r.nextCursor ?? null);
+				return hydrateCreatorCardsFromHttp(base, ac.signal);
+			})
+			.then(merged => {
+				if (merged == null || cancelled || ac.signal.aborted) return;
+				setWsCreators(merged);
 			})
 			.catch(() => {
+				if (cancelled) return;
 				setWsCreators([]);
 				setWsDirCursor(null);
 			})
-			.finally(() => setWsDirLoading(false));
+			.finally(() => {
+				if (!cancelled) setWsDirLoading(false);
+			});
+
+		return () => {
+			cancelled = true;
+			ac.abort();
+		};
 	}, [contentState.postsWsStatus, search, category, creatorWsSearch]);
+
+	function loadMoreDirectory() {
+		if (!wsDirCursor || contentState.postsWsStatus !== 'ready') return;
+		const ac = new AbortController();
+		const cat = category === 'All' ? undefined : category;
+		const q = search.trim() || undefined;
+		void creatorWsSearch({ q, category: cat, limit: 30, beforeCursor: wsDirCursor })
+			.then(r => {
+				const nextRows = r.creators.map(d => creatorSummaryToCardCreator(d, mockCreators[0]));
+				const prev = wsCreatorsRef.current;
+				const seen: Record<string, true> = {};
+				for (const c of prev) seen[c.id] = true;
+				const add = nextRows.filter(c => !seen[c.id]);
+				setWsCreators([...prev, ...add]);
+				setWsDirCursor(r.nextCursor ?? null);
+				if (!add.length) return null;
+				return hydrateCreatorCardsFromHttp(add, ac.signal).then(mergedAdds => {
+					if (ac.signal.aborted) return;
+					setWsCreators(cur => {
+						const byId: Record<string, Creator> = {};
+						for (const c of mergedAdds) byId[c.id] = c;
+						return cur.map(c => byId[c.id] ?? c);
+					});
+				});
+			})
+			.catch(() => {});
+	}
 
 	const filtered = useMemo(() => {
 		return [...wsCreators].sort((a, b) => {
@@ -69,24 +117,6 @@ export function Explore() {
 	}, [explorePosts, tagFilter]);
 
 	const trendingCreators = wsCreators.slice(0, 3);
-
-	function loadMoreDirectory() {
-		if (!wsDirCursor || contentState.postsWsStatus !== 'ready') return;
-		const cat = category === 'All' ? undefined : category;
-		const q = search.trim() || undefined;
-		void creatorWsSearch({ q, category: cat, limit: 30, beforeCursor: wsDirCursor })
-			.then(r => {
-				const next = r.creators.map(d => creatorSummaryToCardCreator(d, mockCreators[0]));
-				setWsCreators(prev => {
-					const seen: Record<string, true> = {};
-					for (const c of prev) seen[c.id] = true;
-					const add = next.filter(c => !seen[c.id]);
-					return [...prev, ...add];
-				});
-				setWsDirCursor(r.nextCursor ?? null);
-			})
-			.catch(() => {});
-	}
 
 	return (
 		<Layout>

@@ -71,13 +71,26 @@ export interface DeletePostResponse {
 	ok: true;
 }
 
+export interface DeleteCommentResponse {
+	ok: true;
+	post_id: string;
+	deleted_count: number;
+}
+
+export interface CommentDeletedEventPayload {
+	post_id: string;
+	root_comment_id: string;
+	deleted_count?: number;
+}
+
 export type PostsPushEvent =
 	| 'new' |
 	'updated' |
 	'deleted' |
 	'likeupdate' |
 	'newcomment' |
-	'commentheartupdate';
+	'commentheartupdate' |
+	'commentdeleted';
 
 export interface DeletedPostEventPayload {
 	id: string;

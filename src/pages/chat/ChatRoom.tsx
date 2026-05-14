@@ -17,6 +17,7 @@ import { Navbar } from '../../components/layout/Navbar';
 import { useRoomChat } from '../../hooks/useRoomChat';
 import { formatINR } from '../../services/razorpay';
 import { SessionFeedbackModal } from '../../components/session/SessionFeedbackModal';
+import { ReportTargetModal } from '../../components/modals/ReportTargetModal';
 import { isUuid } from '../../utils/isUuid';
 
 function formatRemaining(sec: number): string {
@@ -96,6 +97,7 @@ export function ChatRoom() {
 	const { state: sessionsState, completeSession: completeBookedSession } = useSessions();
 	const [text, setText] = useState('');
 	const [showTipModal, setShowTipModal] = useState(false);
+	const [reportMessageId, setReportMessageId] = useState<string | null>(null);
 	const [realtimeSending, setRealtimeSending] = useState(false);
 	const [otherInRoom, setOtherInRoom] = useState(false);
 	const [nowMs, setNowMs] = useState(() => Date.now());
@@ -515,8 +517,17 @@ export function ChatRoom() {
 											{msg.content}
 										</div>
 									)}
-									<div className={`flex items-center gap-1 ${isMe ? 'flex-row-reverse' : ''}`}>
+									<div className={`flex items-center gap-2 ${isMe ? 'flex-row-reverse' : ''}`}>
 										<p className="text-[10px] text-muted/70">{formatDistanceToNow(msg.createdAt)}</p>
+										{!isMe && authState.user && (
+											<button
+												type="button"
+												onClick={() => setReportMessageId(msg.id)}
+												className="text-[10px] font-semibold text-muted/80 hover:text-amber-500"
+											>
+												Report
+											</button>
+										)}
 										{isMe && (
 											msg.sendStatus === 'failed' ?
 												<span className="text-[10px] text-rose-300">Failed</span> :
@@ -587,6 +598,14 @@ export function ChatRoom() {
 				creatorId={otherId}
 				creatorName={otherName}
 				creatorAvatar={otherAvatar}
+			/>
+			<ReportTargetModal
+				isOpen={reportMessageId != null}
+				onClose={() => setReportMessageId(null)}
+				targetType="message"
+				targetId={reportMessageId ?? ''}
+				title="Report message"
+				onToast={(msg, t) => showToast(msg, t ?? 'success')}
 			/>
 			<SessionFeedbackModal />
 		</div>

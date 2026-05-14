@@ -5,6 +5,7 @@ import { Layout } from '../../components/layout/Layout';
 import { PostCard } from '../../components/ui/PostCard';
 import { TipModal } from '../../components/modals/TipModal';
 import { SubscribeModal } from '../../components/modals/SubscribeModal';
+import { ReportTargetModal } from '../../components/modals/ReportTargetModal';
 import { useAuth } from '../../context/AuthContext';
 import { useContent } from '../../context/ContentContext';
 import { mockCreators } from '../../data/users';
@@ -15,8 +16,8 @@ import { useCall } from '../../context/CallContext';
 import { useSession } from '../../context/SessionContext';
 import { SessionPickerModal, type SessionPayMode } from '../../components/modals/SessionPickerModal';
 import type { Creator, SessionType } from '../../types';
-import { ApiError } from '../../services/creatorsApi';
-import { creatorProfileDtoToCreator } from '../../services/creatorWsMap';
+import { ApiError, creatorsApi } from '../../services/creatorsApi';
+import { creatorProfileDtoToCreator, httpCreatorProfileToDto } from '../../services/creatorWsMap';
 import { randomUuid } from '../../utils/isUuid';
 import { formatINR } from '../../services/razorpay';
 import { useSessions } from '../../context/SessionsContext';
@@ -51,6 +52,9 @@ export function CreatorProfile() {
 	const [profileLikedByMe, setProfileLikedByMe] = useState(false);
 	const [profileLikeBusy, setProfileLikeBusy] = useState(false);
 	const [profileLikePopKey, setProfileLikePopKey] = useState(0);
+	const [showReportUser, setShowReportUser] = useState(false);
+	const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+	const profileMenuRef = useRef<HTMLDivElement | null>(null);
 	const hasLoadedCreatorRef = useRef(false);
 
 	const maybeCreator = useMemo(() => mockCreators.find(c => c.id === creatorUserId), [creatorUserId]);
@@ -69,54 +73,75 @@ export function CreatorProfile() {
 	}, [creatorUserId, cachedDisplay]);
 
 	useEffect(() => {
+		function onDocMouseDown(e: MouseEvent) {
+			if (!profileMenuOpen) return;
+			const t = e.target as Node | null;
+			if (!t) return;
+			if (profileMenuRef.current && !profileMenuRef.current.contains(t)) setProfileMenuOpen(false);
+		}
+		document.addEventListener('mousedown', onDocMouseDown);
+		return () => document.removeEventListener('mousedown', onDocMouseDown);
+	}, [profileMenuOpen]);
+
+	useEffect(() => {
 		if (!creatorUserId) return;
 		const ac = new AbortController();
 		const base = maybeCreator ?? mockCreators[0];
 
-		// creator WS commands are multiplexed over the posts socket; wait until it is ready.
-		if (contentState.postsWsStatus !== 'ready') {
-			setIsLoadingCreator(false);
-			return () => ac.abort();
-		}
+		const finishWs = (r: Awaited<ReturnType<typeof creatorWsGetByUserId>>) => {
+			if (ac.signal.aborted) return;
+			if (r.creator) {
+				hasLoadedCreatorRef.current = true;
+				const dto = r.creator;
+				setIsFollowed(Boolean(dto.is_followed));
+				setProfileLikedByMe(Boolean(dto.is_profile_liked));
+				setRemoteCreator(creatorProfileDtoToCreator(dto, base));
+				return;
+			}
+			if (!hasLoadedCreatorRef.current && !fallbackCreator) {
+				showToast('Creator profile not found for this user.', 'error');
+			}
+			if (!hasLoadedCreatorRef.current && fallbackCreator) {
+				setRemoteCreator(fallbackCreator);
+			}
+		};
 
 		setIsLoadingCreator(true);
 
-		void creatorWsGetByUserId(creatorUserId)
-			.then(r => {
+		void creatorsApi.creators
+			.getById(creatorUserId, ac.signal)
+			.then(h => {
 				if (ac.signal.aborted) return;
-				if (r.creator) {
-					hasLoadedCreatorRef.current = true;
-					const dto = r.creator;
-					setIsFollowed(Boolean(dto.is_followed));
-					setProfileLikedByMe(Boolean(dto.is_profile_liked));
-					setRemoteCreator(creatorProfileDtoToCreator(dto, base));
-					return;
-				}
-				if (!hasLoadedCreatorRef.current && !fallbackCreator) {
-					showToast('Creator profile not found for this user.', 'error');
-				}
-				// Fall back to cached display from posts directory so the user can still view creator posts.
-				if (!hasLoadedCreatorRef.current && fallbackCreator) {
-					setRemoteCreator(fallbackCreator);
-				}
+				hasLoadedCreatorRef.current = true;
+				setIsFollowed(Boolean(h.isFollowed));
+				setProfileLikedByMe(Boolean(h.isProfileLiked));
+				const dto = httpCreatorProfileToDto(h);
+				setRemoteCreator(creatorProfileDtoToCreator(dto, base));
 			})
 			.catch((err: unknown) => {
 				if (ac.signal.aborted) return;
-				if (err instanceof ApiError) {
-					console.error('[creator-profile] ws getByUserId failed', { creatorUserId, status: err.status, body: err.body });
-				} else {
-					console.error('[creator-profile] ws getByUserId failed', { creatorUserId, err });
+				if (!(err instanceof ApiError) || err.status !== 404) {
+					console.error('[creator-profile] HTTP get failed', { creatorUserId, err });
 				}
-				if (!hasLoadedCreatorRef.current) {
-					showToast('Could not load creator profile. Please try again.', 'error');
+				if (contentState.postsWsStatus !== 'ready') {
+					if (!hasLoadedCreatorRef.current && fallbackCreator) setRemoteCreator(fallbackCreator);
+					else if (!hasLoadedCreatorRef.current) showToast('Could not load creator profile.', 'error');
+					return;
 				}
+				return creatorWsGetByUserId(creatorUserId)
+					.then(finishWs)
+					.catch((e2: unknown) => {
+						if (ac.signal.aborted) return;
+						console.error('[creator-profile] WS fallback failed', e2);
+						if (!hasLoadedCreatorRef.current) showToast('Could not load creator profile.', 'error');
+					});
 			})
 			.finally(() => {
 				if (!ac.signal.aborted) setIsLoadingCreator(false);
 			});
 
 		return () => ac.abort();
-	}, [creatorUserId, maybeCreator, creatorWsGetByUserId, contentState.postsWsStatus]);
+	}, [creatorUserId, maybeCreator, creatorWsGetByUserId, contentState.postsWsStatus, fallbackCreator, showToast]);
 
 	useEffect(() => {
 		if (!creatorUserId) return;
@@ -374,12 +399,35 @@ export function CreatorProfile() {
 					</div>
 
 					<div className="absolute top-3 right-3 z-10 flex gap-2">
-						<button className="w-8 h-8 bg-background/70 text-foreground hover:bg-background/90 dark:bg-black/40 dark:text-white dark:hover:bg-black/60 backdrop-blur-sm rounded-full flex items-center justify-center transition-colors">
+						<button type="button" className="w-8 h-8 bg-background/70 text-foreground hover:bg-background/90 dark:bg-black/40 dark:text-white dark:hover:bg-black/60 backdrop-blur-sm rounded-full flex items-center justify-center transition-colors">
 							<Share2 className="w-4 h-4" />
 						</button>
-						<button className="w-8 h-8 bg-background/70 text-foreground hover:bg-background/90 dark:bg-black/40 dark:text-white dark:hover:bg-black/60 backdrop-blur-sm rounded-full flex items-center justify-center transition-colors">
-							<MoreHorizontal className="w-4 h-4" />
-						</button>
+						{!isOwner && (
+							<div ref={profileMenuRef} className="relative">
+								<button
+									type="button"
+									onClick={() => setProfileMenuOpen(v => !v)}
+									className="w-8 h-8 bg-background/70 text-foreground hover:bg-background/90 dark:bg-black/40 dark:text-white dark:hover:bg-black/60 backdrop-blur-sm rounded-full flex items-center justify-center transition-colors"
+									aria-label="Profile menu"
+								>
+									<MoreHorizontal className="w-4 h-4" />
+								</button>
+								{profileMenuOpen && authState.user && (
+									<div className="absolute right-0 top-full mt-2 w-44 bg-surface2 border border-border/20 rounded-xl shadow-xl py-1 z-30">
+										<button
+											type="button"
+											onClick={() => {
+												setProfileMenuOpen(false);
+												setShowReportUser(true);
+											}}
+											className="w-full text-left px-3 py-2 text-sm text-foreground hover:bg-foreground/5"
+										>
+											Report user
+										</button>
+									</div>
+								)}
+							</div>
+						)}
 					</div>
 				</div>
 
@@ -607,6 +655,14 @@ export function CreatorProfile() {
 				walletBalanceMinor={authState.user?.walletBalanceMinor ?? '0'}
 				onConfirm={handleStartSession}
 				protocol="sessions"
+			/>
+			<ReportTargetModal
+				isOpen={showReportUser}
+				onClose={() => setShowReportUser(false)}
+				targetType="user"
+				targetId={creatorForDisplay.id}
+				title="Report user"
+				onToast={(msg, t) => showToast(msg, t ?? 'success')}
 			/>
 		</Layout>
 	);

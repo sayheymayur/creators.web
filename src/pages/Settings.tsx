@@ -60,6 +60,8 @@ export function Settings() {
 			.catch(() => {
 				// Per spec: defaults are true when nothing saved yet.
 				// If the endpoint is unavailable in some env, keep local defaults and avoid blocking Settings.
+				setNotifPrefs({ ...defaultNotifPrefs });
+				setNotifDirty(false);
 			})
 			.finally(() => setNotifLoading(false));
 		// We intentionally load once per Settings mount.
@@ -117,7 +119,7 @@ export function Settings() {
 				setCurrentPassword('');
 				setNewPassword('');
 			})
-			.catch(err => {
+			.catch((err: unknown) => {
 				showToast(apiErrorMessage(err, 'Could not change password'), 'error');
 			})
 			.finally(() => setIsChangingPassword(false));
@@ -126,15 +128,6 @@ export function Settings() {
 	function handleLogout() {
 		logout();
 		navigate('/');
-	}
-
-	function toggleNotifPref(key: keyof NotificationSettings) {
-		setNotifPrefs(p => {
-			const next = { ...p, [key]: !p[key] };
-			notifPrefsRef.current = next;
-			return next;
-		});
-		scheduleNotifPersist();
 	}
 
 	if (!user) return null;

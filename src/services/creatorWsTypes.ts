@@ -15,14 +15,11 @@ export interface CreatorProfileDTO extends CreatorSummaryDTO {
 	/** Spec: creator /get includes subscription price in minor units as integer string. */
 	subscription_price_minor?: string | null;
 	/** Spec: creator /get includes profile like stats for the viewer. */
-	profile_like_count?: number;
-	is_profile_liked?: boolean;
+	profile_like_count?: number | null;
+	is_profile_liked?: boolean | null;
 	/** Optional extra fields present on some backends (used for follow UI). */
 	follower_count?: number | string | null;
 	is_followed?: boolean | null;
-	/** Fan profile likes (extended creator `/get`). */
-	profile_like_count?: number | null;
-	is_profile_liked?: boolean | null;
 }
 
 export interface CreatorListResponse {

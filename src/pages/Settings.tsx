@@ -3,6 +3,7 @@ import { User, Bell, Shield, LogOut, Eye, EyeOff, Save, Camera } from '../compon
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
 import { Button } from '../components/ui/Button';
+import { MediaAvatar } from '../components/ui/MediaAvatar';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import { ApiError, apiErrorMessage, creatorsApi, type NotificationSettings } from '../services/creatorsApi';
@@ -136,7 +137,12 @@ export function Settings() {
 					</div>
 					<div className="flex items-center gap-4 mb-4">
 						<div className="relative">
-							<img src={avatarPreviewUrl ?? user.avatar} alt={user.name} className="w-14 h-14 rounded-2xl object-cover" />
+							<MediaAvatar
+								src={avatarPreviewUrl ?? user.avatar}
+								alt={user.name}
+								name={user.name}
+								className="h-14 w-14 rounded-2xl"
+							/>
 							{user.role === 'fan' && (
 								<button
 									type="button"

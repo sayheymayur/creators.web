@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useWs, useWsAuthReady, useWsConnected } from './WsContext';
 import { useAuth } from './AuthContext';
 import { useChat } from './ChatContext';
@@ -129,6 +129,11 @@ function loadLocalSessionsSnapshot(): LocalSessionsSnapshot | null {
 	} catch {
 		return null;
 	}
+}
+
+function isBrowserReloadNavigation(): boolean {
+	const nav = globalThis.performance?.getEntriesByType?.('navigation')?.[0] as PerformanceNavigationTiming | undefined;
+	return nav?.type === 'reload';
 }
 
 type SessionsState = {
@@ -293,8 +298,9 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 	const wsConnected = useWsConnected();
 	const wsAuthReady = useWsAuthReady();
 	const navigate = useNavigate();
+	const location = useLocation();
 	const { state: authState } = useAuth();
-	const { addConversation, addRoomMessage } = useChat();
+	const { state: chatState, addConversation, addRoomMessage } = useChat();
 	const { showToast } = useNotifications();
 	const [state, dispatch] = useReducer(sessionsReducer, initialState);
 	const callAgoraCredsByUserRef = useRef<CallAgoraCredsByUserMap>(loadCallAgoraCredsByUser());
@@ -304,10 +310,15 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 	const creatorMetaByRequestIdRef = useRef<Record<string, { userId: string, name: string, avatar: string }>>({});
 	const fanMetaByRequestIdRef = useRef<Record<string, { userId: string, name: string }>>({});
 	const roomIdByRequestIdRef = useRef<Record<string, string>>({});
+	/** When a fan requests a session, remember intent so hydrate-only accept can still auto-open once. */
+	const lastOutgoingIntentRef = useRef<{ requestId: string, atMs: number, kind: SessionKind } | null>(null);
 	const joinedBookedRoomRef = useRef<string | null>(null);
 	const didPromptActiveRequestIdRef = useRef<string | null>(null);
 	const didHydrateLocalRef = useRef(false);
-	const hydratedLocalAtMsRef = useRef<number | null>(null);
+	/** Set when `sessions|accepted` (or `acceptSession` ack) is for a live chat accept — triggers one auto-open to the thread. */
+	const pendingOpenBookedChatRequestIdRef = useRef<string | null>(null);
+	/** Same as chat, for booked calls — avoids auto `/call` on reconnect when `sessions|accepted` replays. */
+	const pendingOpenBookedCallRequestIdRef = useRef<string | null>(null);
 	const localTimerRef = useRef<{ requestId: string, roomId: string, endsAtMs: number, t: number | null } | null>(null);
 	const stateSyncRef = useRef<{ atMs: number, reason: string } | null>(null);
 
@@ -360,6 +371,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 			return sessionsRequest(ws, { creatorUserId: opts.creatorUserId, kind: opts.kind, minutes: opts.minutes })
 				.then(res => {
 					minutesByRequestIdRef.current[res.request_id] = opts.minutes;
+					lastOutgoingIntentRef.current = { requestId: res.request_id, atMs: Date.now(), kind: opts.kind };
 					if (opts.kind === 'call' && opts.uiCallType) {
 						uiCallTypeByRequestIdRef.current[res.request_id] = opts.uiCallType;
 					}
@@ -405,6 +417,8 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 						peerIds: fan && me?.role === 'creator' ? { fan_user_id: fan.userId, creator_user_id: me.id } : undefined,
 					},
 				});
+				if (res.kind === 'chat') pendingOpenBookedChatRequestIdRef.current = res.request_id;
+				if (res.kind === 'call') pendingOpenBookedCallRequestIdRef.current = res.request_id;
 				return res;
 			});
 		},
@@ -468,15 +482,13 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 
 		const snap = loadLocalSessionsSnapshot();
 		if (!snap) return;
-		hydratedLocalAtMsRef.current = Date.now();
 		dispatch({ type: 'HYDRATE_LOCAL', payload: snap });
 
 		// Notify user on reopen if there is a live chat session or a pending request.
 		const me = authState.user;
 		if (!me) return;
-		if (snap.active?.accepted?.kind === 'chat' && snap.active.accepted.room_id && !snap.endedRooms?.[snap.active.accepted.room_id]) {
-			showToast('Chat session is still active. Open Messages to resume.');
-		} else if (snap.outgoing?.state === 'pending') {
+		// Active booked chat: toast is handled once `state.active` is applied (avoid duplicate with remote hydrate).
+		if (snap.outgoing?.state === 'pending') {
 			showToast('Your session request is still pending.');
 		} else if (Array.isArray(snap.incoming) && snap.incoming.length) {
 			showToast('You have a pending session request.');
@@ -524,6 +536,122 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 		return payload;
 	};
 
+	const applyRemoteState = useCallback((remote: SessionsStateResponse) => {
+		const outgoing = (remote.outgoing ?? []);
+		const incomingRows = (remote.incoming ?? []);
+		const activeRows = (remote.active ?? []);
+
+		const pendingOutgoing = outgoing.find(r => r.status === 'pending' || r.status === 'accepted') ?? null;
+		const nextOutgoing: OutgoingRequestState =
+			pendingOutgoing ?
+				{ state: 'pending', request: { request_id: pendingOutgoing.id, status: 'pending', price_cents: pendingOutgoing.price_cents, kind: pendingOutgoing.kind } } :
+				{ state: 'idle' };
+
+		const nextIncoming: IncomingRequestState[] = incomingRows
+			.filter(r => r.status === 'pending')
+			.map(r => ({
+				request: {
+					request_id: r.id,
+					fan_user_id: r.fan_user_id,
+					fan_display: `User ${r.fan_user_id}`,
+					kind: r.kind,
+					price_cents: r.price_cents,
+					created_at: r.created_at,
+					minutes: r.duration_minutes,
+				},
+			}));
+
+		const activeAccepted = activeRows.find(r => r.status === 'accepted' && !!r.room_id) ?? null;
+		let nextActive: ActiveBookingState | null = null;
+		if (activeAccepted) {
+			const rid = activeAccepted.id;
+			const prevSame =
+				state.active?.accepted?.request_id === rid ?
+					state.active.otherDisplay :
+					undefined;
+			let otherDisplay: { name: string, avatar: string } | undefined;
+			if (prevSame?.name) {
+				otherDisplay = prevSame;
+			} else {
+				const me = authState.user;
+				const creatorMeta = creatorMetaByRequestIdRef.current[rid];
+				const fanMeta = fanMetaByRequestIdRef.current[rid];
+				if (me?.role === 'creator') {
+					otherDisplay = fanMeta?.name ?
+						{ name: fanMeta.name, avatar: '' } :
+						{ name: 'Fan', avatar: '' };
+				} else if (me) {
+					if (creatorMeta?.name) {
+						otherDisplay = { name: creatorMeta.name, avatar: creatorMeta.avatar };
+					} else {
+						const authProf = authState.creatorProfiles[activeAccepted.creator_user_id];
+						if (authProf?.name) {
+							otherDisplay = { name: authProf.name, avatar: authProf.avatar ?? '' };
+						} else {
+							const mock = mockCreators.find(c => c.id === activeAccepted.creator_user_id);
+							otherDisplay = mock ?
+								{ name: mock.name, avatar: mock.avatar } :
+								{ name: 'Creator', avatar: '' };
+						}
+					}
+				}
+			}
+			nextActive = {
+				accepted: bookingRowToAccepted(activeAccepted),
+				minutes: activeAccepted.duration_minutes,
+				uiCallType:
+					(state.active?.accepted?.request_id === activeAccepted.id ? state.active.uiCallType : undefined) ??
+					uiCallTypeByRequestIdRef.current[activeAccepted.id],
+				otherDisplay,
+				peerIds: {
+					fan_user_id: activeAccepted.fan_user_id,
+					creator_user_id: activeAccepted.creator_user_id,
+				},
+			};
+
+			// If the fan missed the `|accepted` push and only /state shows the active booking,
+			// auto-open once only when it matches the user's outgoing request intent.
+			// Guard against reload auto-open (banners should handle restore UX).
+			if (
+				authState.user?.role === 'fan' &&
+				!isBrowserReloadNavigation()
+			) {
+				const intent = lastOutgoingIntentRef.current;
+				// Accept can happen much later than request; keep a generous window to cover normal usage.
+				const isIntentMatch =
+					!!intent &&
+					intent.requestId === activeAccepted.id &&
+					(Date.now() - intent.atMs) < 12 * 60 * 60_000;
+				const isOutgoingMatch =
+					state.outgoing.state === 'pending' &&
+					state.outgoing.request.request_id === activeAccepted.id;
+				if (isIntentMatch || isOutgoingMatch) {
+					if (activeAccepted.kind === 'chat') pendingOpenBookedChatRequestIdRef.current = activeAccepted.id;
+					if (activeAccepted.kind === 'call') pendingOpenBookedCallRequestIdRef.current = activeAccepted.id;
+					// Avoid re-triggering if /state polls again.
+					lastOutgoingIntentRef.current = null;
+				}
+			}
+		}
+
+		const nextTimer =
+			activeAccepted ?
+				deriveTimerFromEndsAt({ requestId: activeAccepted.id, roomId: activeAccepted.room_id ?? '', endsAt: activeAccepted.ends_at }) :
+				null;
+
+		dispatch({
+			type: 'HYDRATE_REMOTE',
+			payload: {
+				outgoing: nextOutgoing,
+				incoming: nextIncoming,
+				active: nextActive,
+				timer: nextTimer,
+				ended: state.ended,
+				endedRooms: state.endedRooms,
+			},
+		});
+	}, [authState.user, authState.creatorProfiles, deriveTimerFromEndsAt, state.active, state.ended, state.endedRooms, state.outgoing]);
+
 	const syncState = useCallback((reason: string) => {
 		if (!wsConnected || !wsAuthReady) return;
 		if (!authState.user) return;
@@ -533,98 +661,10 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 		stateSyncRef.current = { atMs: now, reason };
 		void sessionsState(ws, `rs-${reason}`)
 			.then((remote: SessionsStateResponse) => {
-				const outgoing = (remote.outgoing ?? []);
-				const incomingRows = (remote.incoming ?? []);
-				const activeRows = (remote.active ?? []);
-
-				const pendingOutgoing = outgoing.find(r => r.status === 'pending' || r.status === 'accepted') ?? null;
-				const nextOutgoing: OutgoingRequestState =
-					pendingOutgoing ?
-						{ state: 'pending', request: { request_id: pendingOutgoing.id, status: 'pending', price_cents: pendingOutgoing.price_cents, kind: pendingOutgoing.kind } } :
-						{ state: 'idle' };
-
-				const nextIncoming: IncomingRequestState[] = incomingRows
-					.filter(r => r.status === 'pending')
-					.map(r => ({
-						request: {
-							request_id: r.id,
-							fan_user_id: r.fan_user_id,
-							fan_display: `User ${r.fan_user_id}`,
-							kind: r.kind,
-							price_cents: r.price_cents,
-							created_at: r.created_at,
-							minutes: r.duration_minutes,
-						},
-					}));
-
-				const activeAccepted = activeRows.find(r => r.status === 'accepted' && !!r.room_id) ?? null;
-				let nextActive: ActiveBookingState | null = null;
-				if (activeAccepted) {
-					const rid = activeAccepted.id;
-					const prevSame =
-						state.active?.accepted?.request_id === rid ?
-							state.active.otherDisplay :
-							undefined;
-					let otherDisplay: { name: string, avatar: string } | undefined;
-					if (prevSame?.name) {
-						otherDisplay = prevSame;
-					} else {
-						const me = authState.user;
-						const creatorMeta = creatorMetaByRequestIdRef.current[rid];
-						const fanMeta = fanMetaByRequestIdRef.current[rid];
-						if (me?.role === 'creator') {
-							otherDisplay = fanMeta?.name ?
-								{ name: fanMeta.name, avatar: '' } :
-								{ name: 'Fan', avatar: '' };
-						} else if (me) {
-							if (creatorMeta?.name) {
-								otherDisplay = { name: creatorMeta.name, avatar: creatorMeta.avatar };
-							} else {
-								const authProf = authState.creatorProfiles[activeAccepted.creator_user_id];
-								if (authProf?.name) {
-									otherDisplay = { name: authProf.name, avatar: authProf.avatar ?? '' };
-								} else {
-									const mock = mockCreators.find(c => c.id === activeAccepted.creator_user_id);
-									otherDisplay = mock ?
-										{ name: mock.name, avatar: mock.avatar } :
-										{ name: 'Creator', avatar: '' };
-								}
-							}
-						}
-					}
-					nextActive = {
-						accepted: bookingRowToAccepted(activeAccepted),
-						minutes: activeAccepted.duration_minutes,
-						uiCallType:
-							(state.active?.accepted?.request_id === activeAccepted.id ? state.active.uiCallType : undefined) ??
-							uiCallTypeByRequestIdRef.current[activeAccepted.id],
-						otherDisplay,
-						peerIds: {
-							fan_user_id: activeAccepted.fan_user_id,
-							creator_user_id: activeAccepted.creator_user_id,
-						},
-					};
-				}
-
-				const nextTimer =
-					activeAccepted ?
-						deriveTimerFromEndsAt({ requestId: activeAccepted.id, roomId: activeAccepted.room_id ?? '', endsAt: activeAccepted.ends_at }) :
-						null;
-
-				dispatch({
-					type: 'HYDRATE_REMOTE',
-					payload: {
-						outgoing: nextOutgoing,
-						incoming: nextIncoming,
-						active: nextActive,
-						timer: nextTimer,
-						ended: state.ended,
-						endedRooms: state.endedRooms,
-					},
-				});
+				applyRemoteState(remote);
 			})
 			.catch(() => {});
-	}, [ws, wsConnected, wsAuthReady, authState.user, authState.creatorProfiles, state.active, state.ended, state.endedRooms]);
+	}, [ws, wsConnected, wsAuthReady, authState.user, applyRemoteState]);
 
 	// Spec: after reconnect/login, pull `/state` to restore outgoing/incoming/active bookings.
 	useEffect(() => {
@@ -700,7 +740,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 			};
 			dispatch({ type: 'INCOMING_ADD', payload });
 		});
-		const offAccepted = ws.on('sessions', 'accepted', data => {
+		const onAccepted = (data: unknown) => {
 			const payload = data as SessionsAcceptedPayload;
 			roomIdByRequestIdRef.current[payload.request_id] = payload.room_id;
 
@@ -741,27 +781,20 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 				},
 			});
 			if (payload.kind === 'call') {
-				const uiCallType = uiCallTypeByRequestIdRef.current[payload.request_id] ?? 'video';
-				void ensureMediaPermissions({ audio: true, video: uiCallType === 'video' }).catch(e => {
-					if (isDeviceInUseError(e)) return;
-					throw e;
-				})
-					.then(() => {
-						void navigate('/call');
-					})
-					.catch(e => {
-						showToast(e instanceof Error ? e.message : 'Unable to access microphone/camera', 'error');
-					});
+				pendingOpenBookedCallRequestIdRef.current = payload.request_id;
 			}
 			// If the server isn't pushing `sessions|timer` reliably, we can still show a timer from the known minutes.
 			// This covers the fan role (minutes known from request) and any backend that includes minutes in the request event.
 			if (payload.kind === 'chat') {
+				pendingOpenBookedChatRequestIdRef.current = payload.request_id;
 				const mins = minutesByRequestIdRef.current[payload.request_id];
 				if (typeof mins === 'number' && Number.isFinite(mins) && mins > 0) {
 					startLocalTimer({ requestId: payload.request_id, roomId: payload.room_id, minutes: mins });
 				}
 			}
-		});
+		};
+		const offAccepted = ws.on('sessions', 'accepted', onAccepted);
+		const offAccepted2 = ws.on('session', 'accepted', onAccepted);
 		const offRejected = ws.on('sessions', 'rejected', data => {
 			const payload = data as SessionsRejectedPayload;
 			dispatch({ type: 'OUTGOING_REJECTED', payload });
@@ -776,6 +809,11 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 		const offReceived = ws.on('sessions', 'feedbackreceived', data => {
 			const payload = data as SessionsFeedbackReceivedEvent;
 			dispatch({ type: 'FEEDBACK_RECEIVED', payload });
+		});
+		// Spec: server may push `sessions|sync` on connect with the same payload as `/state`.
+		const offSync = ws.on('sessions', 'sync', data => {
+			const payload = data as SessionsStateResponse;
+			applyRemoteState(payload);
 		});
 		const onTimerLike = (data: unknown) => {
 			const str = (v: unknown): string => {
@@ -839,10 +877,12 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 			offAny?.();
 			offReq();
 			offAccepted();
+			offAccepted2();
 			offRejected();
 			offPrompt();
 			offPrompt2();
 			offReceived();
+			offSync();
 			offTimer();
 			offTick();
 			offTimerUpdate();
@@ -873,6 +913,55 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 		startLocalTimer({ requestId: active.request_id, roomId, minutes: mins });
 	}, [wsConnected, state.active?.accepted?.request_id, state.active?.minutes, state.timer?.room_id, state.endedRooms, startLocalTimer]);
 
+	// Ensure a Messages row exists before join / global `chat|c` listener (unread needs a conversation row).
+	useEffect(() => {
+		const active = state.active?.accepted;
+		if (active?.kind !== 'chat') return;
+		const roomId = active.room_id;
+		if (!roomId || state.endedRooms[roomId]) return;
+		const me = authState.user;
+		if (!me) return;
+
+		// Do not overwrite an existing conversation row, otherwise unread/lastMessage can reset on sync/reconnect.
+		if (chatState.conversations.some(c => c.id === roomId)) return;
+
+		const creatorMeta = creatorMetaByRequestIdRef.current[active.request_id];
+		const fanMeta = fanMetaByRequestIdRef.current[active.request_id];
+		const otherFromState = state.active?.otherDisplay;
+		const other =
+			me.role === 'creator' ?
+				{
+					id: fanMeta?.userId ?? 'fan',
+					name: fanMeta?.name ?? otherFromState?.name ?? 'Fan',
+					avatar: otherFromState?.avatar ?? '',
+				} :
+				{
+					id: creatorMeta?.userId ?? 'creator',
+					name: creatorMeta?.name ?? otherFromState?.name ?? 'Creator',
+					avatar: creatorMeta?.avatar ?? otherFromState?.avatar ?? '',
+				};
+
+		addConversation({
+			id: roomId,
+			participantIds: [me.id, other.id],
+			participantNames: [me.name, other.name],
+			participantAvatars: [me.avatar, other.avatar],
+			lastMessage: '',
+			lastMessageTime: new Date().toISOString(),
+			unreadCount: 0,
+			isOnline: true,
+		});
+	}, [
+		state.active?.accepted?.request_id,
+		state.active?.accepted?.kind,
+		state.active?.accepted?.room_id,
+		state.active?.otherDisplay,
+		state.endedRooms,
+		authState.user,
+		chatState.conversations,
+		addConversation,
+	]);
+
 	// When an accepted chat booking is active, keep the room joined so messages arrive
 	// even if the user is on the Messages list (WhatsApp-like unread behavior).
 	useEffect(() => {
@@ -882,14 +971,17 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 		ensureBookedRoomJoined(active.room_id);
 	}, [wsConnected, state.active?.accepted?.request_id]);
 
-	// Global chat listener for the joined booked room (so Messages list gets live updates).
+	// Global chat listener for any joined room.
+	// `chat|c` is only delivered for rooms that are currently joined; we join:
+	// - active booked room via `ensureBookedRoomJoined`
+	// - list rooms from `MessagesList`
+	// This ensures WhatsApp-like unread + last message updates even when the thread is not open.
 	useEffect(() => {
 		if (!wsConnected) return;
 		const off = ws.on('chat', 'c', data => {
 			const dto = data as { id: string, room_id: string, user_id: string, body: string, created_at: string };
 			const roomId = dto?.room_id ?? '';
 			if (!roomId) return;
-			if (joinedBookedRoomRef.current !== roomId) return;
 			addRoomMessage({
 				id: dto.id,
 				conversationId: roomId,
@@ -939,7 +1031,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 		return offEnded;
 	}, [ws, state.active?.accepted?.kind, state.active?.accepted?.call_session_id]);
 
-	// Auto-navigate to chat on accept (but don't force-redirect immediately after local restore).
+	// Live `sessions|accepted` (or acceptSession ack) can auto-open the thread; restore from `/state` never does.
 	useEffect(() => {
 		const active = state.active?.accepted;
 		if (!active) {
@@ -952,53 +1044,87 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 
 		if (active.kind === 'chat') {
 			const roomId = active.room_id;
-			const me = authState.user;
-			const creatorMeta = creatorMetaByRequestIdRef.current[active.request_id];
-			const fanMeta = fanMetaByRequestIdRef.current[active.request_id];
+			if (!roomId) return;
 
-			// Ensure ChatRoom can render by pre-creating a conversation for this room_id.
-			// (ChatRoom is room-based; for sessions we treat the room_id as the conversation id.)
-			const otherFromState = state.active?.otherDisplay;
-			const other =
-				me.role === 'creator' ?
-					{
-						id: fanMeta?.userId ?? 'fan',
-						name: fanMeta?.name ?? otherFromState?.name ?? 'Fan',
-						avatar: otherFromState?.avatar ?? '',
-					} :
-					{
-						id: creatorMeta?.userId ?? 'creator',
-						name: creatorMeta?.name ?? otherFromState?.name ?? 'Creator',
-						avatar: creatorMeta?.avatar ?? otherFromState?.avatar ?? '',
-					};
-
-			addConversation({
-				id: roomId,
-				participantIds: [me.id, other.id],
-				participantNames: [me.name, other.name],
-				participantAvatars: [me.avatar, other.avatar],
-				lastMessage: '',
-				lastMessageTime: new Date().toISOString(),
-				unreadCount: 0,
-				isOnline: true,
-			});
-
-			const hydratedAt = hydratedLocalAtMsRef.current;
-			const isLikelyLocalRestore = hydratedAt ? Date.now() - hydratedAt < 1500 : false;
-			if (isLikelyLocalRestore) {
-				showToast('Chat session is still active. Open Messages to resume.');
-			} else {
+			const onThread = location.pathname === `/messages/${roomId}`;
+			const pending = pendingOpenBookedChatRequestIdRef.current === active.request_id;
+			if (pending) {
+				pendingOpenBookedChatRequestIdRef.current = null;
 				void navigate(`/messages/${roomId}`);
+				return;
 			}
+			if (!onThread) {
+				showToast('Chat session is still active. Open Messages to resume.');
+			}
+			return;
 		}
-		// No prompt for call sessions (chat-only prompt requested).
+		if (active.kind === 'call') {
+			const pending = pendingOpenBookedCallRequestIdRef.current === active.request_id;
+			if (pending) {
+				pendingOpenBookedCallRequestIdRef.current = null;
+				const uiCallType = state.active?.uiCallType ?? uiCallTypeByRequestIdRef.current[active.request_id] ?? 'video';
+				void ensureMediaPermissions({ audio: true, video: uiCallType === 'video' })
+					.catch(e => {
+						if (isDeviceInUseError(e)) return;
+						throw e;
+					})
+					.then(() => {
+						void navigate('/call');
+					})
+					.catch(e => {
+						showToast(e instanceof Error ? e.message : 'Unable to access microphone/camera', 'error');
+					});
+
+			}
+			// Restore: `ActiveCallBanner` offers Continue / End; do not auto-open `/call`.
+
+		}
 	}, [
 		state.active?.accepted?.request_id,
 		state.active?.accepted?.kind,
+		state.active?.uiCallType,
 		authState.user,
-		addConversation,
 		showToast,
-		state.active?.otherDisplay,
+		navigate,
+		location.pathname,
+	]);
+
+	const initialPathRef = useRef<string>(location.pathname);
+	const initialWasReloadRef = useRef<boolean>(isBrowserReloadNavigation());
+	const didHandleInitialReloadBounceRef = useRef(false);
+	useEffect(() => {
+		// Only handle the reload-bounce once, and only based on the initial path at page load.
+		// This prevents overriding fresh navigations (e.g. auto-open after `sessions|accepted`).
+		if (!initialWasReloadRef.current) return;
+		if (didHandleInitialReloadBounceRef.current) return;
+		const act = state.active?.accepted;
+		if (!act) {
+			return;
+		}
+		const me = authState.user;
+		if (!me) return;
+
+		const reqId = act.request_id;
+		if (pendingOpenBookedChatRequestIdRef.current === reqId || pendingOpenBookedCallRequestIdRef.current === reqId) {
+			return;
+		}
+
+		const path = initialPathRef.current;
+		const isDeepCall = act.kind === 'call' && path === '/call';
+		const isDeepChat = act.kind === 'chat' && !!act.room_id && path === `/messages/${act.room_id}`;
+		if (!isDeepCall && !isDeepChat) return;
+
+		didHandleInitialReloadBounceRef.current = true;
+		const home =
+			me.role === 'admin' ? '/admin' :
+			me.role === 'creator' ? '/creator-dashboard' :
+			'/feed';
+		void navigate(home, { replace: true });
+	}, [
+		state.active?.accepted?.request_id,
+		state.active?.accepted?.kind,
+		state.active?.accepted?.room_id,
+		authState.user,
 		navigate,
 	]);
 

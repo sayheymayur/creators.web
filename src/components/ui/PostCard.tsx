@@ -383,7 +383,6 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 					creatorId={post.creatorId}
 					creatorName={post.creatorName}
 					creatorAvatar={post.creatorAvatar}
-					postId={post.id}
 				/>
 			)}
 			{showPPVModal && (

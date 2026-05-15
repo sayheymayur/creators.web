@@ -19,6 +19,8 @@ export interface CreatorProfileDTO extends CreatorSummaryDTO {
 	is_profile_liked?: boolean | null;
 	/** Optional extra fields present on some backends (used for follow UI). */
 	follower_count?: number | string | null;
+	/** If present, prefer over client-side post counts for profile header. */
+	post_count?: number | string | null;
 	is_followed?: boolean | null;
 }
 

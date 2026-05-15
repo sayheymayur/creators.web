@@ -30,6 +30,17 @@ export interface CommentDTO {
 	/** null = top-level comment */
 	parent_comment_id?: string | null;
 	heart_count?: number;
+	/**
+	 * Extended comment author (Fan features batch 1 / posts spec).
+	 * When set, clients should prefer these over creator-directory lookup (fans are not in `creator /get`).
+	 */
+	display_name?: string | null;
+	user_display_name?: string | null;
+	user_name?: string | null;
+	name?: string | null;
+	username?: string | null;
+	avatar_url?: string | null;
+	user_avatar_url?: string | null;
 }
 
 export interface CommentHeartUpdatePayload {

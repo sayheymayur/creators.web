@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ContentProvider } from './context/ContentContext';
 import { ChatProvider } from './context/ChatContext';
@@ -181,65 +181,72 @@ function AppFallbackRoute() {
 
 function AppRoutes() {
 	const { state } = useAuth();
+	const location = useLocation();
+
+	if (import.meta.env.DEV) {
+		console.log('[route]', location.pathname);
+	}
 
 	return (
-		<Routes>
-			<Route path="/" element={<GuestRoute><Landing /></GuestRoute>} />
-			<Route path="/contact" element={<Contact />} />
-			<Route path="/privacy-policy" element={<PrivacyPolicy />} />
-			<Route path="/partner/apply" element={<PartnerApply />} />
-			<Route path="/creator/apply" element={<PartnerApply />} />
-			<Route
-				path="/login" element={state.isAuthenticated ? (
-					<Navigate to={state.user?.role === 'admin' ? '/admin' : state.user?.role === 'creator' ? '/creator-dashboard' : '/feed'} replace />
-				) : <Login />}
-			/>
-			<Route path="/register" element={<Register />} />
-			<Route path="/verify-age" element={<AgeVerification />} />
-			<Route path="/otp" element={<OTPVerification />} />
+		<>
+			<Routes location={location} key={location.key}>
+				<Route path="/" element={<GuestRoute><Landing /></GuestRoute>} />
+				<Route path="/contact" element={<Contact />} />
+				<Route path="/privacy-policy" element={<PrivacyPolicy />} />
+				<Route path="/partner/apply" element={<PartnerApply />} />
+				<Route path="/creator/apply" element={<PartnerApply />} />
+				<Route
+					path="/login" element={state.isAuthenticated ? (
+						<Navigate to={state.user?.role === 'admin' ? '/admin' : state.user?.role === 'creator' ? '/creator-dashboard' : '/feed'} replace />
+					) : <Login />}
+				/>
+				<Route path="/register" element={<Register />} />
+				<Route path="/verify-age" element={<AgeVerification />} />
+				<Route path="/otp" element={<OTPVerification />} />
 
-			<Route path="/explore" element={<ProtectedRoute><Explore /></ProtectedRoute>} />
-			<Route path="/feed" element={<ProtectedRoute roles={['fan']}><Feed /></ProtectedRoute>} />
-			<Route path="/saved" element={<ProtectedRoute roles={['fan']}><Saved /></ProtectedRoute>} />
-			<Route path="/creator/:id" element={<ProtectedRoute><CreatorProfile /></ProtectedRoute>} />
+				<Route path="/explore" element={<ProtectedRoute><Explore /></ProtectedRoute>} />
+				<Route path="/feed" element={<ProtectedRoute roles={['fan']}><Feed /></ProtectedRoute>} />
+				<Route path="/saved" element={<ProtectedRoute roles={['fan']}><Saved /></ProtectedRoute>} />
+				<Route path="/creator/:id" element={<ProtectedRoute><CreatorProfile /></ProtectedRoute>} />
 
 			<Route path="/messages" element={<ProtectedRoute><MessagesList /></ProtectedRoute>} />
 			<Route path="/messages/:id" element={<ProtectedRoute><ChatRoom /></ProtectedRoute>} />
 			<Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
 
-			<Route path="/wallet" element={<ProtectedRoute roles={['fan']}><Wallet /></ProtectedRoute>} />
+				<Route path="/wallet" element={<ProtectedRoute roles={['fan']}><Wallet /></ProtectedRoute>} />
 
-			<Route path="/creator-dashboard" element={<ProtectedRoute roles={['creator']}><CreatorDashboard /></ProtectedRoute>} />
-			<Route path="/creator-dashboard/content" element={<ProtectedRoute roles={['creator']}><ContentManager /></ProtectedRoute>} />
-			<Route path="/creator-dashboard/earnings" element={<ProtectedRoute roles={['creator']}><Earnings /></ProtectedRoute>} />
-			<Route path="/creator-dashboard/subscribers" element={<ProtectedRoute roles={['creator']}><Subscribers /></ProtectedRoute>} />
-			<Route path="/creator-dashboard/profile" element={<ProtectedRoute roles={['creator']}><ProfileEditor /></ProtectedRoute>} />
-			<Route path="/creator-dashboard/kyc" element={<ProtectedRoute roles={['creator']}><KYCFlow /></ProtectedRoute>} />
+				<Route path="/creator-dashboard" element={<ProtectedRoute roles={['creator']}><CreatorDashboard /></ProtectedRoute>} />
+				<Route path="/creator-dashboard/content" element={<ProtectedRoute roles={['creator']}><ContentManager /></ProtectedRoute>} />
+				<Route path="/creator-dashboard/earnings" element={<ProtectedRoute roles={['creator']}><Earnings /></ProtectedRoute>} />
+				<Route path="/creator-dashboard/subscribers" element={<ProtectedRoute roles={['creator']}><Subscribers /></ProtectedRoute>} />
+				<Route path="/creator-dashboard/profile" element={<ProtectedRoute roles={['creator']}><ProfileEditor /></ProtectedRoute>} />
+				<Route path="/creator-dashboard/kyc" element={<ProtectedRoute roles={['creator']}><KYCFlow /></ProtectedRoute>} />
 
-			<Route path="/admin" element={<ProtectedRoute roles={['admin']}><AdminDashboard /></ProtectedRoute>} />
-			<Route path="/admin/creators" element={<ProtectedRoute roles={['admin']}><CreatorApproval /></ProtectedRoute>} />
-			<Route path="/admin/users" element={<ProtectedRoute roles={['admin']}><UserManagement /></ProtectedRoute>} />
-			<Route path="/admin/moderation" element={<ProtectedRoute roles={['admin']}><ContentModeration /></ProtectedRoute>} />
-			<Route path="/admin/subscription-ws" element={<ProtectedRoute roles={['admin']}><SubscriptionWsSimulation /></ProtectedRoute>} />
-			<Route path="/admin/reports" element={<ProtectedRoute roles={['admin']}><AdminDashboard /></ProtectedRoute>} />
+				<Route path="/admin" element={<ProtectedRoute roles={['admin']}><AdminDashboard /></ProtectedRoute>} />
+				<Route path="/admin/creators" element={<ProtectedRoute roles={['admin']}><CreatorApproval /></ProtectedRoute>} />
+				<Route path="/admin/users" element={<ProtectedRoute roles={['admin']}><UserManagement /></ProtectedRoute>} />
+				<Route path="/admin/moderation" element={<ProtectedRoute roles={['admin']}><ContentModeration /></ProtectedRoute>} />
+				<Route path="/admin/subscription-ws" element={<ProtectedRoute roles={['admin']}><SubscriptionWsSimulation /></ProtectedRoute>} />
+				<Route path="/admin/reports" element={<ProtectedRoute roles={['admin']}><AdminDashboard /></ProtectedRoute>} />
 
-			<Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-			<Route
-				path="/delete-account-request"
-				element={<ProtectedRoute roles={['fan', 'creator']}><DeleteAccountRequest /></ProtectedRoute>}
-			/>
-			<Route
-				path="/delete-account-request/success"
-				element={<ProtectedRoute roles={['fan', 'creator']}><DeleteAccountRequestSuccess /></ProtectedRoute>}
-			/>
-			<Route path="/call" element={<ProtectedRoute><ActiveCallScreen /></ProtectedRoute>} />
-			<Route path="/call-history" element={<ProtectedRoute><CallHistory /></ProtectedRoute>} />
-			<Route path="/session/chat/:creatorId" element={<ProtectedRoute><TimedChatRoom /></ProtectedRoute>} />
-			<Route path="/live/:streamId" element={<ProtectedRoute><LiveStreamRoom /></ProtectedRoute>} />
-			<Route path="/go-live" element={<ProtectedRoute roles={['creator']}><GoLivePage /></ProtectedRoute>} />
+				<Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+				<Route
+					path="/delete-account-request"
+					element={<ProtectedRoute roles={['fan', 'creator']}><DeleteAccountRequest /></ProtectedRoute>}
+				/>
+				<Route
+					path="/delete-account-request/success"
+					element={<ProtectedRoute roles={['fan', 'creator']}><DeleteAccountRequestSuccess /></ProtectedRoute>}
+				/>
+				<Route path="/call" element={<ProtectedRoute><ActiveCallScreen /></ProtectedRoute>} />
+				<Route path="/call-history" element={<ProtectedRoute><CallHistory /></ProtectedRoute>} />
+				<Route path="/session/chat/:creatorId" element={<ProtectedRoute><TimedChatRoom /></ProtectedRoute>} />
+				<Route path="/live/:streamId" element={<ProtectedRoute><LiveStreamRoom /></ProtectedRoute>} />
+				<Route path="/go-live" element={<ProtectedRoute roles={['creator']}><GoLivePage /></ProtectedRoute>} />
 
-			<Route path="*" element={<AppFallbackRoute />} />
-		</Routes>
+				<Route path="*" element={<AppFallbackRoute />} />
+			</Routes>
+		</>
 	);
 }
 

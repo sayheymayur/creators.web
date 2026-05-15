@@ -129,23 +129,13 @@ export function ChatRoom() {
 
 	const onPresenceEvent = useCallback(
 		(ev: { type: 'join' | 'leave', user_id?: string }) => {
-			// De-spam join/leave toasts (some backends emit on reconnect; StrictMode dev can also re-run effects).
-			const key = `${ev.type}:${ev.user_id ?? ''}`;
-			const now = Date.now();
-			const last = (globalThis as unknown as { __cw_presence_toast?: { key: string, at: number } })?.__cw_presence_toast;
-			if (last?.key === key && now - (last.at ?? 0) < 1500) return;
-			(globalThis as unknown as { __cw_presence_toast?: { key: string, at: number } }).__cw_presence_toast = { key, at: now };
-
-			// Track other participant presence for WhatsApp-style delivery ticks.
 			const otherIdxLocal = conv?.participantIds?.indexOf(userId) === 0 ? 1 : 0;
 			const otherIdLocal = conv?.participantIds?.[otherIdxLocal] ?? '';
 			if (otherIdLocal && ev.user_id === otherIdLocal) {
 				setOtherInRoom(ev.type === 'join');
 			}
-			if (ev.type === 'join') showToast('User joined the session');
-			if (ev.type === 'leave') showToast('User left the session');
 		},
-		[showToast, conv, userId]
+		[conv, userId]
 	);
 
 	const roomId = convId ?? '';
@@ -200,6 +190,8 @@ export function ChatRoom() {
 		onProtocolError,
 		sendWithAck: isBookedActive,
 		transport: isBookedActive ? 'ws' : 'multiplex',
+		// SessionsContext keeps the booked room joined in background for WhatsApp-like unread updates.
+		leaveOnCleanup: !isBookedActive,
 	});
 
 	useEffect(() => {
@@ -220,10 +212,9 @@ export function ChatRoom() {
 	useEffect(() => {
 		// Auto-send seen for the latest message from the other user (throttled).
 		if (!realtimeActive || !convId) return;
-		const otherIdxLocal = conv?.participantIds?.indexOf(userId) === 0 ? 1 : 0;
-		const otherIdLocal = conv?.participantIds?.[otherIdxLocal] ?? '';
-		if (!otherIdLocal) return;
-		const latestFromOther = [...messages].reverse().find(m => m.senderId === otherIdLocal && /^\d+$/.test(m.id));
+		// For booked session rooms, a Conversation row may not exist yet; don't rely on participantIds.
+		// Mark the latest numeric message from anyone other than the current user as seen.
+		const latestFromOther = [...messages].reverse().find(m => m.senderId !== userId && /^\d+$/.test(m.id));
 		const mid = latestFromOther?.id;
 		if (!mid) return;
 		const now = Date.now();
@@ -414,7 +405,7 @@ export function ChatRoom() {
 					<button
 						type="button"
 						onClick={() => {
-							void navigate(-1);
+							void navigate('/messages');
 						}}
 						className="p-1.5 rounded-lg hover:bg-foreground/10 transition-colors"
 					>
@@ -444,22 +435,27 @@ export function ChatRoom() {
 								End session
 							</button>
 						)}
-						<button
-							type="button"
-							onClick={() => { if (!otherId) return; startCall(otherId, otherName, otherAvatar, 'audio'); void navigate('/call'); }}
-							disabled={!otherId}
-							className="w-8 h-8 rounded-xl bg-foreground/10 hover:bg-emerald-500/20 hover:text-emerald-400 text-muted flex items-center justify-center transition-all"
-						>
-							<Phone className="w-4 h-4" />
-						</button>
-						<button
-							type="button"
-							onClick={() => { if (!otherId) return; startCall(otherId, otherName, otherAvatar, 'video'); void navigate('/call'); }}
-							disabled={!otherId}
-							className="w-8 h-8 rounded-xl bg-foreground/10 hover:bg-sky-500/20 hover:text-sky-400 text-muted flex items-center justify-center transition-all"
-						>
-							<Video className="w-4 h-4" />
-						</button>
+						{/* For booked sessions, the session type is already fixed; hide ad-hoc call actions. */}
+						{!isBookedChatRoom && (
+							<>
+								<button
+									type="button"
+									onClick={() => { if (!otherId) return; startCall(otherId, otherName, otherAvatar, 'audio'); void navigate('/call'); }}
+									disabled={!otherId}
+									className="w-8 h-8 rounded-xl bg-foreground/10 hover:bg-emerald-500/20 hover:text-emerald-400 text-muted flex items-center justify-center transition-all"
+								>
+									<Phone className="w-4 h-4" />
+								</button>
+								<button
+									type="button"
+									onClick={() => { if (!otherId) return; startCall(otherId, otherName, otherAvatar, 'video'); void navigate('/call'); }}
+									disabled={!otherId}
+									className="w-8 h-8 rounded-xl bg-foreground/10 hover:bg-sky-500/20 hover:text-sky-400 text-muted flex items-center justify-center transition-all"
+								>
+									<Video className="w-4 h-4" />
+								</button>
+							</>
+						)}
 						{authState.user?.role === 'fan' ? (
 							<button
 								onClick={() => setShowTipModal(true)}

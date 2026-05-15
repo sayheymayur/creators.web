@@ -26,6 +26,7 @@ export function Explore() {
 		[contentState.explorePostIds, contentState.posts]
 	);
 	const [search, setSearch] = useState('');
+	const [debouncedSearch, setDebouncedSearch] = useState('');
 	const [category, setCategory] = useState('All');
 	const [sortBy, setSortBy] = useState<'popular' | 'new' | 'price'>('popular');
 	const tagFilter = normalizeHashtagTag(searchParams.get('tag') ?? '');
@@ -39,10 +40,17 @@ export function Explore() {
 	const allRef = useDragScroll();
 
 	useEffect(() => {
+		const t = window.setTimeout(() => {
+			setDebouncedSearch(search.trim());
+		}, 350);
+		return () => { window.clearTimeout(t); };
+	}, [search]);
+
+	useEffect(() => {
 		if (contentState.postsWsStatus !== 'ready') return;
 		setWsDirLoading(true);
 		const cat = category === 'All' ? undefined : category;
-		const q = search.trim() || undefined;
+		const q = debouncedSearch.trim() || undefined;
 		void creatorWsSearch({ q, category: cat, limit: 30 })
 			.then(r => {
 				setWsCreators(r.creators.map(d => creatorSummaryToCardCreator(d, mockCreators[0])));
@@ -53,11 +61,15 @@ export function Explore() {
 				setWsDirCursor(null);
 			})
 			.finally(() => setWsDirLoading(false));
-	}, [contentState.postsWsStatus, search, category, creatorWsSearch]);
+	}, [contentState.postsWsStatus, debouncedSearch, category, creatorWsSearch]);
 
 	const filtered = useMemo(() => {
 		return [...wsCreators].sort((a, b) => {
-			if (sortBy === 'popular') return b.subscriberCount - a.subscriberCount;
+			if (sortBy === 'popular') {
+				const pa = a.followerCount || a.subscriberCount;
+				const pb = b.followerCount || b.subscriberCount;
+				return pb - pa;
+			}
 			if (sortBy === 'new') return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
 			return a.subscriptionPrice - b.subscriptionPrice;
 		});
@@ -73,7 +85,7 @@ export function Explore() {
 	function loadMoreDirectory() {
 		if (!wsDirCursor || contentState.postsWsStatus !== 'ready') return;
 		const cat = category === 'All' ? undefined : category;
-		const q = search.trim() || undefined;
+		const q = debouncedSearch.trim() || undefined;
 		void creatorWsSearch({ q, category: cat, limit: 30, beforeCursor: wsDirCursor })
 			.then(r => {
 				const next = r.creators.map(d => creatorSummaryToCardCreator(d, mockCreators[0]));
@@ -161,7 +173,7 @@ export function Explore() {
 					) : null}
 				</div>
 
-				{!search && category === 'All' && liveStreams.length > 0 && (
+				{!debouncedSearch && category === 'All' && liveStreams.length > 0 && (
 					<div className="mb-8">
 						<div className="flex items-center gap-2 mb-4">
 							<h2 className="font-semibold text-foreground text-sm">Live Now</h2>
@@ -194,7 +206,7 @@ export function Explore() {
 					</div>
 				)}
 
-				{!search && category === 'All' && (
+				{!debouncedSearch && category === 'All' && (
 					<div className="mb-8">
 						<div className="flex items-center gap-2 mb-4">
 							<TrendingUp className="w-4 h-4 text-rose-400" />

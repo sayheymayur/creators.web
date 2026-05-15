@@ -3,20 +3,24 @@ import { useNavigate } from 'react-router-dom';
 import { Search, MessageCircle, Plus } from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';
 import { Avatar } from '../../components/ui/Avatar';
+import { MediaAvatar } from '../../components/ui/MediaAvatar';
 import { useAuth } from '../../context/AuthContext';
 import { useChat } from '../../context/ChatContext';
 import { useSessions } from '../../context/SessionsContext';
 import { useWs, useWsConnected } from '../../context/WsContext';
-import { formatDistanceToNow } from '../../utils/date';
-import { mockCreators } from '../../data/users';
 import { useContent } from '../../context/ContentContext';
+import { useSubscribedCreatorsForFan } from '../../hooks/useSubscribedCreatorsForFan';
+import { useDragScroll } from '../../hooks/useDragScroll';
+import { formatDistanceToNow } from '../../utils/date';
 import { isUuid, randomUuid } from '../../utils/isUuid';
 
 export function MessagesList() {
 	const { state: authState } = useAuth();
-	const { state: chatState, addConversation } = useChat();
+	const { state: chatState, addConversation, setActive } = useChat();
 	const { state: sessionsState } = useSessions();
-	const { isSubscribed } = useContent();
+	const { state: contentState } = useContent();
+	const { subscribedCreators, bumpHydrate } = useSubscribedCreatorsForFan({ eagerHydrate: false });
+	const newChatStripRef = useDragScroll();
 	const ws = useWs();
 	const wsConnected = useWsConnected();
 	const navigate = useNavigate();
@@ -24,6 +28,12 @@ export function MessagesList() {
 	const [showNewChat, setShowNewChat] = useState(false);
 
 	const userId = authState.user?.id ?? '';
+	const isFan = authState.user?.role === 'fan';
+
+	useEffect(() => {
+		// Ensure unread counts increment while on the list (WhatsApp-like).
+		setActive(null);
+	}, [setActive]);
 
 	// If there's an active booked chat session, show a pinned "Resume session" row
 	// even if subscription state resets on reload. Do not use `timer.room_id` while a
@@ -63,6 +73,12 @@ export function MessagesList() {
 		}
 	}, [conversations, sessionsState.endedRooms, ws, wsConnected]);
 
+	useEffect(() => {
+		if (!isFan || !showNewChat) return;
+		if (contentState.postsWsStatus !== 'ready') return;
+		bumpHydrate();
+	}, [isFan, showNewChat, contentState.postsWsStatus, bumpHydrate]);
+
 	function getOtherParticipant(conv: typeof conversations[0]) {
 		const idx = conv.participantIds.indexOf(userId);
 		const otherIdx = idx === 0 ? 1 : 0;
@@ -96,41 +112,50 @@ export function MessagesList() {
 		setShowNewChat(false);
 	}
 
-	const messagableCreators = mockCreators.filter(c =>
-		isSubscribed(c.id) && c.isKYCVerified
-	);
-
 	return (
 		<Layout>
 			<div className="max-w-2xl mx-auto px-4 py-6">
 				<div className="flex items-center justify-between mb-5">
 					<h1 className="text-xl font-bold text-foreground">Messages</h1>
-					<button
-						onClick={() => setShowNewChat(v => !v)}
-						className="w-9 h-9 bg-rose-500 hover:bg-rose-600 rounded-xl flex items-center justify-center transition-colors"
-					>
-						<Plus className="w-5 h-5 text-white" />
-					</button>
+					{isFan && (
+						<button
+							type="button"
+							onClick={() => setShowNewChat(v => !v)}
+							className="w-9 h-9 bg-rose-500 hover:bg-rose-600 rounded-xl flex items-center justify-center transition-colors"
+						>
+							<Plus className="w-5 h-5 text-white" />
+						</button>
+					)}
 				</div>
 
-				{showNewChat && (
+				{isFan && showNewChat && (
 					<div className="bg-surface border border-border/20 rounded-2xl p-4 mb-4">
-						<p className="text-xs text-muted font-medium mb-3 uppercase tracking-wider">Start a new conversation</p>
-						{messagableCreators.length === 0 ? (
+						<p className="text-xs text-muted font-medium mb-3 uppercase tracking-wider">Subscribed</p>
+						{subscribedCreators.length === 0 ? (
 							<p className="text-muted text-sm">Subscribe to creators to message them</p>
 						) : (
-							<div className="space-y-2">
-								{messagableCreators.map(creator => (
+							<div ref={newChatStripRef} className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+								{subscribedCreators.map(creator => (
 									<button
 										key={creator.id}
+										type="button"
 										onClick={() => startNewChat(creator.id, creator.name, creator.avatar, creator.isOnline)}
-										className="w-full flex items-center gap-3 hover:bg-foreground/5 rounded-xl p-2 transition-colors"
+										className="flex flex-col items-center gap-1 shrink-0"
 									>
-										<Avatar src={creator.avatar} alt={creator.name} size="md" isOnline={creator.isOnline} />
-										<div className="text-left">
-											<p className="text-sm font-medium text-foreground">{creator.name}</p>
-											<p className="text-xs text-muted">{creator.category}</p>
+										<div className="relative">
+											<div className={`w-14 h-14 rounded-full p-0.5 ${creator.isOnline ? 'bg-gradient-to-tr from-rose-500 to-amber-400' : 'bg-foreground/10'}`}>
+												<MediaAvatar
+													src={creator.avatar}
+													alt={creator.name}
+													name={creator.name}
+													className="h-full w-full rounded-full border-2 border-background"
+												/>
+											</div>
+											{creator.isOnline && (
+												<div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-emerald-400 border-2 border-background rounded-full" />
+											)}
 										</div>
+										<p className="text-[10px] text-muted w-14 text-center truncate">{creator.name.split(' ')[0]}</p>
 									</button>
 								))}
 							</div>

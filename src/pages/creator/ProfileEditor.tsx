@@ -15,7 +15,7 @@ import { inrRupeesToMinor } from '../../utils/money';
 
 export function ProfileEditor() {
 	const creator = useCurrentCreator();
-	const { state: authState, updateUser } = useAuth();
+	const { state: authState, updateUser, refreshMe } = useAuth();
 	const { creatorWsUpsert } = useContent();
 	const { showToast } = useNotifications();
 
@@ -78,6 +78,9 @@ export function ProfileEditor() {
 		const perMinuteRateMinor =
 			/^\d+$/.test(perMinuteRateMinorStr) ? Number(perMinuteRateMinorStr) : undefined;
 
+		const avatarUrlTrim = avatarUrl.trim();
+		const bannerUrlTrim = bannerUrl.trim();
+
 		void Promise.all([avatarPromise, bannerPromise])
 			.then(([avatarAssetId, bannerAssetId]) =>
 				creatorsApi.me.updateProfile({
@@ -87,12 +90,15 @@ export function ProfileEditor() {
 					category: category?.trim() || undefined,
 					avatarAssetId,
 					bannerAssetId,
+					...(!avatarAssetId && avatarUrlTrim ? { avatarUrl: avatarUrlTrim } : {}),
+					...(!bannerAssetId && bannerUrlTrim ? { bannerUrl: bannerUrlTrim } : {}),
 					subscriptionPriceMinor,
 					perMinuteRate: perMinuteRateMinor,
 				})
 			)
 			.then(({ user }) => {
 				updateUser(user);
+				void refreshMe();
 				void creatorWsUpsert(
 					username.trim() || creatorData.username,
 					name.trim() || creatorData.name,

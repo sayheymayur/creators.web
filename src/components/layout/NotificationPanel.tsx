@@ -51,6 +51,8 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
 		if (clearBusy) return;
 		setClearBusy(true);
 		void dismissAll().finally(() => setClearBusy(false));
+	}
+
 	function goToAll() {
 		onClose();
 		void navigate('/notifications');

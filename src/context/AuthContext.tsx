@@ -64,9 +64,25 @@ function normalizeUserFromApi(payload: User): User {
 		}
 	}
 	if (!minor) minor = ZERO_MINOR;
+
+	const banner =
+		typeof raw.banner === 'string' ? raw.banner :
+		typeof raw.bannerUrl === 'string' ? raw.bannerUrl :
+		undefined;
+	const bio = typeof raw.bio === 'string' ? raw.bio : undefined;
+	const category = typeof raw.category === 'string' ? raw.category : undefined;
+	const avatar =
+		typeof payload.avatar === 'string' && payload.avatar.trim() ? payload.avatar :
+		typeof raw.avatarUrl === 'string' ? raw.avatarUrl :
+		payload.avatar;
+
 	return {
 		...payload,
 		id,
+		avatar,
+		...(banner !== undefined ? { banner } : {}),
+		...(bio !== undefined ? { bio } : {}),
+		...(category !== undefined ? { category } : {}),
 		walletBalanceMinor: /^\d+$/.test(minor) ? minor : ZERO_MINOR,
 	};
 }

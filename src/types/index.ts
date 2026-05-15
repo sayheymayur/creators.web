@@ -127,6 +127,8 @@ export interface User {
 }
 
 export interface Creator extends User {
+	/** creators table PK from WS /list (`id`), not used for routes. */
+	creatorProfileId?: string;
 	bio: string;
 	banner: string;
 	subscriptionPrice: number;

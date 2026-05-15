@@ -13,8 +13,8 @@ import { useNotifications } from '../../context/NotificationContext';
 import { useSession } from '../../context/SessionContext';
 import { SessionPickerModal, type SessionPayMode } from '../../components/modals/SessionPickerModal';
 import type { Creator, SessionType } from '../../types';
-import { ApiError } from '../../services/creatorsApi';
-import { creatorProfileDtoToCreator } from '../../services/creatorWsMap';
+import { ApiError, creatorsApi } from '../../services/creatorsApi';
+import { creatorProfileDtoToCreator, httpCreatorProfileToDto } from '../../services/creatorWsMap';
 import { formatINR } from '../../services/razorpay';
 import { useSessions } from '../../context/SessionsContext';
 import { useEnsureWsAuth, useWs, useWsAuthReady, useWsConnected } from '../../context/WsContext';
@@ -68,48 +68,60 @@ export function CreatorProfile() {
 		if (!creatorUserId) return;
 		const ac = new AbortController();
 
-		// creator WS commands are multiplexed over the posts socket; wait until it is ready.
-		if (contentState.postsWsStatus !== 'ready') {
-			setIsLoadingCreator(true);
-			return () => ac.abort();
-		}
+		const finishWs = (r: Awaited<ReturnType<typeof creatorWsGetByUserId>>) => {
+			if (ac.signal.aborted) return;
+			if (r.creator) {
+				hasLoadedCreatorRef.current = true;
+				const dto = r.creator;
+				setIsFollowed(Boolean(dto.is_followed));
+				setProfileLikedByMe(Boolean(dto.is_profile_liked));
+				setRemoteCreator(creatorProfileDtoToCreator(dto, cacheCreator ?? undefined));
+				return;
+			}
+			if (!hasLoadedCreatorRef.current && !cacheCreator) {
+				showToast('Creator profile not found for this user.', 'error');
+			}
+			if (!hasLoadedCreatorRef.current && cacheCreator) {
+				setRemoteCreator(cacheCreator);
+			}
+		};
 
 		setIsLoadingCreator(true);
 
-		void creatorWsGetByUserId(creatorUserId)
-			.then(r => {
+		void creatorsApi.creators
+			.getById(creatorUserId, ac.signal)
+			.then(h => {
 				if (ac.signal.aborted) return;
-				if (r.creator) {
-					hasLoadedCreatorRef.current = true;
-					const dto = r.creator;
-					setIsFollowed(Boolean(dto.is_followed));
-					setProfileLikedByMe(Boolean(dto.is_profile_liked));
-					setRemoteCreator(creatorProfileDtoToCreator(dto, { postCount: 0 }));
-					return;
-				}
 				hasLoadedCreatorRef.current = true;
-				if (!cacheCreator) {
-					showToast('Creator profile not found for this user.', 'error');
-				}
+				setIsFollowed(Boolean(h.isFollowed));
+				setProfileLikedByMe(Boolean(h.isProfileLiked));
+				const dto = httpCreatorProfileToDto(h);
+				setRemoteCreator(creatorProfileDtoToCreator(dto, cacheCreator ?? undefined));
 			})
 			.catch((err: unknown) => {
 				if (ac.signal.aborted) return;
-				if (err instanceof ApiError) {
-					console.error('[creator-profile] ws getByUserId failed', { creatorUserId, status: err.status, body: err.body });
-				} else {
-					console.error('[creator-profile] ws getByUserId failed', { creatorUserId, err });
+				if (!(err instanceof ApiError) || err.status !== 404) {
+					console.error('[creator-profile] HTTP get failed', { creatorUserId, err });
 				}
-				if (!hasLoadedCreatorRef.current) {
-					showToast('Could not load creator profile. Please try again.', 'error');
+				if (contentState.postsWsStatus !== 'ready') {
+					if (!hasLoadedCreatorRef.current && cacheCreator) setRemoteCreator(cacheCreator);
+					else if (!hasLoadedCreatorRef.current) showToast('Could not load creator profile.', 'error');
+					return;
 				}
-				hasLoadedCreatorRef.current = true;
+				return creatorWsGetByUserId(creatorUserId)
+					.then(finishWs)
+					.catch((e2: unknown) => {
+						if (ac.signal.aborted) return;
+						console.error('[creator-profile] WS fallback failed', e2);
+						if (!hasLoadedCreatorRef.current) showToast('Could not load creator profile.', 'error');
+					});
 			})
 			.finally(() => {
 				if (!ac.signal.aborted) setIsLoadingCreator(false);
 			});
 
 		return () => ac.abort();
-	}, [creatorUserId, creatorWsGetByUserId, contentState.postsWsStatus, cacheCreator, showToast]);
+	}, [creatorUserId, cacheCreator, creatorWsGetByUserId, contentState.postsWsStatus, showToast]);
 
 	useEffect(() => {
 		if (!creatorUserId) return;
@@ -215,15 +227,17 @@ export function CreatorProfile() {
 	const subStatus = subDto ? subscriptionUiStatus(subDto) : null;
 	const subscribed = subStatus === 'active' || isSubscribed(creator.id);
 	const subId = subDto ? subscriptionId(subDto) : null;
-	const isOwner = authState.user?.id === creator.id;
+	const isOwner =
+		authState.user?.role === 'creator' &&
+		authState.user.id === creatorUserId;
 	const creatorForDisplay: Creator = isOwner && authState.user ? {
 		...creator,
-		name: authState.user.name,
-		username: authState.user.username,
-		avatar: authState.user.avatar,
-		bio: authState.user.bio ?? creator.bio,
-		banner: authState.user.banner ?? creator.banner,
-		category: authState.user.category ?? creator.category,
+		name: authState.user.name.trim() ? authState.user.name : creator.name,
+		username: authState.user.username.trim() ? authState.user.username : creator.username,
+		avatar: authState.user.avatar.trim() ? authState.user.avatar : creator.avatar,
+		bio: authState.user.bio?.trim() ? authState.user.bio : creator.bio,
+		banner: authState.user.banner?.trim() ? authState.user.banner : creator.banner,
+		category: authState.user.category?.trim() ? authState.user.category : creator.category,
 	} : creator;
 
 	const creatorPosts = contentState.posts

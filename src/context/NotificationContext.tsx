@@ -2,13 +2,13 @@ import React, { createContext, useContext, useReducer, useCallback, useEffect, u
 import type { Notification } from '../types';
 import { useAuth } from './AuthContext';
 import { useWs, useWsAuthReady, useWsConnected } from './WsContext';
+import { creatorsApi, apiErrorMessage, type MeNotificationsListResponse } from '../services/creatorsApi';
+import { getSessionToken } from '../services/sessionToken';
 import {
-	notificationList,
 	notificationRead,
 	notificationReadAll,
 	notificationUnread,
 	notificationUnreadCount,
-	type NotificationListResponse,
 	type InAppNotificationRow,
 } from '../services/notificationWsService';
 
@@ -34,6 +34,8 @@ type NotificationAction =
 	{ type: 'MARK_READ_LOCAL', payload: { id: string, readAt: string } } |
 	{ type: 'MARK_UNREAD_LOCAL', payload: { id: string } } |
 	{ type: 'MARK_ALL_READ_LOCAL', payload: { readAt: string } } |
+	{ type: 'REMOVE_BY_ID', payload: string } |
+	{ type: 'CLEAR_NOTIFICATIONS' } |
 	{ type: 'SET_STATUS', payload: { status: NotificationState['status'], error?: string } } |
 	{ type: 'ADD_TOAST', payload: ToastItem } |
 	{ type: 'REMOVE_TOAST', payload: string };
@@ -58,6 +60,7 @@ function normalizeRow(row: InAppNotificationRow): Notification {
 		data: row.data ?? {},
 		created_at: String(row.created_at),
 		read_at: row.read_at == null ? null : String(row.read_at),
+		deleted_at: row.deleted_at == null || row.deleted_at === undefined ? null : String(row.deleted_at),
 	};
 }
 
@@ -78,6 +81,7 @@ function notificationReducer(state: NotificationState, action: NotificationActio
 	switch (action.type) {
 		case 'UPSERT_TOP': {
 			const incoming = action.payload;
+			if (incoming.deleted_at) return state;
 			const existingIdx = state.notifications.findIndex(n => n.id === incoming.id);
 			const existing = existingIdx === -1 ? undefined : state.notifications[existingIdx];
 			const nextList = existingIdx === -1 ?
@@ -98,7 +102,10 @@ function notificationReducer(state: NotificationState, action: NotificationActio
 				action.payload.notifications :
 				mergeUnique(state.notifications, action.payload.notifications);
 			// Keep unread count authoritative from server (unreadcount), but best-effort fallback.
-			const fallbackUnread = nextList.reduce((acc, n) => acc + (isUnread(n) ? 1 : 0), 0);
+			const fallbackUnread = nextList.reduce(
+				(acc, n) => acc + (isUnread(n) && n.deleted_at == null ? 1 : 0),
+				0
+			);
 			return {
 				...state,
 				notifications: nextList,
@@ -136,6 +143,19 @@ function notificationReducer(state: NotificationState, action: NotificationActio
 				unreadCount: 0,
 			};
 		}
+		case 'REMOVE_BY_ID': {
+			const id = action.payload;
+			const removed = state.notifications.find(n => n.id === id);
+			let unreadCount = state.unreadCount;
+			if (removed && isUnread(removed)) unreadCount = Math.max(0, unreadCount - 1);
+			return {
+				...state,
+				notifications: state.notifications.filter(n => n.id !== id),
+				unreadCount,
+			};
+		}
+		case 'CLEAR_NOTIFICATIONS':
+			return { ...state, notifications: [], nextCursor: null };
 		case 'SET_STATUS':
 			return { ...state, status: action.payload.status, error: action.payload.error };
 		case 'ADD_TOAST':
@@ -153,7 +173,9 @@ interface NotificationContextValue {
 	markRead: (id: string) => void;
 	markUnread: (id: string) => void;
 	markAllRead: () => void;
-	refresh: (opts?: { unreadOnly?: boolean }) => Promise<void>;
+	dismiss: (id: string) => Promise<void>;
+	dismissAll: () => Promise<void>;
+	refresh: (opts?: { unreadOnly?: boolean, includeDeleted?: boolean }) => Promise<void>;
 	loadMore: () => Promise<void>;
 	showToast: (message: string, type?: ToastItem['type']) => void;
 	getUserNotifications: (userId: string) => Notification[];
@@ -170,6 +192,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 	const wsAuthReady = useWsAuthReady();
 	const userId = authState.user?.id ?? null;
 	const fetchSeqRef = useRef(0);
+	const lastListOptsRef = useRef<{ unreadOnly?: boolean, includeDeleted?: boolean }>({});
 
 	const addNotification = useCallback((notification: Notification) => {
 		dispatch({ type: 'UPSERT_TOP', payload: notification });
@@ -218,9 +241,35 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 		setTimeout(() => dispatch({ type: 'REMOVE_TOAST', payload: id }), 4000);
 	}, []);
 
+	const dismiss = useCallback((id: string) => {
+		return creatorsApi.me.notifications.dismiss(id).then(
+			() => {
+				dispatch({ type: 'REMOVE_BY_ID', payload: id });
+				if (wsConnected && wsAuthReady) {
+					void notificationUnreadCount(ws).then(r => dispatch({ type: 'SET_UNREAD_COUNT', payload: r.unread_count })).catch(() => {});
+				}
+			},
+			(e: unknown) => {
+				showToast(apiErrorMessage(e, 'Could not dismiss notification'), 'error');
+			}
+		);
+	}, [ws, wsConnected, wsAuthReady, showToast]);
+
+	const dismissAll = useCallback(() => {
+		return creatorsApi.me.notifications.clearAll().then(
+			() => {
+				dispatch({ type: 'CLEAR_NOTIFICATIONS' });
+				if (wsConnected && wsAuthReady) {
+					void notificationUnreadCount(ws).then(r => dispatch({ type: 'SET_UNREAD_COUNT', payload: r.unread_count })).catch(() => {});
+				}
+			},
+			(e: unknown) => {
+				showToast(apiErrorMessage(e, 'Could not clear notifications'), 'error');
+			}
+		);
+	}, [ws, wsConnected, wsAuthReady, showToast]);
+
 	const getUserNotifications = useCallback((_userId: string) => {
-		// Notifications are scoped server-side to the authenticated socket user.
-		// Keep the param to avoid refactors across the UI.
 		void _userId;
 		return state.notifications;
 	}, [state.notifications]);
@@ -230,23 +279,36 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 		return state.unreadCount;
 	}, [state.unreadCount]);
 
-	const applyListResponse = useCallback((res: NotificationListResponse, replace: boolean) => {
-		const page = (res.notifications ?? []).map(normalizeRow);
+	const applyListResponse = useCallback((res: MeNotificationsListResponse, replace: boolean) => {
+		const page = (res.notifications ?? []).map(row => normalizeRow(row as InAppNotificationRow));
 		dispatch({ type: 'SET_PAGE', payload: { notifications: page, nextCursor: res.next_cursor ?? null, replace } });
 	}, []);
 
-	const refresh = useCallback((opts?: { unreadOnly?: boolean }): Promise<void> => {
-		if (!wsConnected || !userId || !wsAuthReady) return Promise.resolve();
+	const refresh = useCallback((opts?: { unreadOnly?: boolean, includeDeleted?: boolean }): Promise<void> => {
+		if (!userId || !getSessionToken()) return Promise.resolve();
+		lastListOptsRef.current = {
+			unreadOnly: opts?.unreadOnly,
+			includeDeleted: opts?.includeDeleted,
+		};
 		fetchSeqRef.current += 1;
 		const seq = fetchSeqRef.current;
 		dispatch({ type: 'SET_STATUS', payload: { status: 'loading' } });
-		return Promise.all([
-			notificationUnreadCount(ws),
-			notificationList(ws, { unreadOnly: opts?.unreadOnly, limit: 30 }),
-		]).then(
-			([countRes, listRes]) => {
+
+		const listP = creatorsApi.me.notifications.list({
+			limit: 30,
+			unreadOnly: opts?.unreadOnly,
+			includeDeleted: opts?.includeDeleted,
+		});
+		const countP = wsConnected && wsAuthReady ?
+			notificationUnreadCount(ws) :
+			Promise.resolve(null);
+
+		return Promise.all([listP, countP]).then(
+			([listRes, countRes]) => {
 				if (seq !== fetchSeqRef.current) return;
-				dispatch({ type: 'SET_UNREAD_COUNT', payload: countRes.unread_count });
+				if (countRes && typeof countRes.unread_count === 'number') {
+					dispatch({ type: 'SET_UNREAD_COUNT', payload: countRes.unread_count });
+				}
 				applyListResponse(listRes, true);
 				dispatch({ type: 'SET_STATUS', payload: { status: 'ready' } });
 			},
@@ -259,10 +321,16 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 	}, [applyListResponse, userId, ws, wsConnected, wsAuthReady]);
 
 	const loadMore = useCallback((): Promise<void> => {
-		if (!wsConnected || !userId || !wsAuthReady) return Promise.resolve();
+		if (!userId || !getSessionToken()) return Promise.resolve();
 		const cursor = state.nextCursor;
 		if (!cursor) return Promise.resolve();
-		return notificationList(ws, { limit: 30, beforeCursor: cursor }).then(
+		const o = lastListOptsRef.current;
+		return creatorsApi.me.notifications.list({
+			limit: 30,
+			before: cursor,
+			unreadOnly: o.unreadOnly,
+			includeDeleted: o.includeDeleted,
+		}).then(
 			res => {
 				applyListResponse(res, false);
 			},
@@ -270,13 +338,19 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 				// ignore pagination failures
 			}
 		);
-	}, [applyListResponse, state.nextCursor, userId, ws, wsConnected, wsAuthReady]);
+	}, [applyListResponse, state.nextCursor, userId]);
 
-	// Initial load + reload on login / reconnect.
+	// Initial load + reload on login.
+	useEffect(() => {
+		if (!userId || !getSessionToken()) return;
+		void refresh();
+	}, [refresh, userId]);
+
+	// When WS becomes ready, sync unread badge with server (counts non-dismissed unread per spec).
 	useEffect(() => {
 		if (!userId || !wsConnected || !wsAuthReady) return;
-		void refresh({ unreadOnly: true });
-	}, [refresh, userId, wsConnected, wsAuthReady]);
+		void notificationUnreadCount(ws).then(r => dispatch({ type: 'SET_UNREAD_COUNT', payload: r.unread_count })).catch(() => {});
+	}, [userId, ws, wsConnected, wsAuthReady]);
 
 	// Push events: |notification|new|{...}
 	useEffect(() => {
@@ -291,11 +365,37 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 				data: row.data ?? {},
 				created_at: String(row.created_at ?? new Date().toISOString()),
 				read_at: row.read_at == null ? null : String(row.read_at),
+				deleted_at: row.deleted_at == null || row.deleted_at === undefined ? null : String(row.deleted_at),
 			});
 			dispatch({ type: 'UPSERT_TOP', payload: normalized });
 		});
 		return off;
 	}, [userId, ws]);
+
+	// Push: single dismiss (other tabs / devices)
+	useEffect(() => {
+		if (!userId) return;
+		const off = ws.on('notification', 'dismissed', (data: unknown) => {
+			const pl = data as { id?: string };
+			if (pl?.id == null) return;
+			dispatch({ type: 'REMOVE_BY_ID', payload: String(pl.id) });
+			if (wsConnected && wsAuthReady) {
+				void notificationUnreadCount(ws).then(r => dispatch({ type: 'SET_UNREAD_COUNT', payload: r.unread_count })).catch(() => {});
+			}
+		});
+		return off;
+	}, [userId, ws, wsConnected, wsAuthReady]);
+
+	useEffect(() => {
+		if (!userId) return;
+		const off = ws.on('notification', 'dismissedall', () => {
+			dispatch({ type: 'CLEAR_NOTIFICATIONS' });
+			if (wsConnected && wsAuthReady) {
+				void notificationUnreadCount(ws).then(r => dispatch({ type: 'SET_UNREAD_COUNT', payload: r.unread_count })).catch(() => {});
+			}
+		});
+		return off;
+	}, [userId, ws, wsConnected, wsAuthReady]);
 
 	// Spec: backend may also emit service-level events (creator followed/unfollowed, subscription created/cancelled/expired)
 	// while creating a notification row. To keep the UI consistent with the server truth, trigger a lightweight refresh.
@@ -303,14 +403,14 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 		if (!userId || !wsConnected || !wsAuthReady) return;
 		const off: (() => void)[] = [];
 
-		off.push(ws.on('creator', 'followed', () => { void refresh({ unreadOnly: true }); }));
-		off.push(ws.on('creator', 'unfollowed', () => { void refresh({ unreadOnly: true }); }));
+		off.push(ws.on('creator', 'followed', () => { void refresh(); }));
+		off.push(ws.on('creator', 'unfollowed', () => { void refresh(); }));
 
 		const subsSvcs = ['subscription', 'subscriptions'];
 		for (const svc of subsSvcs) {
-			off.push(ws.on(svc, 'created', () => { void refresh({ unreadOnly: true }); }));
-			off.push(ws.on(svc, 'cancelled', () => { void refresh({ unreadOnly: true }); }));
-			off.push(ws.on(svc, 'expired', () => { void refresh({ unreadOnly: true }); }));
+			off.push(ws.on(svc, 'created', () => { void refresh(); }));
+			off.push(ws.on(svc, 'cancelled', () => { void refresh(); }));
+			off.push(ws.on(svc, 'expired', () => { void refresh(); }));
 		}
 
 		return () => { off.forEach(fn => fn()); };
@@ -322,6 +422,8 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 		markRead,
 		markUnread,
 		markAllRead,
+		dismiss,
+		dismissAll,
 		refresh,
 		loadMore,
 		showToast,
@@ -333,6 +435,8 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 		markRead,
 		markUnread,
 		markAllRead,
+		dismiss,
+		dismissAll,
 		refresh,
 		loadMore,
 		showToast,

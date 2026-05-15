@@ -11,6 +11,7 @@ import { formatDistanceToNow } from '../../utils/date';
 import { formatINR } from '../../services/razorpay';
 import { TipModal } from '../modals/TipModal';
 import { PPVUnlockModal } from '../modals/PPVUnlockModal';
+import { ReportTargetModal } from '../modals/ReportTargetModal';
 import { Modal } from './Toast';
 import { isPostCommented } from '../../services/commentedPosts';
 import { RichTextarea } from './RichTextarea';
@@ -28,7 +29,6 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 		isSubscribed,
 		loadPostComments,
 		editPost,
-		reportPost,
 		deletePost,
 		isPostSaved,
 		savePost,
@@ -45,9 +45,6 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 	const [showDeleteModal, setShowDeleteModal] = useState(false);
 	const [showReportModal, setShowReportModal] = useState(false);
 	const [editText, setEditText] = useState(post.text ?? '');
-	const [reportReason, setReportReason] = useState('Spam');
-	const [reportDesc, setReportDesc] = useState('');
-	const [reportSending, setReportSending] = useState(false);
 	const menuRef = useRef<HTMLDivElement | null>(null);
 
 	const userId = authState.user?.id ?? '';
@@ -166,29 +163,7 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 	function openReport() {
 		setShowMenu(false);
 		if (!authState.user) { void navigate('/login'); return; }
-		setReportReason('Spam');
-		setReportDesc('');
 		setShowReportModal(true);
-	}
-
-	function submitReport() {
-		if (!authState.user) { void navigate('/login'); return; }
-		if (reportSending) return;
-		setReportSending(true);
-		const reason = reportReason.trim() || 'Other';
-		const desc = reportDesc.trim();
-		const payload = desc ? `${reason}: ${desc}` : reason;
-
-		void reportPost(post.id, payload)
-			.then(r => {
-				showToast(r.already_reported ? 'Already reported. Thank you.' : 'Report submitted. Thank you.');
-				setShowReportModal(false);
-			})
-			.catch(err => {
-				console.error('[report] ws failed', err);
-				showToast('Could not submit report. Please try again.', 'error');
-			})
-			.finally(() => setReportSending(false));
 	}
 
 	return (
@@ -451,55 +426,14 @@ export function PostCard({ post, showCreatorLink = true }: PostCardProps) {
 				</div>
 			</Modal>
 
-			<Modal
+			<ReportTargetModal
 				isOpen={showReportModal}
-				onClose={() => { if (!reportSending) setShowReportModal(false); }}
+				onClose={() => setShowReportModal(false)}
+				targetType="post"
+				targetId={post.id}
 				title="Report post"
-			>
-				<div className="p-5 space-y-4">
-					<div className="space-y-1.5">
-						<p className="text-xs text-muted">Reason</p>
-						<select
-							value={reportReason}
-							onChange={e => setReportReason(e.target.value)}
-							className="w-full bg-input border border-border/20 rounded-xl px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
-						>
-							<option>Spam</option>
-							<option>Harassment</option>
-							<option>Nudity</option>
-							<option>Violence</option>
-							<option>Other</option>
-						</select>
-					</div>
-					<div className="space-y-1.5">
-						<p className="text-xs text-muted">Details (optional)</p>
-						<textarea
-							value={reportDesc}
-							onChange={e => setReportDesc(e.target.value)}
-							className="w-full min-h-[90px] bg-input border border-border/20 rounded-xl px-3 py-2 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/40"
-							placeholder="Tell us what’s wrong…"
-						/>
-					</div>
-					<div className="flex justify-end gap-2">
-						<button
-							type="button"
-							onClick={() => setShowReportModal(false)}
-							disabled={reportSending}
-							className="px-4 py-2 rounded-full border border-border/30 bg-transparent text-foreground hover:bg-foreground/5 transition-colors disabled:opacity-60"
-						>
-							Cancel
-						</button>
-						<button
-							type="button"
-							onClick={submitReport}
-							disabled={reportSending}
-							className="px-4 py-2 rounded-full bg-rose-500 text-white hover:bg-rose-600 transition-colors disabled:opacity-60"
-						>
-							{reportSending ? 'Submitting…' : 'Submit'}
-						</button>
-					</div>
-				</div>
-			</Modal>
+				onToast={(msg, t) => showToast(msg, t ?? 'success')}
+			/>
 		</div>
 	);
 }

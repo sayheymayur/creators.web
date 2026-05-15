@@ -269,6 +269,8 @@ export interface Notification {
 	data: Record<string, unknown>;
 	created_at: string;
 	read_at: string | null;
+	/** Soft-dismiss (spec); null when active */
+	deleted_at?: string | null;
 }
 
 /**

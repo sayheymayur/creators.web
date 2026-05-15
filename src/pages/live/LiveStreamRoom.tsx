@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import AgoraRTC, { type IRemoteAudioTrack, type IRemoteVideoTrack } from 'agora-rtc-sdk-ng';
-import { ArrowLeft, DollarSign, Eye, Gift, Heart, MessageCircle, Share2 } from '../../components/icons';
+import { ArrowLeft, DollarSign, Eye, Gift, Heart, MessageCircle, Share2, AlertTriangle } from '../../components/icons';
 import { useLiveStream, VIRTUAL_GIFTS } from '../../context/LiveStreamContext';
 import { useAuth } from '../../context/AuthContext';
 import { useWallet } from '../../context/WalletContext';
@@ -10,6 +10,7 @@ import { useEnsureWsAuth, useWs } from '../../context/WsContext';
 import { compareMinor, inrRupeesToMinor } from '../../utils/money';
 import { LiveGiftsTray } from '../../components/live/LiveGiftsTray';
 import { TipModal } from '../../components/modals/TipModal';
+import { ReportTargetModal } from '../../components/modals/ReportTargetModal';
 import type { VirtualGift } from '../../types';
 import type { LiveWithAgora } from '../../services/liveWsTypes';
 import { formatINR } from '../../services/razorpay';
@@ -50,6 +51,7 @@ export function LiveStreamRoom() {
 	const [livePayload, setLivePayload] = useState<LiveWithAgora | null>(null);
 	const [joining, setJoining] = useState(true);
 	const [giftLoading, setGiftLoading] = useState(false);
+	const [showReportLive, setShowReportLive] = useState(false);
 	const chatEndRef = useRef<HTMLDivElement>(null);
 	const elapsedRef = useRef<ReturnType<typeof setInterval> | null>(null);
 	const controlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -322,6 +324,17 @@ export function LiveStreamRoom() {
 						>
 							<Share2 className="w-4 h-4" />
 						</button>
+						{authState.user && streamId && (
+							<button
+								type="button"
+								onClick={() => setShowReportLive(true)}
+								className="w-9 h-9 rounded-xl bg-black/55 text-white backdrop-blur-sm flex items-center justify-center border border-white/10"
+								aria-label="Report live stream"
+								title="Report"
+							>
+								<AlertTriangle className="w-4 h-4" />
+							</button>
+						)}
 					</div>
 				</div>
 
@@ -444,6 +457,14 @@ export function LiveStreamRoom() {
 				creatorId={stream.creatorId}
 				creatorName={stream.creatorName}
 				creatorAvatar={stream.creatorAvatar}
+			/>
+			<ReportTargetModal
+				isOpen={showReportLive}
+				onClose={() => setShowReportLive(false)}
+				targetType="live"
+				targetId={streamId ?? stream.id}
+				title="Report live stream"
+				onToast={(msg, t) => showToast(msg, t ?? 'success')}
 			/>
 		</div>
 	);

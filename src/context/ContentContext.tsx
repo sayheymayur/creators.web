@@ -17,13 +17,13 @@ import {
 import type { CreatorGetResponse, CreatorListResponse } from '../services/creatorWsTypes';
 import type {
 	CommentDTO,
+	CommentDeletedEventPayload,
 	CommentHeartUpdatePayload,
 	DeletedPostEventPayload,
 	LikeUpdateEventPayload,
 	ListCommentsResponse,
 	ListPostsResponse,
 	PostDTO,
-	ReportPostResponse,
 } from '../services/postsTypes';
 import {
 	type CreatorDisplay,
@@ -68,6 +68,7 @@ type ContentAction =
 	{ type: 'PATCH_POST_LIKES', payload: { postId: string, like_count: number } } |
 	{ type: 'ADD_COMMENT', payload: { postId: string, comment: Comment } } |
 	{ type: 'PATCH_COMMENT_HEART', payload: { postId: string, commentId: string, heart_count: number } } |
+	{ type: 'REMOVE_COMMENT_SUBTREE', payload: { postId: string, rootCommentId: string, deletedCount?: number } } |
 	{ type: 'UNLOCK_POST', payload: { postId: string, userId: string } } |
 	{ type: 'ADD_POST', payload: Post } |
 	{ type: 'UPSERT_POST', payload: Post } |
@@ -143,6 +144,22 @@ function wsEscapeMultilineText(text: string): string {
 	return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n/g, '\\n');
 }
 
+function collectCommentSubtreeIds(comments: readonly Comment[], rootId: string): Record<string, true> {
+	const ids: Record<string, true> = { [rootId]: true };
+	for (;;) {
+		let added = false;
+		for (const c of comments) {
+			const p = c.parentCommentId ?? null;
+			if (p != null && ids[p] && !ids[c.id]) {
+				ids[c.id] = true;
+				added = true;
+			}
+		}
+		if (!added) break;
+	}
+	return ids;
+}
+
 function contentReducer(state: ContentState, action: ContentAction): ContentState {
 	switch (action.type) {
 		case 'TOGGLE_LIKE': {
@@ -209,6 +226,23 @@ function contentReducer(state: ContentState, action: ContentAction): ContentStat
 						comments: p.comments.map(c =>
 							c.id === commentId ? { ...c, heartCount: heart_count } : c
 						),
+					};
+				}),
+			};
+		}
+		case 'REMOVE_COMMENT_SUBTREE': {
+			const { postId, rootCommentId, deletedCount } = action.payload;
+			return {
+				...state,
+				posts: state.posts.map(p => {
+					if (p.id !== postId) return p;
+					const ids = collectCommentSubtreeIds(p.comments, rootCommentId);
+					const removed = Object.keys(ids).length;
+					const dec = deletedCount ?? removed;
+					return {
+						...p,
+						comments: p.comments.filter(c => !ids[c.id]),
+						commentCount: Math.max(0, p.commentCount - dec),
 					};
 				}),
 			};
@@ -419,12 +453,12 @@ interface ContentContextValue {
 	addComment: (postId: string, text: string) => Promise<void>;
 	addReply: (postId: string, parentCommentId: string, text: string) => Promise<void>;
 	heartComment: (commentId: string) => Promise<void>;
+	deleteCommentAsAuthor: (postId: string, commentId: string) => Promise<void>;
 	unlockPost: (postId: string, userId: string) => void;
 	addPost: (post: Post) => void;
 	createPost: (input: CreatePostInput) => Promise<void>;
 	editPost: (postId: string, text: string) => Promise<void>;
 	deletePost: (postId: string) => Promise<void>;
-	reportPost: (postId: string, reason: string) => Promise<ReportPostResponse>;
 	subscribe: (creatorUserId: string) => void;
 	unsubscribe: (creatorUserId: string) => void;
 	isSubscribed: (creatorUserId: string) => boolean;
@@ -692,6 +726,18 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 				},
 			});
 		});
+		const offCommentDeleted = ws.on('posts', 'commentdeleted', (data: unknown) => {
+			const pl = data as CommentDeletedEventPayload;
+			if (!pl?.post_id || pl?.root_comment_id == null) return;
+			dispatch({
+				type: 'REMOVE_COMMENT_SUBTREE',
+				payload: {
+					postId: String(pl.post_id),
+					rootCommentId: String(pl.root_comment_id),
+					deletedCount: typeof pl.deleted_count === 'number' ? pl.deleted_count : undefined,
+				},
+			});
+		});
 		return () => {
 			offNew();
 			offUpdated();
@@ -699,6 +745,7 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 			offLike();
 			offComment();
 			offCommentHeart();
+			offCommentDeleted();
 		};
 	}, [ws, wsConnected, handlePush]);
 
@@ -1134,6 +1181,22 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 		[wsRequestLine]
 	);
 
+	const deleteCommentAsAuthor = useCallback(
+		(postId: string, commentId: string) =>
+			wsRequestLine('posts', `/deletecomment ${commentId}`).then(json => {
+				const body = json as { post_id?: string, deleted_count?: number };
+				dispatch({
+					type: 'REMOVE_COMMENT_SUBTREE',
+					payload: {
+						postId: String(body.post_id || postId),
+						rootCommentId: commentId,
+						deletedCount: typeof body.deleted_count === 'number' ? body.deleted_count : undefined,
+					},
+				});
+			}),
+		[wsRequestLine]
+	);
+
 	const addPost = useCallback((post: Post) => {
 		dispatch({ type: 'ADD_POST', payload: post });
 	}, []);
@@ -1194,15 +1257,6 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 		});
 	}, [wsRequestLine]);
 
-	const reportPost = useCallback(
-		(postId: string, reason: string): Promise<ReportPostResponse> => {
-			const trimmed = reason.trim();
-			const cmd = trimmed ? `/report ${postId} ${trimmed}` : `/report ${postId}`;
-			return wsRequestLine('posts', cmd).then(json => json as ReportPostResponse);
-		},
-		[wsRequestLine]
-	);
-
 	const updatePost = useCallback((post: Partial<Post> & { id: string }) => {
 		if (post.text === undefined) {
 			dispatch({ type: 'UPDATE_POST', payload: post });
@@ -1244,12 +1298,12 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 				addComment,
 				addReply,
 				heartComment,
+				deleteCommentAsAuthor,
 				unlockPost,
 				addPost,
 				createPost,
 				editPost,
 				deletePost,
-				reportPost,
 				subscribe,
 				unsubscribe,
 				isSubscribed,

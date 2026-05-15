@@ -53,7 +53,13 @@ export function Settings() {
 			.catch(() => {
 				// Per spec: defaults are true when nothing saved yet.
 				// If the endpoint is unavailable in some env, keep local defaults and avoid blocking Settings.
-				setNotifPrefs({ ...defaultNotifPrefs });
+				setNotifPrefs({
+					messages: true,
+					subscriptions: true,
+					tips: true,
+					likes: true,
+					system: true,
+				});
 				setNotifDirty(false);
 			})
 			.finally(() => setNotifLoading(false));

@@ -23,7 +23,7 @@ export function Explore() {
 			contentState.explorePostIds
 				.map(pid => contentState.posts.find(p => p.id === pid))
 				.filter((p): p is NonNullable<typeof p> => Boolean(p)),
-		[contentState.explorePostIds, contentState.posts],
+		[contentState.explorePostIds, contentState.posts]
 	);
 	const [search, setSearch] = useState('');
 	const [debouncedSearch, setDebouncedSearch] = useState('');

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Star, Grid3x3, Zap, Share2, MoreHorizontal, Lock, Image, Type, ArrowLeft, Heart } from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';
@@ -23,10 +23,6 @@ import { creatorFollow, creatorUnfollow } from '../../services/creatorWsService'
 import { useSubscriptions } from '../../context/SubscriptionContext';
 import { subscriptionId, subscriptionUiStatus } from '../../services/subscriptionUi';
 import { buildSkeletonCreator, creatorFromCacheDisplay } from '../../utils/skeletonCreator';
-
-// NOTE: `base`, `fallbackCreator`, and `maybeCreator` are referenced in the effects below
-// but are not defined in this file. They need to be derived from your local state/cache
-// (e.g. fallbackCreator = cacheCreator, base = some skeleton base object) — fix before shipping.
 
 export function CreatorProfile() {
 	const { id: creatorUserId } = useParams<{ id: string }>();
@@ -97,14 +93,14 @@ export function CreatorProfile() {
 				const dto = r.creator;
 				setIsFollowed(Boolean(dto.is_followed));
 				setProfileLikedByMe(Boolean(dto.is_profile_liked));
-				setRemoteCreator(creatorProfileDtoToCreator(dto, base));
+				setRemoteCreator(creatorProfileDtoToCreator(dto, cacheCreator ?? undefined));
 				return;
 			}
-			if (!hasLoadedCreatorRef.current && !fallbackCreator) {
+			if (!hasLoadedCreatorRef.current && !cacheCreator) {
 				showToast('Creator profile not found for this user.', 'error');
 			}
-			if (!hasLoadedCreatorRef.current && fallbackCreator) {
-				setRemoteCreator(fallbackCreator);
+			if (!hasLoadedCreatorRef.current && cacheCreator) {
+				setRemoteCreator(cacheCreator);
 			}
 		};
 
@@ -118,7 +114,7 @@ export function CreatorProfile() {
 				setIsFollowed(Boolean(h.isFollowed));
 				setProfileLikedByMe(Boolean(h.isProfileLiked));
 				const dto = httpCreatorProfileToDto(h);
-				setRemoteCreator(creatorProfileDtoToCreator(dto, base));
+				setRemoteCreator(creatorProfileDtoToCreator(dto, cacheCreator ?? undefined));
 			})
 			.catch((err: unknown) => {
 				if (ac.signal.aborted) return;
@@ -126,7 +122,7 @@ export function CreatorProfile() {
 					console.error('[creator-profile] HTTP get failed', { creatorUserId, err });
 				}
 				if (contentState.postsWsStatus !== 'ready') {
-					if (!hasLoadedCreatorRef.current && fallbackCreator) setRemoteCreator(fallbackCreator);
+					if (!hasLoadedCreatorRef.current && cacheCreator) setRemoteCreator(cacheCreator);
 					else if (!hasLoadedCreatorRef.current) showToast('Could not load creator profile.', 'error');
 					return;
 				}
@@ -143,7 +139,7 @@ export function CreatorProfile() {
 			});
 
 		return () => ac.abort();
-	}, [creatorUserId, maybeCreator, creatorWsGetByUserId, contentState.postsWsStatus, fallbackCreator, showToast]);
+	}, [creatorUserId, cacheCreator, creatorWsGetByUserId, contentState.postsWsStatus, showToast]);
 
 	useEffect(() => {
 		if (!creatorUserId) return;
@@ -153,7 +149,7 @@ export function CreatorProfile() {
 	useEffect(() => {
 		if (!wsConnected) return;
 		const off = ws.on('creator', 'profilelikeupdate', (data: unknown) => {
-			const pl = data as { creator_user_id?: string; profile_like_count?: number };
+			const pl = data as { creator_user_id?: string, profile_like_count?: number };
 			if (!pl?.creator_user_id || String(pl.creator_user_id) !== String(creatorUserId)) return;
 			const n = Number(pl.profile_like_count);
 			if (Number.isFinite(n)) {
@@ -334,7 +330,7 @@ export function CreatorProfile() {
 						<MediaBanner src={creatorForDisplay.banner} className="h-full w-full object-cover" />
 						<div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-background pointer-events-none" />
 						{shellOnly && (
-							<div className="absolute bottom-3 left-1/2 z-20 -translate-x-1/2 pointer-events-none rounded-full bg-background/80 dark:bg-black/60 px-3 py-1 text-[11px] font-medium text-muted backdrop-bl[...]
+							<div className="absolute bottom-3 left-1/2 z-20 -translate-x-1/2 pointer-events-none rounded-full bg-background/80 dark:bg-black/60 px-3 py-1 text-[11px] font-medium text-muted backdrop-blur-sm">
 								{wsWait ? 'Connecting…' : 'Loading profile…'}
 							</div>
 						)}
@@ -363,7 +359,7 @@ export function CreatorProfile() {
 					<div className="absolute top-3 right-3 z-10 flex gap-2 items-start">
 						<button
 							type="button"
-							className="w-8 h-8 bg-background/70 text-foreground hover:bg-background/90 dark:bg-black/40 dark:text-white dark:hover:bg-black/60 backdrop-blur-sm rounded-full flex items-center justify-c[...]
+							className="w-8 h-8 bg-background/70 text-foreground hover:bg-background/90 dark:bg-black/40 dark:text-white dark:hover:bg-black/60 backdrop-blur-sm rounded-full flex items-center justify-center"
 						>
 							<Share2 className="w-4 h-4" />
 						</button>
@@ -373,7 +369,7 @@ export function CreatorProfile() {
 								<button
 									type="button"
 									onClick={() => setProfileMenuOpen(v => !v)}
-									className="w-8 h-8 bg-background/70 text-foreground hover:bg-background/90 dark:bg-black/40 dark:text-white dark:hover:bg-black/60 backdrop-blur-sm rounded-full flex items-center justify[...]
+									className="w-8 h-8 bg-background/70 text-foreground hover:bg-background/90 dark:bg-black/40 dark:text-white dark:hover:bg-black/60 backdrop-blur-sm rounded-full flex items-center justify-center"
 									aria-label="Profile menu"
 									aria-expanded={profileMenuOpen}
 									aria-haspopup="menu"
@@ -460,7 +456,7 @@ export function CreatorProfile() {
 										type="button"
 										disabled={shellOnly}
 										onClick={() => setShowTipModal(true)}
-										className="flex items-center gap-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 text-sm font-semibold px-3 py-2 rounded-xl transition-all disabled:opacity-40 disabled:pointer-[...]
+										className="flex items-center gap-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 text-sm font-semibold px-3 py-2 rounded-xl transition-all disabled:opacity-40 disabled:pointer-events-none"
 									>
 										<Zap className="w-4 h-4 fill-amber-400" />
 										Tip
@@ -470,7 +466,7 @@ export function CreatorProfile() {
 										type="button"
 										disabled={shellOnly}
 										onClick={() => setShowSubscribeModal(true)}
-										className="bg-rose-500 hover:bg-rose-600 text-white font-bold px-5 py-2 rounded-xl text-sm transition-all active:scale-95 shadow-lg shadow-rose-500/25 disabled:opacity-40 disabled:point[...]
+										className="bg-rose-500 hover:bg-rose-600 text-white font-bold px-5 py-2 rounded-xl text-sm transition-all active:scale-95 shadow-lg shadow-rose-500/25 disabled:opacity-40 disabled:pointer-events-none"
 									>
 										Subscribe {formatINR(creatorForDisplay.subscriptionPrice)}/mo
 									</button>
@@ -481,7 +477,7 @@ export function CreatorProfile() {
 									type="button"
 									disabled={shellOnly}
 									onClick={() => setShowSessionModal(true)}
-									className="flex items-center gap-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 text-sm font-semibold px-3 py-2 rounded-xl transition-all border border-rose-500/20 disabled:opacit[...]
+									className="flex items-center gap-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 text-sm font-semibold px-3 py-2 rounded-xl transition-all border border-rose-500/20 disabled:opacity-40 disabled:pointer-events-none"
 								>
 									Book Session
 								</button>
@@ -489,13 +485,11 @@ export function CreatorProfile() {
 									type="button"
 									onClick={() => { handleWsFollow(); }}
 									disabled={followBusy || shellOnly}
-									className={
-										'flex items-center gap-1.5 ' +
-										(isFollowed ?
-											'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/20 ' :
-											'bg-foreground/10 hover:bg-foreground/15 text-foreground border-border/20 ') +
-										'text-sm font-semibold px-3 py-2 rounded-xl transition-all border border-border/20 disabled:opacity-50'
-									}
+									className={`flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl transition-all border border-border/20 disabled:opacity-50 ${
+										isFollowed ?
+											'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/20' :
+											'bg-foreground/10 hover:bg-foreground/15 text-foreground border-border/20'
+									}`}
 								>
 									{isFollowed ? 'Following' : 'Follow'}
 								</button>

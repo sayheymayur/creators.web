@@ -37,6 +37,7 @@ export function creatorProfileDtoToCreator(dto: CreatorProfileDTO, base?: Partia
 		totalEarnings: base?.totalEarnings ?? 0,
 		monthlyEarnings: base?.monthlyEarnings ?? 0,
 		tipsReceived: base?.tipsReceived ?? 0,
+		followerCount,
 		subscriberCount:
 			typeof dto.follower_count === 'number' ? dto.follower_count :
 			typeof dto.follower_count === 'string' && /^\d+$/.test(dto.follower_count) ? Number(dto.follower_count) :

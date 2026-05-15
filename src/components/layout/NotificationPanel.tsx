@@ -3,6 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { Bell, CheckCheck, Trash2 } from '../icons';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
+import type { Notification } from '../../types';
+import { formatDistanceToNow } from '../../utils/date';
+import { formatINRFromMinor } from '../../utils/money';
+import { tipMinorFromNotificationData } from '../notifications/NotificationRow';
 
 interface NotificationPanelProps {
 	onClose: () => void;
@@ -129,9 +133,20 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
 				) : notifications.length === 0 ? (
 					<div className="text-center py-8 text-muted text-sm">No notifications</div>
 				) : (
-					notifications.map(n => {
+					notifications.map((n: Notification) => {
 						const data = n.data ?? {};
 						const link = typeof data.link === 'string' ? data.link : undefined;
+						const fromAvatar =
+							typeof data.from_avatar === 'string' ? data.from_avatar :
+							typeof data.fromAvatar === 'string' ? data.fromAvatar :
+							undefined;
+						const isRead = n.read_at != null;
+						const kind = typeof data.kind === 'string' ? data.kind : '';
+						const tipMinor = kind === 'tip' ? tipMinorFromNotificationData(data) : null;
+						const tipSubtitle =
+							tipMinor != null ? (
+								<span className="text-amber-500 dark:text-amber-400/90">Tip · {formatINRFromMinor(tipMinor)}</span>
+							) : null;
 						return (
 							<div
 								key={n.id}
@@ -141,7 +156,7 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
 							>
 								<button
 									type="button"
-									onClick={() => handleClick(n.id, link)}
+									onClick={() => handleRowClick(n.id, link)}
 									className="flex flex-1 min-w-0 gap-3 text-left hover:bg-white/5 transition-colors rounded-lg -mx-1 px-1 py-0.5"
 								>
 									{fromAvatar ? (

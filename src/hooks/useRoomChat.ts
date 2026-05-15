@@ -60,6 +60,8 @@ export interface UseRoomChatParams {
 	 * - `auto`: uses `ws` when `sendWithAck` is true (booking chats), else multiplex
 	 */
 	transport?: 'auto' | 'multiplex' | 'ws';
+	/** If false, do not emit `/leaveroom` on cleanup (useful when another layer keeps the room joined). */
+	leaveOnCleanup?: boolean;
 }
 
 export interface UseRoomChatResult {
@@ -94,6 +96,7 @@ export function useRoomChat(params: UseRoomChatParams): UseRoomChatResult {
 		onProtocolError,
 		sendWithAck = false,
 		transport = 'auto',
+		leaveOnCleanup = true,
 	} = params;
 
 	const ws = useWs();
@@ -254,7 +257,7 @@ export function useRoomChat(params: UseRoomChatParams): UseRoomChatResult {
 				// Avoid emitting a real `/leaveroom` during the dev-only test cleanup.
 				if (devSkipLeaveOnceRef.current) {
 					devSkipLeaveOnceRef.current = false;
-				} else if (wsConnected) {
+				} else if (leaveOnCleanup && wsConnected) {
 					void ws.request('chat', 'leaveroom', [roomUuid]).catch(() => {});
 				}
 				lastTypingSentRef.current = null;
@@ -335,13 +338,13 @@ export function useRoomChat(params: UseRoomChatParams): UseRoomChatResult {
 			const c = getCreatorsMultiplexSingleton();
 			if (devSkipLeaveOnceRef.current) {
 				devSkipLeaveOnceRef.current = false;
-			} else if (c?.isOpen()) {
+			} else if (leaveOnCleanup && c?.isOpen()) {
 				void chatLeaveRoom(c, roomUuid).catch(() => {});
 			}
 			lastTypingSentRef.current = null;
 			setOtherTyping(false);
 		};
-	}, [realtimeActive, roomUuid, onProtocolError, effectiveTransport, ws, wsConnected]);
+	}, [realtimeActive, roomUuid, onProtocolError, effectiveTransport, ws, wsConnected, leaveOnCleanup]);
 
 	const notifyTyping = useCallback(
 		(active: boolean) => {

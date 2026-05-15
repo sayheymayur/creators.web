@@ -75,15 +75,87 @@ export function mergePostDtoIntoPost(
 	};
 }
 
+/**
+ * Creator-scoped comment lists sometimes echo the post owner's role label instead of the
+ * commenter's identity. Treat those as absent so we use profile lookup or `User ·…` fallback.
+ */
+function isEchoedPostAuthorPlaceholder(value: string): boolean {
+	const t = value.trim();
+	if (!t) return true;
+	if (t === 'Creator') return true;
+	if (t.toLowerCase() === 'creator') return true;
+	return false;
+}
+
+function commentAuthorNameFromDto(dto: CommentDTO): string | null {
+	// Prefer typed fields (spec), then any extra keys the gateway forwards.
+	const typed: (string | null | undefined)[] = [
+		dto.display_name,
+		dto.user_display_name,
+		dto.name,
+		dto.user_name,
+		dto.username,
+	];
+	for (const v of typed) {
+		if (typeof v !== 'string') continue;
+		if (isEchoedPostAuthorPlaceholder(v)) continue;
+		const t = v.trim();
+		if (t) return t;
+	}
+	const raw = dto as unknown as Record<string, unknown>;
+	for (const key of [
+		'author_display', 'fan_display', 'fan_name', 'author_name',
+		'userDisplayName', 'displayName', 'userName', 'authorName',
+	] as const) {
+		const v = raw[key];
+		if (typeof v !== 'string') continue;
+		if (isEchoedPostAuthorPlaceholder(v)) continue;
+		const t = v.trim();
+		if (t) return t;
+	}
+	return null;
+}
+
+function commentAuthorAvatarFromDto(dto: CommentDTO): string | null {
+	const typed: (string | null | undefined)[] = [dto.avatar_url, dto.user_avatar_url];
+	for (const v of typed) {
+		if (typeof v === 'string') {
+			const t = v.trim();
+			if (t) return t;
+		}
+	}
+	const raw = dto as unknown as Record<string, unknown>;
+	for (const key of ['user_avatar', 'avatarUrl', 'userAvatar'] as const) {
+		const v = raw[key];
+		if (typeof v === 'string') {
+			const t = v.trim();
+			if (t) return t;
+		}
+	}
+	return null;
+}
+
+/** Placeholder profile used while resolving creator rows — must not look like the post author. */
+function isUnknownUserProfilePlaceholder(p: CreatorDisplay | undefined): boolean {
+	if (!p) return false;
+	return p.username === 'creator' && p.name === 'Creator';
+}
+
 export function commentDtoToComment(dto: CommentDTO, profile: CreatorDisplay | undefined): Comment {
 	const userId = String(dto.user_id);
 	const pid = dto.parent_comment_id;
 	const text = String(dto.text ?? '').replace(/\\n/g, '\n');
+	const fromDto = commentAuthorNameFromDto(dto);
+	const fromDtoAvatar = commentAuthorAvatarFromDto(dto);
+	const prof =
+		profile && !isUnknownUserProfilePlaceholder(profile) ? profile : undefined;
+	const tail = userId.replace(/-/g, '').slice(-6) || userId.slice(0, 8);
+	const fallback = `User ·${tail}`;
 	return {
 		id: dto.id,
 		userId,
-		userName: profile?.name ?? `User ${userId.slice(0, 8)}`,
-		userAvatar: profile?.avatar ?? '',
+		userName: fromDto ?? prof?.name ?? fallback,
+		userAvatar: fromDtoAvatar ?? prof?.avatar ?? '',
 		text,
 		createdAt: dto.created_at,
 		likes: 0,

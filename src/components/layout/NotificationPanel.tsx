@@ -3,8 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { Bell, CheckCheck, Trash2 } from '../icons';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
-import { formatDistanceToNow } from '../../utils/date';
-import { formatINRFromMinor } from '../../utils/money';
 
 interface NotificationPanelProps {
 	onClose: () => void;
@@ -35,7 +33,7 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
 		void refresh({ unreadOnly: unreadOnly || undefined, includeDeleted: includeDeleted || undefined });
 	}, [refresh, unreadOnly, includeDeleted]);
 
-	function handleClick(id: string, link?: string) {
+	function handleRowClick(id: string, link?: string) {
 		markRead(id);
 		onClose();
 		if (link) navigate(link);
@@ -53,6 +51,9 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
 		if (clearBusy) return;
 		setClearBusy(true);
 		void dismissAll().finally(() => setClearBusy(false));
+	function goToAll() {
+		onClose();
+		void navigate('/notifications');
 	}
 
 	return (
@@ -129,19 +130,6 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
 					notifications.map(n => {
 						const data = n.data ?? {};
 						const link = typeof data.link === 'string' ? data.link : undefined;
-						const fromAvatar =
-							typeof data.from_avatar === 'string' ? data.from_avatar :
-							typeof data.fromAvatar === 'string' ? data.fromAvatar :
-							undefined;
-						const isRead = n.read_at != null;
-						const kind = typeof data.kind === 'string' ? data.kind : '';
-						const tipMinor = kind === 'tip' && typeof data.amount_cents === 'string' ? data.amount_cents : null;
-						const tipSubtitle = tipMinor != null ? (
-							<span className="text-amber-400/90">
-								Tip · {formatINRFromMinor(tipMinor)}
-								{typeof data.currency === 'string' && data.currency && data.currency !== 'INR' ? ` (${data.currency})` : ''}
-							</span>
-						) : null;
 						return (
 							<div
 								key={n.id}
@@ -198,6 +186,16 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
 						</button>
 					</div>
 				) : null}
+			</div>
+
+			<div className="border-t border-border/10 px-2 py-2">
+				<button
+					type="button"
+					onClick={goToAll}
+					className="w-full text-center text-xs font-semibold text-rose-500 hover:text-rose-600 dark:text-rose-400 dark:hover:text-rose-300 py-2 rounded-xl hover:bg-foreground/5 transition-colors"
+				>
+					View all
+				</button>
 			</div>
 		</div>
 	);

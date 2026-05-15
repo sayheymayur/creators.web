@@ -30,6 +30,8 @@ interface ImportMetaEnv {
 	readonly VITE_AGORA_TOKEN_ENDPOINT?: string;
 	/** true = log creator WS commands/responses in dev */
 	readonly VITE_DEBUG_CREATOR_WS?: string;
+	/** true = show full creator dashboard without KYC gate (non-dev builds, e.g. preview) */
+	readonly VITE_SKIP_CREATOR_KYC?: string;
 }
 
 interface ImportMeta {

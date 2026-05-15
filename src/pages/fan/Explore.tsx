@@ -23,9 +23,10 @@ export function Explore() {
 			contentState.explorePostIds
 				.map(pid => contentState.posts.find(p => p.id === pid))
 				.filter((p): p is NonNullable<typeof p> => Boolean(p)),
-		[contentState.explorePostIds, contentState.posts]
+		[contentState.explorePostIds, contentState.posts],
 	);
 	const [search, setSearch] = useState('');
+	const [debouncedSearch, setDebouncedSearch] = useState('');
 	const [category, setCategory] = useState('All');
 	const [sortBy, setSortBy] = useState<'popular' | 'new' | 'price'>('popular');
 	const tagFilter = normalizeHashtagTag(searchParams.get('tag') ?? '');
@@ -43,12 +44,20 @@ export function Explore() {
 	const allRef = useDragScroll();
 
 	useEffect(() => {
+		const t = window.setTimeout(() => {
+			setDebouncedSearch(search.trim());
+		}, 350);
+		return () => { window.clearTimeout(t); };
+	}, [search]);
+
+	// Merged: abhay's proper cancelled/abort cleanup + main's debouncedSearch dep
+	useEffect(() => {
 		if (contentState.postsWsStatus !== 'ready') return;
 		const ac = new AbortController();
 		let cancelled = false;
 		setWsDirLoading(true);
 		const cat = category === 'All' ? undefined : category;
-		const q = search.trim() || undefined;
+		const q = debouncedSearch.trim() || undefined;
 		void creatorWsSearch({ q, category: cat, limit: 30 })
 			.then(r => {
 				if (cancelled) return null;
@@ -74,13 +83,15 @@ export function Explore() {
 			cancelled = true;
 			ac.abort();
 		};
-	}, [contentState.postsWsStatus, search, category, creatorWsSearch]);
+	}, [contentState.postsWsStatus, debouncedSearch, category, creatorWsSearch]);
 
+	// Kept abhay's full version (has hydrateCreatorCardsFromHttp + abort + wsCreatorsRef).
+	// main's duplicate below the trendingCreators line was removed.
 	function loadMoreDirectory() {
 		if (!wsDirCursor || contentState.postsWsStatus !== 'ready') return;
 		const ac = new AbortController();
 		const cat = category === 'All' ? undefined : category;
-		const q = search.trim() || undefined;
+		const q = debouncedSearch.trim() || undefined;
 		void creatorWsSearch({ q, category: cat, limit: 30, beforeCursor: wsDirCursor })
 			.then(r => {
 				const nextRows = r.creators.map(d => creatorSummaryToCardCreator(d, mockCreators[0]));
@@ -105,7 +116,11 @@ export function Explore() {
 
 	const filtered = useMemo(() => {
 		return [...wsCreators].sort((a, b) => {
-			if (sortBy === 'popular') return b.subscriberCount - a.subscriberCount;
+			if (sortBy === 'popular') {
+				const pa = a.followerCount || a.subscriberCount;
+				const pb = b.followerCount || b.subscriberCount;
+				return pb - pa;
+			}
 			if (sortBy === 'new') return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
 			return a.subscriptionPrice - b.subscriptionPrice;
 		});
@@ -137,7 +152,8 @@ export function Explore() {
 							<button
 								key={cat}
 								onClick={() => setCategory(cat)}
-								className={`shrink-0 text-sm px-3 py-1.5 rounded-xl font-medium transition-all ${category === cat ? 'bg-rose-500 text-white' : 'bg-foreground/5 text-muted hover:text-foreground hover:bg-foreground/10'
+								className={`shrink-0 text-sm px-3 py-1.5 rounded-xl font-medium transition-all ${
+									category === cat ? 'bg-rose-500 text-white' : 'bg-foreground/5 text-muted hover:text-foreground hover:bg-foreground/10'
 								}`}
 							>
 								{cat}
@@ -191,7 +207,7 @@ export function Explore() {
 					) : null}
 				</div>
 
-				{!search && category === 'All' && liveStreams.length > 0 && (
+				{!debouncedSearch && category === 'All' && liveStreams.length > 0 && (
 					<div className="mb-8">
 						<div className="flex items-center gap-2 mb-4">
 							<h2 className="font-semibold text-foreground text-sm">Live Now</h2>
@@ -224,7 +240,7 @@ export function Explore() {
 					</div>
 				)}
 
-				{!search && category === 'All' && (
+				{!debouncedSearch && category === 'All' && (
 					<div className="mb-8">
 						<div className="flex items-center gap-2 mb-4">
 							<TrendingUp className="w-4 h-4 text-rose-400" />

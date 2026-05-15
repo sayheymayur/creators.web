@@ -564,7 +564,12 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 			if (u?.id === userId) {
 				return { name: u.name, avatar: u.avatar, username: u.username };
 			}
-			return profiles[userId];
+			const row = profiles[userId];
+			// Legacy bug: unknown users were cached as post-author-looking "Creator"; treat as unresolved.
+			if (row?.name === 'Creator' && row.username === 'creator') {
+				return undefined;
+			}
+			return row;
 		},
 		[]
 	);
@@ -580,7 +585,8 @@ export function ContentProvider({ children }: { children: React.ReactNode }) {
 				const cached = resolveCreatorDisplay(id, prev);
 				if (cached) continue;
 				missing.push(id);
-				batch[id] = { name: 'Creator', avatar: '', username: 'creator' };
+				const tail = id.replace(/-/g, '').slice(-6) || id.slice(0, 8);
+				batch[id] = { name: `User ·${tail}`, avatar: '', username: 'user' };
 			}
 
 			// Resolve fast with cached + placeholders.

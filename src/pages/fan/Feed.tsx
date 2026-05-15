@@ -1,45 +1,54 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Sparkles, Zap, Users } from '../../components/icons';
 import { Layout } from '../../components/layout/Layout';
 import { PostCard } from '../../components/ui/PostCard';
+import { MediaAvatar } from '../../components/ui/MediaAvatar';
 import { useContent } from '../../context/ContentContext';
+import { useSubscriptions } from '../../context/SubscriptionContext';
 import { useDragScroll } from '../../hooks/useDragScroll';
-import type { Creator } from '../../types';
+import { useSubscribedCreatorsForFan } from '../../hooks/useSubscribedCreatorsForFan';
 
 export function Feed() {
-	const { state: contentState, isSubscribed, loadMoreFeed, refreshFeed } = useContent();
+	const { state: contentState, loadMoreFeed, refreshFeed } = useContent();
+	const { isSubscribed: isWsSubscribed } = useSubscriptions();
+	const { subscribedCreators, bumpHydrate } = useSubscribedCreatorsForFan();
 	const navigate = useNavigate();
 	const [filter, setFilter] = useState<'all' | 'subscribed'>('all');
 	const followingRef = useDragScroll();
 
+	useEffect(() => {
+		if (filter !== 'subscribed') return;
+		if (contentState.postsWsStatus !== 'ready') return;
+		bumpHydrate();
+	}, [filter, contentState.postsWsStatus, bumpHydrate]);
+
 	const posts = contentState.posts.filter(p => {
-		if (filter === 'subscribed') return isSubscribed(p.creatorId);
+		if (filter === 'subscribed') return isWsSubscribed(p.creatorId);
 		return true;
 	});
-
-	// Creator directory may be loaded via WS; in the meantime we don't render mock “following” pills.
-	const subscribedCreators: Creator[] = [];
 
 	return (
 		<Layout>
 			<div className="max-w-2xl mx-auto px-4 py-6">
 				{subscribedCreators.length > 0 && (
 					<div className="mb-6">
-						<p className="text-xs text-muted font-medium uppercase tracking-wider mb-3">Following</p>
+						<p className="text-xs text-muted font-medium uppercase tracking-wider mb-3">Subscribed</p>
 						<div ref={followingRef} className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
 							{subscribedCreators.map(creator => (
 								<button
 									key={creator.id}
+									type="button"
 									onClick={() => { void navigate(`/creator/${creator.id}`); }}
 									className="flex flex-col items-center gap-1 shrink-0"
 								>
 									<div className="relative">
 										<div className={`w-14 h-14 rounded-full p-0.5 ${creator.isOnline ? 'bg-gradient-to-tr from-rose-500 to-amber-400' : 'bg-foreground/10'}`}>
-											<img
+											<MediaAvatar
 												src={creator.avatar}
 												alt={creator.name}
-												className="w-full h-full rounded-full object-cover border-2 border-background"
+												name={creator.name}
+												className="h-full w-full rounded-full border-2 border-background"
 											/>
 										</div>
 										{creator.isOnline && (
@@ -60,12 +69,14 @@ export function Feed() {
 					</div>
 					<div className="flex gap-1 bg-foreground/5 p-0.5 rounded-xl">
 						<button
+							type="button"
 							onClick={() => setFilter('all')}
 							className={`text-xs px-3 py-1 rounded-lg transition-all ${filter === 'all' ? 'bg-foreground/10 text-foreground' : 'text-muted'}`}
 						>
 							All
 						</button>
 						<button
+							type="button"
 							onClick={() => setFilter('subscribed')}
 							className={`text-xs px-3 py-1 rounded-lg transition-all ${filter === 'subscribed' ? 'bg-foreground/10 text-foreground' : 'text-muted'}`}
 						>
@@ -82,6 +93,7 @@ export function Feed() {
 						<p className="text-muted font-medium mb-1">No posts yet</p>
 						<p className="text-sm text-muted/80 mb-4">Subscribe to creators to see their content here</p>
 						<button
+							type="button"
 							onClick={() => { void navigate('/explore'); }}
 							className="bg-rose-500 hover:bg-rose-600 text-white text-sm font-semibold px-6 py-2 rounded-xl transition-colors"
 						>
@@ -108,7 +120,7 @@ export function Feed() {
 								<PostCard key={post.id} post={post} />
 							))}
 						</div>
-						{contentState.feedNextCursor && (
+						{filter === 'all' && contentState.feedNextCursor && (
 							<div className="pt-4 flex justify-center">
 								<button
 									type="button"

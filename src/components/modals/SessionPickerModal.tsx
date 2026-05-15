@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X, MessageCircle, Phone, Video, Clock, Zap, AlertCircle, Wallet } from '../icons';
+import { MediaAvatar } from '../ui/MediaAvatar';
 import { formatINR } from '../../services/razorpay';
 import { compareMinor, formatINRFromMinor, inrRupeesToMinor } from '../../utils/money';
 import type { SessionType } from '../../types';
@@ -19,7 +20,7 @@ interface Props {
 	ratePerMinute: number;
 	walletBalanceMinor: string;
 	onConfirm: (type: SessionType, durationMinutes: number, totalCost: number, payMode: SessionPayMode) => void;
-	/** When set to `sessions`, the UI will only collect the session type and defer pricing/payment to the backend sessions service. */
+	/** When set to `sessions`, pricing/payment UI is deferred to the backend; session type + duration are still chosen here. */
 	protocol?: SessionPickerProtocol;
 }
 
@@ -28,6 +29,19 @@ const SESSION_TYPES: { type: SessionType, label: string, icon: React.ElementType
 	{ type: 'audio', label: 'Audio Call', icon: Phone, color: 'text-sky-400', bg: 'bg-sky-500/15 border-sky-500/30' },
 	{ type: 'video', label: 'Video Call', icon: Video, color: 'text-rose-400', bg: 'bg-rose-500/15 border-rose-500/30' },
 ];
+
+function sessionsRequestCtaLabel(type: SessionType): string {
+	switch (type) {
+		case 'chat':
+			return 'Request chat session';
+		case 'audio':
+			return 'Request audio call';
+		case 'video':
+			return 'Request video call';
+		default:
+			return 'Request session';
+	}
+}
 
 export function SessionPickerModal({
 	isOpen,
@@ -42,6 +56,12 @@ export function SessionPickerModal({
 	const [selectedType, setSelectedType] = useState<SessionType | null>(null);
 	const [selectedDuration, setSelectedDuration] = useState<number | null>(null);
 	const [payMode, setPayMode] = useState<SessionPayMode>('external');
+
+	useEffect(() => {
+		if (!isOpen) return;
+		setSelectedType(null);
+		setSelectedDuration(null);
+	}, [isOpen]);
 
 	if (!isOpen) return null;
 
@@ -72,7 +92,12 @@ export function SessionPickerModal({
 			<div className="relative w-full sm:max-w-md bg-surface border border-border/20 rounded-t-3xl sm:rounded-3xl animate-slide-up sm:animate-fade-in overflow-hidden">
 				<div className="p-5 border-b border-border/10">
 					<div className="flex items-center gap-3">
-						<img src={creatorAvatar} alt={creatorName} className="w-10 h-10 rounded-xl object-cover" />
+						<MediaAvatar
+							src={creatorAvatar}
+							alt={creatorName}
+							name={creatorName}
+							className="h-10 w-10 rounded-xl"
+						/>
 						<div>
 							<h2 className="text-base font-bold text-foreground">Start a Session</h2>
 							<p className="text-xs text-muted">with {creatorName}</p>
@@ -217,7 +242,7 @@ export function SessionPickerModal({
 								protocol !== 'sessions' && !canAfford ?
 									'Insufficient balance' :
 									protocol === 'sessions' ?
-										`Request ${selectedType === 'chat' ? 'Chat' : selectedType === 'audio' ? 'Audio Call' : 'Video Call'}` :
+										sessionsRequestCtaLabel(selectedType) :
 										`Start ${selectedType === 'chat' ? 'Chat' : selectedType === 'audio' ? 'Audio Call' : 'Video Call'} for ${formatINR(totalCost)}`}
 					</button>
 				</div>

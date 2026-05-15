@@ -51,6 +51,16 @@ export function parseFrame(raw: string): WsFrame | null {
 		return { type: 'event', service, event: kind, data };
 	}
 
+	// Some gateways include a placeholder request id for push frames:
+	// |service|event|-|<json>
+	// Treat these as events, not responses.
+	if (jsonStartIdx === 4) {
+		const rid = String(parts[3] ?? '').trim();
+		if (rid === '-' || rid === '') {
+			return { type: 'event', service, event: kind, data };
+		}
+	}
+
 	// Response: |service|command|requestId|<json>
 	const requestId = String(parts[3] ?? '').trim();
 	if (!requestId) return null;

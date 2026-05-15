@@ -351,6 +351,10 @@ export const creatorsApi = {
 		updateProfile(body: UpdateMyProfileRequest): Promise<UpdateMyProfileResponse> {
 			return requestJson<UpdateMyProfileResponse>('/me/profile', { method: 'POST', body, auth: true });
 		},
+		/** Spec: POST /me/password — Bearer; body { currentPassword, newPassword } (min 8). */
+		changePassword(body: { currentPassword: string, newPassword: string }): Promise<{ ok: true }> {
+			return requestJson<{ ok: true }>('/me/password', { method: 'POST', body, auth: true });
+		},
 		notificationSettings: {
 			get(): Promise<GetNotificationSettingsResponse> {
 				return requestJson<GetNotificationSettingsResponse>('/me/notification-settings', { method: 'GET', auth: true });

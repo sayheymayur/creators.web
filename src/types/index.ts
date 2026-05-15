@@ -134,6 +134,8 @@ export interface Creator extends User {
 	monthlyEarnings: number;
 	tipsReceived: number;
 	subscriberCount: number;
+	/** Public creator `/get` — distinct followers (not paying subscribers). */
+	followerCount: number;
 	kycStatus: KYCStatus;
 	isKYCVerified: boolean;
 	category: string;

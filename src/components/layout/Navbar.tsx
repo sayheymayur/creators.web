@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Bell, Wallet, ChevronDown, LogOut, Settings, User, Shield, LayoutDashboard, Sun, Moon } from '../icons';
 import { useAuth } from '../../context/AuthContext';
@@ -21,6 +21,11 @@ export function Navbar() {
 
 	const user = authState.user;
 	const unreadNotifs = user ? getUnreadCount(user.id) : 0;
+
+	useEffect(() => {
+		setShowNotifications(false);
+		setShowUserMenu(false);
+	}, [location.pathname]);
 
 	function handleLogout() {
 		logout();
@@ -70,6 +75,14 @@ export function Navbar() {
 									onClick={() => { void navigate('/saved'); }}
 								/>
 								<NavLink
+									label="Notifications"
+									path="/notifications"
+									current={location.pathname}
+									onClick={() => { void navigate('/notifications'); }}
+									badge={unreadNotifs}
+									exact
+								/>
+								<NavLink
 									label="Messages"
 									path="/messages"
 									current={location.pathname}
@@ -101,6 +114,14 @@ export function Navbar() {
 									badge={totalUnread}
 								/>
 								<NavLink
+									label="Notifications"
+									path="/notifications"
+									current={location.pathname}
+									onClick={() => { void navigate('/notifications'); }}
+									badge={unreadNotifs}
+									exact
+								/>
+								<NavLink
 									label="Earnings"
 									path="/creator-dashboard/earnings"
 									current={location.pathname}
@@ -118,6 +139,14 @@ export function Navbar() {
 							path="/admin"
 							current={location.pathname}
 							onClick={() => { void navigate('/admin'); }}
+							exact
+						/>
+						<NavLink
+							label="Notifications"
+							path="/notifications"
+							current={location.pathname}
+							onClick={() => { void navigate('/notifications'); }}
+							badge={unreadNotifs}
 							exact
 						/>
 						<NavLink

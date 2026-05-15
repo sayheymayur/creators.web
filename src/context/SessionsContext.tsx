@@ -34,10 +34,18 @@ import type {
 
 export type SessionsUiCallType = 'audio' | 'video';
 
+/** UI metadata for fan outgoing session requests (pending card, reload hydrate). */
+export type OutgoingRequestMeta = {
+	creatorUserId: string,
+	creatorDisplay?: { name: string, avatar: string },
+	uiCallType?: SessionsUiCallType,
+	minutes?: number,
+};
+
 export type OutgoingRequestState =
 	| { state: 'idle' } |
-	{ state: 'requesting', kind: SessionKind, creatorUserId: string } |
-	{ state: 'pending', request: SessionsRequestResponse } |
+	({ state: 'requesting', kind: SessionKind } & OutgoingRequestMeta) |
+	({ state: 'pending', request: SessionsRequestResponse } & OutgoingRequestMeta) |
 	{ state: 'accepted', accepted: SessionsAcceptedPayload } |
 	{ state: 'rejected', rejected: SessionsRejectedPayload };
 
@@ -136,6 +144,31 @@ function isBrowserReloadNavigation(): boolean {
 	return nav?.type === 'reload';
 }
 
+function parseSessionsRequestId(data: unknown): string | null {
+	if (!data || typeof data !== 'object') return null;
+	const raw = data as Record<string, unknown>;
+	for (const c of [raw.request_id, raw.requestId, raw.id]) {
+		if (typeof c === 'string' && /^\d+$/.test(c.trim())) return c.trim();
+		if (typeof c === 'number' && Number.isFinite(c)) return String(Math.trunc(c));
+	}
+	return null;
+}
+
+function resolveCreatorDisplayForFan(
+	creatorUserId: string,
+	authProfiles: Record<string, { name?: string, avatar?: string | null } | undefined>
+): { name: string, avatar: string } | undefined {
+	const authProf = authProfiles[creatorUserId];
+	if (authProf?.name) {
+		return { name: authProf.name, avatar: authProf.avatar ?? '' };
+	}
+	const mock = mockCreators.find(c => c.id === creatorUserId);
+	if (mock) {
+		return { name: mock.name, avatar: mock.avatar };
+	}
+	return undefined;
+}
+
 type SessionsState = {
 	outgoing: OutgoingRequestState,
 	incoming: IncomingRequestState[],
@@ -147,14 +180,17 @@ type SessionsState = {
 	feedbackReceived: SessionsFeedbackReceivedEvent | null,
 };
 
+type OutgoingMetaActionPayload = { kind: SessionKind } & OutgoingRequestMeta;
+
 type Action =
-	| { type: 'OUTGOING_REQUESTING', payload: { creatorUserId: string, kind: SessionKind } } |
-	{ type: 'OUTGOING_PENDING', payload: SessionsRequestResponse } |
+	| { type: 'OUTGOING_REQUESTING', payload: OutgoingMetaActionPayload } |
+	{ type: 'OUTGOING_PENDING', payload: { request: SessionsRequestResponse } & OutgoingRequestMeta } |
 	{ type: 'OUTGOING_ACCEPTED', payload: SessionsAcceptedPayload } |
 	{ type: 'OUTGOING_REJECTED', payload: SessionsRejectedPayload } |
 	{ type: 'OUTGOING_CLEAR' } |
 	{ type: 'INCOMING_ADD', payload: SessionsRequestEvent & { minutes?: number } } |
 	{ type: 'INCOMING_REMOVE', payload: { request_id: string } } |
+	{ type: 'BOOKING_CANCELLED', payload: { request_id: string } } |
 	{ type: 'ACTIVE_SET', payload: ActiveBookingState } |
 	{ type: 'ACTIVE_CLEAR' } |
 	{ type: 'TIMER_UPDATE', payload: SessionsTimerEvent } |
@@ -183,7 +219,7 @@ function sessionsReducer(state: SessionsState, action: Action): SessionsState {
 		case 'OUTGOING_REQUESTING':
 			return { ...state, outgoing: { state: 'requesting', ...action.payload } };
 		case 'OUTGOING_PENDING':
-			return { ...state, outgoing: { state: 'pending', request: action.payload } };
+			return { ...state, outgoing: { state: 'pending', ...action.payload } };
 		case 'OUTGOING_ACCEPTED':
 			return { ...state, outgoing: { state: 'accepted', accepted: action.payload } };
 		case 'OUTGOING_REJECTED':
@@ -197,6 +233,15 @@ function sessionsReducer(state: SessionsState, action: Action): SessionsState {
 		}
 		case 'INCOMING_REMOVE':
 			return { ...state, incoming: state.incoming.filter(r => r.request.request_id !== action.payload.request_id) };
+		case 'BOOKING_CANCELLED': {
+			const { request_id } = action.payload;
+			const nextIncoming = state.incoming.filter(r => r.request.request_id !== request_id);
+			let nextOutgoing = state.outgoing;
+			if (state.outgoing.state === 'pending' && state.outgoing.request.request_id === request_id) {
+				nextOutgoing = { state: 'idle' };
+			}
+			return { ...state, incoming: nextIncoming, outgoing: nextOutgoing };
+		}
 		case 'ACTIVE_SET':
 			return {
 				...state,
@@ -367,7 +412,13 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 			uiCallType?: SessionsUiCallType,
 			creatorDisplay?: { name: string, avatar: string },
 		}) => {
-			dispatch({ type: 'OUTGOING_REQUESTING', payload: { creatorUserId: opts.creatorUserId, kind: opts.kind } });
+			const meta: OutgoingRequestMeta = {
+				creatorUserId: opts.creatorUserId,
+				...(opts.creatorDisplay ? { creatorDisplay: opts.creatorDisplay } : {}),
+				...(opts.uiCallType ? { uiCallType: opts.uiCallType } : {}),
+				minutes: opts.minutes,
+			};
+			dispatch({ type: 'OUTGOING_REQUESTING', payload: { kind: opts.kind, ...meta } });
 			return sessionsRequest(ws, { creatorUserId: opts.creatorUserId, kind: opts.kind, minutes: opts.minutes })
 				.then(res => {
 					minutesByRequestIdRef.current[res.request_id] = opts.minutes;
@@ -382,7 +433,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 							avatar: opts.creatorDisplay.avatar,
 						};
 					}
-					dispatch({ type: 'OUTGOING_PENDING', payload: res });
+					dispatch({ type: 'OUTGOING_PENDING', payload: { request: res, ...meta } });
 					return res;
 				})
 				.catch(err => {
@@ -434,15 +485,6 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 		[ws]
 	);
 
-	const cancelSession = useCallback(
-		(requestId: string) =>
-			sessionsCancel(ws, requestId).then(res => {
-				dispatch({ type: 'OUTGOING_CLEAR' });
-				return res;
-			}),
-		[ws]
-	);
-
 	const completeSession = useCallback(
 		(requestId: string) =>
 			sessionsComplete(ws, requestId).then(res => {
@@ -474,6 +516,34 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 
 	const clearOutgoing = useCallback(() => dispatch({ type: 'OUTGOING_CLEAR' }), []);
 	const clearFeedback = useCallback(() => dispatch({ type: 'FEEDBACK_CLEAR' }), []);
+	const lastFanOutgoingNotifyKeyRef = useRef<string>('');
+
+	// Fan: global toasts for accept/reject (not tied to CreatorProfile page).
+	useEffect(() => {
+		if (authState.user?.role !== 'fan') return;
+		const out = state.outgoing;
+		if (out.state === 'accepted') {
+			const key = `accepted:${out.accepted.request_id}`;
+			if (lastFanOutgoingNotifyKeyRef.current !== key) {
+				lastFanOutgoingNotifyKeyRef.current = key;
+				showToast('Session accepted!');
+				clearOutgoing();
+			}
+			return;
+		}
+		if (out.state === 'rejected') {
+			const key = `rejected:${out.rejected.request_id}`;
+			if (lastFanOutgoingNotifyKeyRef.current !== key) {
+				lastFanOutgoingNotifyKeyRef.current = key;
+				showToast(out.rejected.message || 'Session rejected', 'error');
+				clearOutgoing();
+			}
+			return;
+		}
+		if (out.state === 'idle') {
+			lastFanOutgoingNotifyKeyRef.current = '';
+		}
+	}, [authState.user?.role, state.outgoing, showToast, clearOutgoing]);
 
 	// Local restore for offline continuity (but the source of truth is `sessions /state`).
 	useEffect(() => {
@@ -487,10 +557,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 		// Notify user on reopen if there is a live chat session or a pending request.
 		const me = authState.user;
 		if (!me) return;
-		// Active booked chat: toast is handled once `state.active` is applied (avoid duplicate with remote hydrate).
-		if (snap.outgoing?.state === 'pending') {
-			showToast('Your session request is still pending.');
-		} else if (Array.isArray(snap.incoming) && snap.incoming.length) {
+		if (Array.isArray(snap.incoming) && snap.incoming.length) {
 			showToast('You have a pending session request.');
 		}
 	}, [authState.user, showToast]);
@@ -542,10 +609,36 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 		const activeRows = (remote.active ?? []);
 
 		const pendingOutgoing = outgoing.find(r => r.status === 'pending' || r.status === 'accepted') ?? null;
-		const nextOutgoing: OutgoingRequestState =
-			pendingOutgoing ?
-				{ state: 'pending', request: { request_id: pendingOutgoing.id, status: 'pending', price_cents: pendingOutgoing.price_cents, kind: pendingOutgoing.kind } } :
-				{ state: 'idle' };
+		let nextOutgoing: OutgoingRequestState = { state: 'idle' };
+		if (pendingOutgoing) {
+			const creatorUserId = pendingOutgoing.creator_user_id;
+			const prevOutgoing = state.outgoing;
+			const prevMeta =
+				prevOutgoing.state === 'pending' || prevOutgoing.state === 'requesting' ?
+					{
+						creatorDisplay: prevOutgoing.creatorDisplay,
+						uiCallType: prevOutgoing.uiCallType,
+						minutes: prevOutgoing.minutes,
+					} :
+					{};
+			nextOutgoing = {
+				state: 'pending',
+				request: {
+					request_id: pendingOutgoing.id,
+					status: 'pending',
+					price_cents: pendingOutgoing.price_cents,
+					kind: pendingOutgoing.kind,
+				},
+				creatorUserId,
+				creatorDisplay:
+					prevMeta.creatorDisplay ??
+					resolveCreatorDisplayForFan(creatorUserId, authState.creatorProfiles),
+				...(prevMeta.uiCallType ?? uiCallTypeByRequestIdRef.current[pendingOutgoing.id] ?
+					{ uiCallType: prevMeta.uiCallType ?? uiCallTypeByRequestIdRef.current[pendingOutgoing.id] } :
+					{}),
+				minutes: prevMeta.minutes ?? pendingOutgoing.duration_minutes,
+			};
+		}
 
 		const nextIncoming: IncomingRequestState[] = incomingRows
 			.filter(r => r.status === 'pending')
@@ -665,6 +758,25 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 			})
 			.catch(() => {});
 	}, [ws, wsConnected, wsAuthReady, authState.user, applyRemoteState]);
+
+	const cancelSession = useCallback(
+		(requestId: string) =>
+			sessionsCancel(ws, requestId).then(res => {
+				dispatch({ type: 'BOOKING_CANCELLED', payload: { request_id: requestId } });
+				syncState('cancel');
+				return res;
+			}),
+		[ws, syncState]
+	);
+
+	// Spec: no guaranteed `sessions|cancelled` push to creator — poll `/state` while ringing.
+	useEffect(() => {
+		if (authState.user?.role !== 'creator') return;
+		if (state.incoming.length === 0) return;
+		if (!wsConnected || !wsAuthReady) return;
+		const id = window.setInterval(() => { syncState('incoming-poll'); }, 6000);
+		return () => { window.clearInterval(id); };
+	}, [authState.user?.role, state.incoming.length, wsConnected, wsAuthReady, syncState]);
 
 	// Spec: after reconnect/login, pull `/state` to restore outgoing/incoming/active bookings.
 	useEffect(() => {
@@ -799,6 +911,15 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 			const payload = data as SessionsRejectedPayload;
 			dispatch({ type: 'OUTGOING_REJECTED', payload });
 		});
+		const onBookingCancelled = (data: unknown) => {
+			const requestId = parseSessionsRequestId(data);
+			if (!requestId) return;
+			dispatch({ type: 'BOOKING_CANCELLED', payload: { request_id: requestId } });
+		};
+		const offCancelled = ws.on('sessions', 'cancelled', onBookingCancelled);
+		const offCanceled = ws.on('sessions', 'canceled', onBookingCancelled);
+		const offCancelled2 = ws.on('session', 'cancelled', onBookingCancelled);
+		const offCanceled2 = ws.on('session', 'canceled', onBookingCancelled);
 		const onFeedbackPrompt = (data: unknown) => {
 			const payload = data as SessionsFeedbackPromptEvent;
 			// Spec: prompt is driven by backend; we don't infer end here.
@@ -879,6 +1000,10 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 			offAccepted();
 			offAccepted2();
 			offRejected();
+			offCancelled();
+			offCanceled();
+			offCancelled2();
+			offCanceled2();
 			offPrompt();
 			offPrompt2();
 			offReceived();

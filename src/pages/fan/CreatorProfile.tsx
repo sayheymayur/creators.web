@@ -30,7 +30,7 @@ export function CreatorProfile() {
 	const { state: contentState, isSubscribed, loadCreatorPosts, creatorWsGetByUserId } = useContent();
 	const { showToast } = useNotifications();
 	useSession();
-	const { requestSession, state: sessionsState, clearOutgoing } = useSessions();
+	const { requestSession } = useSessions();
 	const ws = useWs();
 	const wsConnected = useWsConnected();
 	const wsAuthReady = useWsAuthReady();
@@ -139,22 +139,6 @@ export function CreatorProfile() {
 		return () => { document.removeEventListener('mousedown', onDoc); };
 	}, [profileMenuOpen]);
 
-	useEffect(() => {
-		if (sessionsState.outgoing.state === 'rejected') {
-			showToast(sessionsState.outgoing.rejected.message || 'Session rejected', 'error');
-		}
-		if (sessionsState.outgoing.state === 'accepted') {
-			showToast('Session accepted!');
-		}
-	}, [sessionsState.outgoing, showToast, clearOutgoing]);
-
-	// Clear outgoing state only when leaving this page (avoid infinite effect loop).
-	useEffect(() => {
-		return () => {
-			clearOutgoing();
-		};
-	}, [clearOutgoing]);
-
 	function handleProfileLikeToggle() {
 		if (!authState.user || !creatorUserId) {
 			void navigate('/login');
@@ -249,9 +233,6 @@ export function CreatorProfile() {
 			...(kind === 'call' && uiCallType ? { uiCallType } : {}),
 			creatorDisplay: { name: creatorForDisplay.name, avatar: creatorForDisplay.avatar },
 		})
-			.then(() => {
-				showToast('Session request sent. Waiting for creator…');
-			})
 			.catch(err => {
 				showToast(err instanceof Error ? err.message : 'Failed to request session', 'error');
 			});

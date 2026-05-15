@@ -209,9 +209,9 @@ function AppRoutes() {
 				<Route path="/saved" element={<ProtectedRoute roles={['fan']}><Saved /></ProtectedRoute>} />
 				<Route path="/creator/:id" element={<ProtectedRoute><CreatorProfile /></ProtectedRoute>} />
 
-			<Route path="/messages" element={<ProtectedRoute><MessagesList /></ProtectedRoute>} />
-			<Route path="/messages/:id" element={<ProtectedRoute><ChatRoom /></ProtectedRoute>} />
-			<Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
+				<Route path="/messages" element={<ProtectedRoute><MessagesList /></ProtectedRoute>} />
+				<Route path="/messages/:id" element={<ProtectedRoute><ChatRoom /></ProtectedRoute>} />
+				<Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
 
 				<Route path="/wallet" element={<ProtectedRoute roles={['fan']}><Wallet /></ProtectedRoute>} />
 

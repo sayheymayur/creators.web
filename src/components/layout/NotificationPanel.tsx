@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Bell } from '../icons';
+import { Bell, CheckCheck } from '../icons';
 import { NotificationRow } from '../notifications/NotificationRow';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
@@ -34,7 +34,12 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
 					<Bell className="w-4 h-4 text-muted" />
 					<span className="text-sm font-semibold text-foreground">Notifications</span>
 				</div>
-				<button type="button" onClick={markAllRead} className="text-xs text-rose-500 hover:text-rose-600 dark:text-rose-400 dark:hover:text-rose-300">
+				<button
+					type="button"
+					onClick={markAllRead}
+					className="text-xs text-rose-500 hover:text-rose-600 dark:text-rose-400 dark:hover:text-rose-300 flex items-center gap-1"
+				>
+					<CheckCheck className="w-3.5 h-3.5" />
 					Mark all read
 				</button>
 			</div>

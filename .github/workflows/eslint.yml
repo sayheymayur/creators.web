@@ -1,4 +1,4 @@
-name: ESLint Check
+name: Lint and typecheck
 
 on:
   pull_request:
@@ -27,3 +27,6 @@ jobs:
 
       - name: Run ESLint
         run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck

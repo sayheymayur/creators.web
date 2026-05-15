@@ -9,6 +9,14 @@ import { useNotifications } from '../context/NotificationContext';
 import { ApiError, apiErrorMessage, creatorsApi, type NotificationSettings } from '../services/creatorsApi';
 import { uploadMediaAsset } from '../services/mediaUpload';
 
+const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
+	messages: true,
+	subscriptions: true,
+	tips: true,
+	likes: true,
+	system: true,
+};
+
 export function Settings() {
 	const { state: authState, logout, updateUser } = useAuth();
 	const { showToast } = useNotifications();
@@ -25,13 +33,7 @@ export function Settings() {
 	const [avatarFile, setAvatarFile] = useState<File | null>(null);
 	const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 	const avatarInputRef = useRef<HTMLInputElement | null>(null);
-	const [notifPrefs, setNotifPrefs] = useState({
-		messages: true,
-		subscriptions: true,
-		tips: true,
-		likes: true,
-		system: true,
-	});
+	const [notifPrefs, setNotifPrefs] = useState<NotificationSettings>(() => ({ ...DEFAULT_NOTIFICATION_SETTINGS }));
 	const [notifLoading, setNotifLoading] = useState(false);
 	const [notifDirty, setNotifDirty] = useState(false);
 
@@ -110,7 +112,7 @@ export function Settings() {
 				setCurrentPassword('');
 				setNewPassword('');
 			})
-			.catch(err => {
+			.catch((err: unknown) => {
 				showToast(apiErrorMessage(err, 'Could not change password'), 'error');
 			})
 			.finally(() => setIsChangingPassword(false));

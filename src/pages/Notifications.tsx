@@ -7,7 +7,6 @@ import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import { useWsAuthReady, useWsConnected } from '../context/WsContext';
 
-/** First paint and each “show more” step: how many rows to reveal (rest stay hidden until Load more). */
 const NOTIFICATIONS_PAGE_SIZE = 20;
 
 export function Notifications() {

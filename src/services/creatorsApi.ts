@@ -111,6 +111,11 @@ export interface UpdateNotificationSettingsResponse {
 	settings: NotificationSettings;
 }
 
+export interface ChangePasswordRequest {
+	currentPassword: string;
+	newPassword: string;
+}
+
 export interface CreateReportRequest {
 	targetType: 'post' | 'user' | 'message';
 	targetId: string;

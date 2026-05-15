@@ -18,11 +18,13 @@ interface TipModalProps {
 	creatorId: string;
 	creatorName: string;
 	creatorAvatar: string;
+	/** When tipping from a post, sent to the payments API for attribution. */
+	postId?: string;
 }
 
 type PayMode = 'external' | 'wallet';
 
-export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvatar }: TipModalProps) {
+export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvatar, postId }: TipModalProps) {
 	const { state: authState } = useAuth();
 	const { tip } = useWallet();
 	const { showToast, refresh } = useNotifications();
@@ -45,7 +47,7 @@ export function TipModal({ isOpen, onClose, creatorId, creatorName, creatorAvata
 			setError('');
 
 			const amountCents = tipMinor; // already minor-unit integer string
-			void tip(String(creatorId), amountCents)
+			void tip(String(creatorId), amountCents, postId)
 				.then(result => {
 					if (!result.ok) {
 						setError(result.error || 'Tip failed.');

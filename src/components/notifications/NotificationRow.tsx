@@ -27,10 +27,14 @@ export function NotificationRow({ notification: n, onClick }: NotificationRowPro
 	const isRead = n.read_at != null;
 	const kind = typeof data.kind === 'string' ? data.kind : '';
 	const tipMinor = kind === 'tip' ? tipMinorFromNotificationData(data) : null;
+	const currency = typeof data.currency === 'string' ? data.currency.trim() : '';
 	const tipSubtitle =
-		tipMinor != null ?
-			<span className="text-amber-500 dark:text-amber-400/90">Tip · {formatINRFromMinor(tipMinor)}</span> :
-			null;
+		tipMinor != null ? (
+			<span className="text-amber-500 dark:text-amber-400/90">
+				Tip · {formatINRFromMinor(tipMinor)}
+				{currency && currency !== 'INR' ? ` (${currency})` : ''}
+			</span>
+		) : null;
 	const tipBody = kind === 'tip' && tipMinor != null ? '' : (n.body ?? '');
 
 	return (

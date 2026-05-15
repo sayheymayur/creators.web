@@ -61,11 +61,11 @@ export function CreatorProfile() {
 
 	const cachedDisplay = useMemo(
 		() => (creatorUserId ? contentState.creatorProfiles[creatorUserId] : undefined),
-		[creatorUserId, contentState.creatorProfiles],
+		[creatorUserId, contentState.creatorProfiles]
 	);
 	const cacheCreator = useMemo(
 		() => (creatorUserId && cachedDisplay ? creatorFromCacheDisplay(creatorUserId, cachedDisplay) : null),
-		[creatorUserId, cachedDisplay],
+		[creatorUserId, cachedDisplay]
 	);
 
 	useEffect(() => {
@@ -238,8 +238,8 @@ export function CreatorProfile() {
 	const subscribed = subStatus === 'active' || isSubscribed(creator.id);
 	const subId = subDto ? subscriptionId(subDto) : null;
 	const isOwner = authState.user?.id === creator.id;
-	const creatorForDisplay: Creator = isOwner && authState.user
-		? {
+	const creatorForDisplay: Creator = isOwner && authState.user ?
+		{
 			...creator,
 			name: authState.user.name,
 			username: authState.user.username,
@@ -247,8 +247,8 @@ export function CreatorProfile() {
 			bio: authState.user.bio ?? creator.bio,
 			banner: authState.user.banner ?? creator.banner,
 			category: authState.user.category ?? creator.category,
-		}
-		: creator;
+		} :
+		creator;
 
 	const creatorPosts = contentState.posts
 		.filter(p => p.creatorId === creatorForDisplay.id)
@@ -262,9 +262,9 @@ export function CreatorProfile() {
 	const postCountShown = Math.max(creatorForDisplay.postCount, loadedPostCount);
 
 	const autoRenew =
-		subDto && typeof (subDto as unknown as { auto_renew?: unknown }).auto_renew === 'boolean'
-			? Boolean((subDto as unknown as { auto_renew: boolean }).auto_renew)
-			: true;
+		subDto && typeof (subDto as unknown as { auto_renew?: unknown }).auto_renew === 'boolean' ?
+			Boolean((subDto as unknown as { auto_renew: boolean }).auto_renew) :
+			true;
 
 	function handleStartSession(type: SessionType, durationMinutes: number, _totalCost: number, _payMode: SessionPayMode) {
 		if (!authState.user) return;
@@ -334,7 +334,7 @@ export function CreatorProfile() {
 						<MediaBanner src={creatorForDisplay.banner} className="h-full w-full object-cover" />
 						<div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-background pointer-events-none" />
 						{shellOnly && (
-							<div className="absolute bottom-3 left-1/2 z-20 -translate-x-1/2 pointer-events-none rounded-full bg-background/80 dark:bg-black/60 px-3 py-1 text-[11px] font-medium text-muted backdrop-blur-sm">
+							<div className="absolute bottom-3 left-1/2 z-20 -translate-x-1/2 pointer-events-none rounded-full bg-background/80 dark:bg-black/60 px-3 py-1 text-[11px] font-medium text-muted backdrop-bl[...]
 								{wsWait ? 'Connecting…' : 'Loading profile…'}
 							</div>
 						)}
@@ -363,7 +363,7 @@ export function CreatorProfile() {
 					<div className="absolute top-3 right-3 z-10 flex gap-2 items-start">
 						<button
 							type="button"
-							className="w-8 h-8 bg-background/70 text-foreground hover:bg-background/90 dark:bg-black/40 dark:text-white dark:hover:bg-black/60 backdrop-blur-sm rounded-full flex items-center justify-center transition-colors"
+							className="w-8 h-8 bg-background/70 text-foreground hover:bg-background/90 dark:bg-black/40 dark:text-white dark:hover:bg-black/60 backdrop-blur-sm rounded-full flex items-center justify-c[...]
 						>
 							<Share2 className="w-4 h-4" />
 						</button>
@@ -373,7 +373,7 @@ export function CreatorProfile() {
 								<button
 									type="button"
 									onClick={() => setProfileMenuOpen(v => !v)}
-									className="w-8 h-8 bg-background/70 text-foreground hover:bg-background/90 dark:bg-black/40 dark:text-white dark:hover:bg-black/60 backdrop-blur-sm rounded-full flex items-center justify-center transition-colors"
+									className="w-8 h-8 bg-background/70 text-foreground hover:bg-background/90 dark:bg-black/40 dark:text-white dark:hover:bg-black/60 backdrop-blur-sm rounded-full flex items-center justify[...]
 									aria-label="Profile menu"
 									aria-expanded={profileMenuOpen}
 									aria-haspopup="menu"
@@ -460,7 +460,7 @@ export function CreatorProfile() {
 										type="button"
 										disabled={shellOnly}
 										onClick={() => setShowTipModal(true)}
-										className="flex items-center gap-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 text-sm font-semibold px-3 py-2 rounded-xl transition-all disabled:opacity-40 disabled:pointer-events-none"
+										className="flex items-center gap-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 text-sm font-semibold px-3 py-2 rounded-xl transition-all disabled:opacity-40 disabled:pointer-[...]
 									>
 										<Zap className="w-4 h-4 fill-amber-400" />
 										Tip
@@ -470,7 +470,7 @@ export function CreatorProfile() {
 										type="button"
 										disabled={shellOnly}
 										onClick={() => setShowSubscribeModal(true)}
-										className="bg-rose-500 hover:bg-rose-600 text-white font-bold px-5 py-2 rounded-xl text-sm transition-all active:scale-95 shadow-lg shadow-rose-500/25 disabled:opacity-40 disabled:pointer-events-none"
+										className="bg-rose-500 hover:bg-rose-600 text-white font-bold px-5 py-2 rounded-xl text-sm transition-all active:scale-95 shadow-lg shadow-rose-500/25 disabled:opacity-40 disabled:point[...]
 									>
 										Subscribe {formatINR(creatorForDisplay.subscriptionPrice)}/mo
 									</button>
@@ -481,7 +481,7 @@ export function CreatorProfile() {
 									type="button"
 									disabled={shellOnly}
 									onClick={() => setShowSessionModal(true)}
-									className="flex items-center gap-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 text-sm font-semibold px-3 py-2 rounded-xl transition-all border border-rose-500/20 disabled:opacity-40 disabled:pointer-events-none"
+									className="flex items-center gap-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 text-sm font-semibold px-3 py-2 rounded-xl transition-all border border-rose-500/20 disabled:opacit[...]
 								>
 									Book Session
 								</button>
@@ -491,9 +491,9 @@ export function CreatorProfile() {
 									disabled={followBusy || shellOnly}
 									className={
 										'flex items-center gap-1.5 ' +
-										(isFollowed
-											? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/20 '
-											: 'bg-foreground/10 hover:bg-foreground/15 text-foreground border-border/20 ') +
+										(isFollowed ?
+											'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/20 ' :
+											'bg-foreground/10 hover:bg-foreground/15 text-foreground border-border/20 ') +
 										'text-sm font-semibold px-3 py-2 rounded-xl transition-all border border-border/20 disabled:opacity-50'
 									}
 								>

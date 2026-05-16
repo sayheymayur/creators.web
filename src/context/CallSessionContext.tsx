@@ -164,7 +164,7 @@ export function CallSessionProvider({ children }: { children: React.ReactNode })
 		session?.creatorAvatar ??
 		sessionsBooking?.otherDisplay?.avatar ??
 		'';
-	const bookingCallType = sessionsBooking?.uiCallType ?? 'video';
+	const bookingCallType = sessionsBooking?.callModality ?? sessionsBooking?.uiCallType ?? 'video';
 	const callType: CallSessionCallType = (call?.type ?? session?.type ?? bookingCallType) as CallSessionCallType;
 	const callStatus = call?.status;
 	const isVideo = callType === 'video';

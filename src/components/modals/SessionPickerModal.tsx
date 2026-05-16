@@ -127,6 +127,12 @@ export function SessionPickerModal({
 								</button>
 							))}
 						</div>
+						{selectedType === 'audio' && (
+							<p className="mt-2 text-xs text-sky-400">Voice only — microphone, no camera.</p>
+						)}
+						{selectedType === 'video' && (
+							<p className="mt-2 text-xs text-rose-400">Video call — camera and microphone.</p>
+						)}
 					</div>
 
 					{protocol === 'sessions' && (

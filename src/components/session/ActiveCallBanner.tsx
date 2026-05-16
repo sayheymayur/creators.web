@@ -74,7 +74,7 @@ export function ActiveCallBanner() {
 	if (!active || !show) return null;
 
 	const booking = active;
-	const uiCallType = booking.uiCallType ?? 'video';
+	const callModality = booking.callModality ?? booking.uiCallType ?? 'video';
 
 	function handleEndCall() {
 		if (!booking.accepted.request_id || ending) return;
@@ -93,7 +93,7 @@ export function ActiveCallBanner() {
 				<div className="min-w-0 flex-1">
 					<p className="text-sm font-bold text-foreground truncate">{displayName}</p>
 					<p className="text-[11px] text-muted truncate">
-						Active {uiCallType === 'video' ? 'video' : 'audio'} call
+						Active {callModality === 'video' ? 'video' : 'audio'} call
 						{typeof bookedRemainingSec === 'number' && (
 							<span className="tabular-nums"> · {formatMmSsFromSeconds(bookedRemainingSec)} left</span>
 						)}
@@ -106,7 +106,7 @@ export function ActiveCallBanner() {
 						onClick={handleEndCall}
 						className="px-3 py-2 rounded-xl text-xs font-bold border border-border/40 bg-background hover:bg-foreground/5 text-foreground transition-colors disabled:opacity-50"
 					>
-						End call
+						End session
 					</button>
 					<button
 						type="button"

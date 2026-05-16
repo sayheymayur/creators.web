@@ -240,17 +240,21 @@ export function CreatorProfile() {
 	function handleStartSession(type: SessionType, durationMinutes: number, _totalCost: number, _payMode: SessionPayMode) {
 		if (!authState.user) return;
 		const kind = type === 'chat' ? 'chat' : 'call';
-		const uiCallType = type === 'audio' ? 'audio' : type === 'video' ? 'video' : undefined;
+		const callModality = type === 'audio' ? 'audio' as const : type === 'video' ? 'video' as const : undefined;
 
 		void requestSession({
 			creatorUserId: creatorForDisplay.id,
 			kind,
 			minutes: durationMinutes,
-			...(kind === 'call' && uiCallType ? { uiCallType } : {}),
+			...(kind === 'call' && callModality ? { callModality } : {}),
 			creatorDisplay: { name: creatorForDisplay.name, avatar: creatorForDisplay.avatar },
 		})
 			.then(() => {
-				showToast('Session request sent. Waiting for creator…');
+				const waitLabel =
+					kind === 'call' && callModality === 'audio' ? 'audio call' :
+					kind === 'call' ? 'video call' :
+					'session';
+				showToast(`Session request sent. Waiting for creator (${waitLabel})…`);
 			})
 			.catch(err => {
 				showToast(err instanceof Error ? err.message : 'Failed to request session', 'error');

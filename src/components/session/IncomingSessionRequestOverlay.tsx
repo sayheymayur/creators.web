@@ -4,6 +4,7 @@ import { useSessions } from '../../context/SessionsContext';
 import { formatINRFromMinor } from '../../utils/money';
 import { useNotifications } from '../../context/NotificationContext';
 import { ensureMediaPermissions, isDeviceInUseError } from '../../services/mediaPermissions';
+import type { CallModality } from '../../services/sessionsWsTypes';
 
 function centsToMinorString(cents: string): string {
 	const trimmed = (cents ?? '').trim();
@@ -14,10 +15,11 @@ export function IncomingSessionRequestOverlay() {
 	const { state, acceptSession, rejectSession } = useSessions();
 	const { showToast } = useNotifications();
 	const [busy, setBusy] = useState(false);
-	const [callType, setCallType] = useState<'audio' | 'video'>('video');
 
 	const incoming = state.incoming[0]?.request;
 	const priceMinor = useMemo(() => centsToMinorString(incoming?.price_cents ?? '0'), [incoming?.price_cents]);
+	const callModality: CallModality = incoming?.call_modality === 'audio' ? 'audio' : 'video';
+	const isVideoCall = callModality === 'video';
 
 	if (!incoming) return null;
 
@@ -28,7 +30,7 @@ export function IncomingSessionRequestOverlay() {
 		if (busy) return;
 		setBusy(true);
 		const preflight = isCall ?
-			ensureMediaPermissions({ audio: true, video: callType === 'video' }).catch(e => {
+			ensureMediaPermissions({ audio: true, video: isVideoCall }).catch(e => {
 				if (isDeviceInUseError(e)) {
 					showToast('Camera/mic is busy in another tab. Joining will be receive-only on this tab.', 'error');
 					return;
@@ -37,7 +39,7 @@ export function IncomingSessionRequestOverlay() {
 			}) :
 			Promise.resolve();
 		void preflight
-			.then(() => acceptSession(incoming.request_id, isCall ? { uiCallType: callType } : undefined))
+			.then(() => acceptSession(incoming.request_id))
 			.then(() => {
 				showToast('Accepted session request');
 			})
@@ -75,8 +77,10 @@ export function IncomingSessionRequestOverlay() {
 						<div className="w-20 h-20 rounded-full bg-background/70 dark:bg-white/10 flex items-center justify-center border-4 border-border/20 dark:border-white/10">
 							{isChat ? (
 								<MessageCircle className="w-9 h-9 text-emerald-300" />
+							) : isVideoCall ? (
+								<Video className="w-9 h-9 text-rose-300" />
 							) : (
-								<Video className="w-9 h-9 text-sky-300" />
+								<Phone className="w-9 h-9 text-sky-300" />
 							)}
 						</div>
 					</div>
@@ -90,32 +94,19 @@ export function IncomingSessionRequestOverlay() {
 					</p>
 
 					{isCall && (
-						<div className="flex items-center justify-center gap-2 mt-6">
-							<button
-								type="button"
-								onClick={() => setCallType('audio')}
-								disabled={busy}
-								className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
-									callType === 'audio' ?
-										'bg-sky-500/15 border-sky-500/30 text-sky-300' :
-										'bg-foreground/5 border-border/20 text-muted hover:bg-foreground/10'
-								}`}
-							>
-								Audio
-							</button>
-							<button
-								type="button"
-								onClick={() => setCallType('video')}
-								disabled={busy}
-								className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
-									callType === 'video' ?
-										'bg-rose-500/15 border-rose-500/30 text-rose-300' :
-										'bg-foreground/5 border-border/20 text-muted hover:bg-foreground/10'
-								}`}
-							>
-								Video
-							</button>
-						</div>
+						<p className="mt-4 inline-flex items-center gap-2 rounded-full border border-border/30 bg-foreground/5 px-3 py-1.5 text-xs font-semibold text-foreground dark:text-white">
+							{isVideoCall ? (
+								<>
+									<Video className="h-3.5 w-3.5 text-rose-400" />
+									Video call requested
+								</>
+							) : (
+								<>
+									<Phone className="h-3.5 w-3.5 text-sky-400" />
+									Voice call requested
+								</>
+							)}
+						</p>
 					)}
 
 					<div className="flex items-center justify-center gap-10 mt-10">

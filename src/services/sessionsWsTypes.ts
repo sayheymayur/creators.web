@@ -1,5 +1,15 @@
 export type SessionKind = 'call' | 'chat';
 
+/** v4 C2: voice-only vs camera call (only when kind === 'call'). */
+export type CallModality = 'audio' | 'video';
+
+export type SessionsSettlement = {
+	escrow_cents: string,
+	settled_cents: string,
+	refund_cents: string,
+	per_minute_rate_minor: string | null,
+};
+
 export type AgoraRtcCredentials = {
 	app_id: string,
 	channel_name: string,
@@ -45,6 +55,9 @@ export type SessionsRequestResponse = {
 	status: 'pending',
 	price_cents: string,
 	kind: SessionKind,
+	call_modality?: CallModality,
+	per_minute_rate_minor?: string | null,
+	duration_minutes?: number,
 };
 
 export type SessionsAcceptedPayload = {
@@ -59,6 +72,8 @@ export type SessionsAcceptedPayload = {
 	ends_at?: string | null,
 	duration_minutes?: number,
 	price_cents?: string,
+	call_modality?: CallModality,
+	per_minute_rate_minor?: string | null,
 };
 
 export type SessionsRejectedPayload = {
@@ -70,8 +85,8 @@ export type SessionsRejectedPayload = {
 export type SessionsCancelResponse = { ok: true };
 
 export type SessionsCompleteResponse =
-	| { ok: true } |
-	{ ok: true, alreadyCompleted: true };
+	| { ok: true, settlement?: SessionsSettlement } |
+	{ ok: true, alreadyCompleted: true, settlement?: SessionsSettlement };
 
 export type SessionsEndSessionResponse =
 	| { ok: true, alreadyCompleted: true } |
@@ -95,6 +110,9 @@ export type SessionsRequestEvent = {
 	kind: SessionKind,
 	price_cents: string,
 	created_at: string,
+	call_modality?: CallModality,
+	duration_minutes?: number,
+	per_minute_rate_minor?: string | null,
 };
 
 export type SessionsFeedbackPromptEvent = {
@@ -140,6 +158,8 @@ export type SessionsBookingRow = {
 	completed_at: string | null,
 	created_at: string,
 	updated_at: string,
+	call_modality?: CallModality,
+	per_minute_rate_minor?: string | null,
 };
 
 export type SessionsStateResponse = {

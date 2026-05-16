@@ -185,7 +185,7 @@ export function ActiveCallScreen() {
 								className="ml-3 inline-flex items-center gap-2 rounded-full bg-rose-500 hover:bg-rose-600 px-6 py-3 text-sm font-semibold text-white shadow-xl shadow-rose-500/20 transition-transform active:scale-[0.99]"
 							>
 								<Phone className="h-5 w-5 rotate-[135deg]" />
-								Leave Session
+								End session
 							</button>
 						</div>
 					</div>

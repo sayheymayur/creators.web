@@ -120,7 +120,7 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
 			if (typeof maybeLiveStreamEnabled === 'boolean') creatorPatch.liveStreamEnabled = maybeLiveStreamEnabled;
 			return {
 				...state,
-				user: normalizeUserFromApi({ ...state.user, ...action.payload } as User),
+				user: normalizeUserFromApi({ ...state.user, ...action.payload }),
 				creatorProfiles: state.user.role === 'creator' && state.creatorProfiles[state.user.id] ?
 					{
 						...state.creatorProfiles,

@@ -6,7 +6,7 @@ import React, {
 	useReducer,
 	useRef,
 } from 'react';
-import type { Post, Comment } from '../types';
+import type { Post, Comment, User } from '../types';
 import { isPostLiked, setPostLiked } from '../services/likedPosts';
 import { setPostCommented } from '../services/commentedPosts';
 import { useEnsureWsAuth, useWs, useWsAuthReady, useWsConnected } from './WsContext';
@@ -21,7 +21,6 @@ import {
 	parseUserMeResponse,
 	type UserUpdateProfileOpts,
 } from '../services/userWsService';
-import type { User } from '../types';
 import type { CreatorGetResponse, CreatorListResponse } from '../services/creatorWsTypes';
 import type {
 	CommentDTO,

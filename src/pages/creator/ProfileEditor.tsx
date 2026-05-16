@@ -84,7 +84,7 @@ export function ProfileEditor() {
 
 	useEffect(() => {
 		const u = authState.user;
-		if (!u || u.role !== 'creator') return;
+		if (u?.role !== 'creator') return;
 		setBio(u.bio ?? '');
 		setBannerUrl(u.banner ?? '');
 		setAvatarUrl(u.avatar ?? '');
@@ -126,9 +126,9 @@ export function ProfileEditor() {
 					bannerUrl: bannerUrlSend,
 					subscriptionPriceMinor,
 					perMinuteRate: perMinuteRateMinor,
-				})
+				}).then(result => ({ ...result, avatarAssetId, bannerAssetId }))
 			)
-			.then(({ user }) => {
+			.then(({ user, bannerAssetId }) => {
 				updateUser(user);
 				setAvatarUrl(user.avatar || '');
 				setBannerUrl(user.banner || '');

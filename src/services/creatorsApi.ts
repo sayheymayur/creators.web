@@ -16,12 +16,6 @@ function normalizeCreatorProfileResponse(json: unknown): CreatorProfileResponse 
 	const maybeWrapped = root && typeof root === 'object' && 'creator' in root ? root.creator : root;
 	const obj = (maybeWrapped ?? {}) as Record<string, unknown>;
 
-	const asString = (v: unknown): string => (
-		typeof v === 'string' ? v :
-		typeof v === 'number' ? String(v) :
-		''
-	);
-
 	const avatar =
 		(typeof obj.avatar === 'string' && obj.avatar) ||
 		(typeof obj.avatar_url === 'string' && obj.avatar_url) ||
@@ -89,7 +83,7 @@ export function normalizeMeUser(raw: unknown): User | null {
 		typeof perMinuteRaw === 'number' ? perMinuteRaw :
 		typeof perMinuteRaw === 'string' && perMinuteRaw.trim() !== '' && !Number.isNaN(Number(perMinuteRaw)) ?
 			Number(perMinuteRaw) :
-		null;
+			null;
 
 	const dash = obj.creatorDashboard ?? obj.creator_dashboard;
 	const creatorDashboard =

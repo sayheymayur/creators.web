@@ -216,6 +216,12 @@ export function CreatorProfile() {
 	const subscribed = subStatus === 'active' || isSubscribed(creator.id);
 	const subId = subDto ? subscriptionId(subDto) : null;
 	const isOwner = authState.user?.id === creator.id;
+	const ownerRateMinor =
+		authState.user?.perMinuteRate ??
+		authState.user?.creatorDashboard?.perMinuteRateCents ??
+		null;
+	const ownerPerMinuteRate =
+		ownerRateMinor != null ? Number(ownerRateMinor) / 100 : creator.perMinuteRate;
 	const creatorForDisplay: Creator = isOwner && authState.user ? {
 		...creator,
 		name: authState.user.name,
@@ -224,6 +230,7 @@ export function CreatorProfile() {
 		bio: authState.user.bio ?? creator.bio,
 		banner: authState.user.banner ?? creator.banner,
 		category: authState.user.category ?? creator.category,
+		perMinuteRate: ownerPerMinuteRate,
 	} : creator;
 
 	const creatorPosts = contentState.posts

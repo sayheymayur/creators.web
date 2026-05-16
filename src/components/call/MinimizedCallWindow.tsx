@@ -221,7 +221,7 @@ export function MinimizedCallWindow() {
 								onPointerDown={e => e.stopPropagation()}
 								onClick={e => { e.stopPropagation(); cs.completeEndCall(); }}
 								className="flex h-10 w-10 items-center justify-center rounded-full bg-rose-500 text-white shadow-lg hover:bg-rose-600"
-								aria-label="End call"
+								aria-label="End session"
 							>
 								<Phone className="h-5 w-5 rotate-[135deg]" />
 							</button>
@@ -262,7 +262,7 @@ export function MinimizedCallWindow() {
 								onPointerDown={e => e.stopPropagation()}
 								onClick={e => { e.stopPropagation(); cs.completeEndCall(); }}
 								className="flex h-9 w-9 items-center justify-center rounded-full bg-rose-500 text-white hover:bg-rose-600"
-								aria-label="End call"
+								aria-label="End session"
 							>
 								<Phone className="h-4 w-4 rotate-[135deg]" />
 							</button>

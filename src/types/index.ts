@@ -145,6 +145,10 @@ export interface Creator extends User {
 	monthlyStats: MonthlyStats[];
 	perMinuteRate: number;
 	liveStreamEnabled: boolean;
+	/** B1 list row: NSFW profile (show badge; backend filters blocked creators). */
+	isNsfw?: boolean;
+	/** B4 /top row: algorithmic rank for trending UI. */
+	rank?: number;
 }
 
 export interface MonthlyStats {

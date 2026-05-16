@@ -1,6 +1,13 @@
 import type { CreatorsMultiplexWs } from './creatorsMultiplexWs';
 import type { WsClient } from './wsClient';
-import type { CreatorGetResponse, CreatorListResponse, CreatorUpsertResponse } from './creatorWsTypes';
+import type {
+	CreatorGetResponse,
+	CreatorListResponse,
+	CreatorSummaryDTO,
+	CreatorTopDTO,
+	CreatorTopResponse,
+	CreatorUpsertResponse,
+} from './creatorWsTypes';
 
 export interface CreatorFollowResponse {
 	ok: true;
@@ -19,36 +26,110 @@ function clamp(s: string, max: number): string {
 	return s.length <= max ? s : s.slice(0, max);
 }
 
+function asString(v: unknown): string {
+	return typeof v === 'string' ? v :
+		typeof v === 'number' ? String(v) :
+		'';
+}
+
+function normalizeSummaryRow(raw: unknown): CreatorSummaryDTO | null {
+	if (!raw || typeof raw !== 'object') return null;
+	const o = raw as Record<string, unknown>;
+	const id = asString(o.id);
+	const userId = asString(o.user_id ?? o.userId);
+	if (!id && !userId) return null;
+	return {
+		id: id || userId,
+		user_id: userId || id,
+		username: asString(o.username),
+		name: asString(o.name),
+		avatar_url: typeof o.avatar_url === 'string' ? o.avatar_url : null,
+		categories: Array.isArray(o.categories) ? o.categories.map(String) : [],
+		is_nsfw: o.is_nsfw === true,
+	};
+}
+
+function normalizeTopRow(raw: unknown): CreatorTopDTO | null {
+	const base = normalizeSummaryRow(raw);
+	if (!base) return null;
+	const o = raw as Record<string, unknown>;
+	return {
+		...base,
+		rank: typeof o.rank === 'number' ? o.rank : Number(o.rank) || 0,
+		score: asString(o.score),
+		score_follower_term: asString(o.score_follower_term),
+		score_tips_minor_capped: asString(o.score_tips_minor_capped),
+		follower_count: typeof o.follower_count === 'number' ? o.follower_count : Number(o.follower_count) || 0,
+		tips_minor_last_30d: asString(o.tips_minor_last_30d),
+	};
+}
+
+/** Normalize WS or HTTP list/top JSON to `CreatorListResponse`. */
+export function normalizeCreatorListResponse(json: unknown): CreatorListResponse {
+	const root = json && typeof json === 'object' ? json as Record<string, unknown> : {};
+	const rows = Array.isArray(root.creators) ? root.creators : [];
+	const creators = rows.map(normalizeSummaryRow).filter((c): c is CreatorSummaryDTO => c != null);
+	const nextCursor =
+		typeof root.nextCursor === 'string' ? root.nextCursor :
+		typeof root.next_cursor === 'string' ? root.next_cursor :
+		null;
+	return { creators, nextCursor };
+}
+
+/** Normalize WS or HTTP top JSON to `CreatorTopResponse`. */
+export function normalizeCreatorTopResponse(json: unknown): CreatorTopResponse {
+	const root = json && typeof json === 'object' ? json as Record<string, unknown> : {};
+	const rows = Array.isArray(root.creators) ? root.creators : [];
+	const creators = rows.map(normalizeTopRow).filter((c): c is CreatorTopDTO => c != null);
+	const nextCursor =
+		typeof root.nextCursor === 'string' ? root.nextCursor :
+		typeof root.next_cursor === 'string' ? root.next_cursor :
+		null;
+	return { creators, nextCursor };
+}
+
+export interface CreatorListCommandOpts {
+	q?: string;
+	category?: string;
+	limit?: number;
+	/** Pagination cursor from prior `nextCursor`. */
+	cursor?: string;
+	/** @deprecated Use `cursor`. */
+	beforeCursor?: string;
+}
+
 /**
- * `/list [q] [category] [limit] [beforeCursor]` — positional args per server spec.
+ * B1: `/list` with KV args `q=`, `category=`, `limit=`, `cursor=`.
+ * Bare `/list` when no filters (server default limit 30).
  */
-export function buildCreatorListCommand(opts: {
-	q?: string,
-	category?: string,
-	limit?: number,
-	beforeCursor?: string,
-}): string {
+export function buildCreatorListCommand(opts: CreatorListCommandOpts = {}): string {
 	const lim = Math.min(50, Math.max(1, opts.limit ?? 30));
 	const q = opts.q?.trim() ?? '';
 	const cat = opts.category?.trim() ?? '';
-	// Backend args are positional. Also, many servers split on whitespace and cannot represent empty args,
-	// so `/list 50` is often interpreted as `q="50"` rather than `limit=50`.
-	// For the default directory case, always send bare `/list` (server default limit = 30).
-	if (!q && !cat && !opts.beforeCursor) return '/list';
+	const cursor = (opts.cursor ?? opts.beforeCursor)?.trim() ?? '';
+
+	if (!q && !cat && !cursor) return '/list';
+
 	const parts: string[] = ['/list'];
-	if (q && cat) {
-		parts.push(clamp(q, MAX_Q), clamp(cat, MAX_CATEGORY), String(lim));
-	} else if (q) {
-		parts.push(clamp(q, MAX_Q), String(lim));
-	} else if (cat) {
-		// Best-effort positional: some servers may treat first arg as `q` unless it is empty/quoted.
-		parts.push('""', clamp(cat, MAX_CATEGORY), String(lim));
-	} else {
-		// With a beforeCursor, prefer `/list <limit> <beforeCursor>` (2-arg form) to avoid empty-arg issues.
-		// This relies on server disambiguating when a cursor is present.
-		parts.push(String(lim));
-	}
-	if (opts.beforeCursor) parts.push(opts.beforeCursor);
+	if (q) parts.push(`q=${clamp(q, MAX_Q)}`);
+	if (cat) parts.push(`category=${clamp(cat, MAX_CATEGORY)}`);
+	parts.push(`limit=${lim}`);
+	if (cursor) parts.push(`cursor=${cursor}`);
+	return parts.join(' ');
+}
+
+export interface CreatorTopCommandOpts {
+	limit?: number;
+	cursor?: string;
+}
+
+/** B4: `/top [limit] [cursor]` as KV tokens per spec. */
+export function buildCreatorTopCommand(opts: CreatorTopCommandOpts = {}): string {
+	const lim = Math.min(50, Math.max(1, opts.limit ?? 30));
+	const cursor = opts.cursor?.trim() ?? '';
+	if (!cursor && opts.limit === undefined) return '/top';
+	const parts: string[] = ['/top', `limit=${lim}`];
+	if (cursor) parts.push(`cursor=${cursor}`);
 	return parts.join(' ');
 }
 
@@ -62,8 +143,18 @@ export function buildCreatorUpsertCommand(username: string, name: string, bio?: 
 	return cmd;
 }
 
-export function creatorWsList(client: CreatorsMultiplexWs, opts: Parameters<typeof buildCreatorListCommand>[0]): Promise<CreatorListResponse> {
-	return client.send('creator', buildCreatorListCommand(opts)).then(json => json as CreatorListResponse);
+export function creatorWsList(
+	client: CreatorsMultiplexWs,
+	opts: CreatorListCommandOpts
+): Promise<CreatorListResponse> {
+	return client.send('creator', buildCreatorListCommand(opts)).then(json => normalizeCreatorListResponse(json));
+}
+
+export function creatorWsTop(
+	client: CreatorsMultiplexWs,
+	opts: CreatorTopCommandOpts = {}
+): Promise<CreatorTopResponse> {
+	return client.send('creator', buildCreatorTopCommand(opts)).then(json => normalizeCreatorTopResponse(json));
 }
 
 export function creatorWsGet(client: CreatorsMultiplexWs, creatorRowId: string): Promise<CreatorGetResponse> {
@@ -81,9 +172,6 @@ export function creatorWsUpsertProfile(
 
 /**
  * `> creator <rid>\n/follow <creatorUserId>` over the primary WsClient.
- *
- * Spec: maintains `creator_follows` rows that drive followers-only live visibility
- * (`/golive followers …` then `live|started` is targeted at follower user ids).
  */
 export function creatorFollow(ws: WsClient, creatorUserId: string, requestId?: string): Promise<CreatorFollowResponse> {
 	const id = String(creatorUserId).trim();
@@ -94,7 +182,6 @@ export function creatorFollow(ws: WsClient, creatorUserId: string, requestId?: s
 	return ws.request('creator', 'follow', [id], rid).then(json => json as CreatorFollowResponse);
 }
 
-/** Best-effort unfollow (if backend supports `/unfollow`). */
 export function creatorUnfollow(ws: WsClient, creatorUserId: string, requestId?: string): Promise<CreatorUnfollowResponse> {
 	const id = String(creatorUserId).trim();
 	if (!id) throw new Error('creatorUserId is required');

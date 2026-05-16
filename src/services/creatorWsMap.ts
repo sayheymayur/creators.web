@@ -1,5 +1,17 @@
 import type { Creator } from '../types';
-import type { CreatorProfileDTO, CreatorSummaryDTO } from './creatorWsTypes';
+import type { CreatorProfileDTO, CreatorSummaryDTO, CreatorTopDTO } from './creatorWsTypes';
+
+/** Minimal HTTP GET /creators/:id shape for profile fallback mapping. */
+export interface HttpCreatorProfileInput {
+	id: string;
+	username: string;
+	name: string;
+	avatar: string;
+	createdAt: string;
+	bio?: string;
+	banner?: string;
+	category?: string;
+}
 
 function parseFollowerCount(dto: CreatorProfileDTO, base?: Partial<Creator>): number {
 	const v = dto.follower_count;
@@ -52,10 +64,11 @@ export function creatorProfileDtoToCreator(dto: CreatorProfileDTO, base?: Partia
 		isAgeVerified: base?.isAgeVerified ?? true,
 		status: base?.status ?? 'active',
 		walletBalanceMinor: base?.walletBalanceMinor ?? '0',
+		isNsfw: dto.is_nsfw === true,
 	};
 }
 
-/** Creator card row id is `creators.id` (PK); UI may route by `user_id` — see Explore / profile wiring. */
+/** Creator card row id is `creators.id` (PK); UI routes by `user_id`. */
 export function creatorSummaryToCardCreator(dto: CreatorSummaryDTO, base?: Partial<Creator>): Creator {
 	const fakeProfile: CreatorProfileDTO = {
 		...dto,
@@ -65,4 +78,31 @@ export function creatorSummaryToCardCreator(dto: CreatorSummaryDTO, base?: Parti
 		created_at: base?.createdAt ?? new Date().toISOString(),
 	};
 	return creatorProfileDtoToCreator(fakeProfile, base);
+}
+
+/** HTTP GET /creators/:id → UI Creator (fallback when WS /get fails). */
+export function httpCreatorProfileToCreator(http: HttpCreatorProfileInput, base?: Partial<Creator>): Creator {
+	const dto: CreatorProfileDTO = {
+		id: http.id,
+		user_id: http.id,
+		username: http.username,
+		name: http.name,
+		avatar_url: http.avatar || null,
+		categories: http.category ? [http.category] : [],
+		bio: typeof http.bio === 'string' ? http.bio : null,
+		banner_url: typeof http.banner === 'string' ? http.banner : null,
+		socials: null,
+		created_at: http.createdAt,
+	};
+	return creatorProfileDtoToCreator(dto, base);
+}
+
+/** B4: ranked trending row from `creator /top`. */
+export function creatorTopDtoToCardCreator(dto: CreatorTopDTO, base?: Partial<Creator>): Creator {
+	const c = creatorSummaryToCardCreator(dto, base);
+	return {
+		...c,
+		followerCount: Number.isFinite(dto.follower_count) ? Math.max(0, dto.follower_count) : c.followerCount,
+		rank: dto.rank,
+	};
 }

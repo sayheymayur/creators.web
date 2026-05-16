@@ -5,6 +5,17 @@ export interface CreatorSummaryDTO {
 	name: string;
 	avatar_url: string | null;
 	categories: string[];
+	/** B1: present when creator profile is marked NSFW. */
+	is_nsfw?: boolean;
+}
+
+export interface CreatorTopDTO extends CreatorSummaryDTO {
+	rank: number;
+	score: string;
+	score_follower_term: string;
+	score_tips_minor_capped: string;
+	follower_count: number;
+	tips_minor_last_30d: string;
 }
 
 export interface CreatorProfileDTO extends CreatorSummaryDTO {
@@ -26,6 +37,11 @@ export interface CreatorProfileDTO extends CreatorSummaryDTO {
 
 export interface CreatorListResponse {
 	creators: CreatorSummaryDTO[];
+	nextCursor: string | null;
+}
+
+export interface CreatorTopResponse {
+	creators: CreatorTopDTO[];
 	nextCursor: string | null;
 }
 

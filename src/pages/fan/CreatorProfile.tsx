@@ -13,8 +13,8 @@ import { useNotifications } from '../../context/NotificationContext';
 import { useSession } from '../../context/SessionContext';
 import { SessionPickerModal, type SessionPayMode } from '../../components/modals/SessionPickerModal';
 import type { Creator, SessionType } from '../../types';
-import { ApiError } from '../../services/creatorsApi';
-import { creatorProfileDtoToCreator } from '../../services/creatorWsMap';
+import { ApiError, creatorsApi } from '../../services/creatorsApi';
+import { creatorProfileDtoToCreator, httpCreatorProfileToCreator } from '../../services/creatorWsMap';
 import { formatINR } from '../../services/razorpay';
 import { useSessions } from '../../context/SessionsContext';
 import { useEnsureWsAuth, useWs, useWsAuthReady, useWsConnected } from '../../context/WsContext';
@@ -76,6 +76,24 @@ export function CreatorProfile() {
 
 		setIsLoadingCreator(true);
 
+		const applyHttpFallback = () =>
+			creatorsApi.creators.getById(creatorUserId, ac.signal)
+				.then(http => {
+					if (ac.signal.aborted) return;
+					hasLoadedCreatorRef.current = true;
+					setRemoteCreator(httpCreatorProfileToCreator(http, { postCount: 0 }));
+				})
+				.catch((httpErr: unknown) => {
+					if (ac.signal.aborted) return;
+					if (!hasLoadedCreatorRef.current && !cacheCreator) {
+						const msg = httpErr instanceof ApiError && httpErr.status === 404 ?
+							'Creator profile not found for this user.' :
+							'Could not load creator profile. Please try again.';
+						showToast(msg, 'error');
+					}
+					hasLoadedCreatorRef.current = true;
+				});
+
 		void creatorWsGetByUserId(creatorUserId)
 			.then(r => {
 				if (ac.signal.aborted) return;
@@ -87,10 +105,7 @@ export function CreatorProfile() {
 					setRemoteCreator(creatorProfileDtoToCreator(dto, { postCount: 0 }));
 					return;
 				}
-				hasLoadedCreatorRef.current = true;
-				if (!cacheCreator) {
-					showToast('Creator profile not found for this user.', 'error');
-				}
+				return applyHttpFallback();
 			})
 			.catch((err: unknown) => {
 				if (ac.signal.aborted) return;
@@ -99,10 +114,7 @@ export function CreatorProfile() {
 				} else {
 					console.error('[creator-profile] ws getByUserId failed', { creatorUserId, err });
 				}
-				if (!hasLoadedCreatorRef.current) {
-					showToast('Could not load creator profile. Please try again.', 'error');
-				}
-				hasLoadedCreatorRef.current = true;
+				return applyHttpFallback();
 			})
 			.finally(() => {
 				if (!ac.signal.aborted) setIsLoadingCreator(false);

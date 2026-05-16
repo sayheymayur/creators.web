@@ -1,3 +1,5 @@
+import type { User } from '../types';
+
 export type UserWsRole = 'fan' | 'creator' | 'admin';
 
 export interface UserAuthenticateResponse {
@@ -5,11 +7,11 @@ export interface UserAuthenticateResponse {
 	user_id: string;
 }
 
-/** Minimal user row from `user` service `/me`. */
+/** Full session user from `user` service `/me` (same shape as HTTP GET /me). */
 export interface UserMeWsResponse {
-	id: string;
-	email: string;
-	display_name: string;
-	role: UserWsRole;
-	created_at: string;
+	user: User | null;
+}
+
+export interface UserUpdateProfileResponse {
+	user: User;
 }

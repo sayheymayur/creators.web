@@ -35,6 +35,11 @@ export function CreatorCard({ creator }: CreatorCardProps) {
 			<div className="relative h-24">
 				<MediaBanner src={creator.banner} className="h-full w-full object-cover" />
 				<div className="absolute inset-0 bg-gradient-to-b from-transparent to-surface" />
+				{creator.isNsfw && (
+					<div className="absolute top-2 left-2 bg-foreground/80 text-background text-[10px] font-bold px-2 py-0.5 rounded-full">
+						18+
+					</div>
+				)}
 				{creator.isOnline && (
 					<div className="absolute top-2 right-2 bg-emerald-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
 						LIVE

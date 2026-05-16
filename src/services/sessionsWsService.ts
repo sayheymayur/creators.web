@@ -1,5 +1,7 @@
 import type { WsClient } from './wsClient';
+import { normalizeCallModality, normalizeSessionsSettlement } from './sessionsWsMap';
 import type {
+	CallModality,
 	SessionKind,
 	SessionsAcceptedPayload,
 	SessionsStateResponse,
@@ -30,6 +32,13 @@ function assertKind(kind: string): SessionKind {
 	return kind;
 }
 
+function assertCallModality(value: string): CallModality {
+	if (value !== 'audio' && value !== 'video') {
+		throw new Error('callModality must be audio or video');
+	}
+	return value;
+}
+
 function assertMinutes(minutes: number): number {
 	if (!Number.isInteger(minutes) || minutes < 1 || minutes > 24 * 60) {
 		throw new Error('minutes must be an integer 1–1440');
@@ -46,13 +55,30 @@ function assertRating(rating: number): number {
 
 export function sessionsRequest(
 	ws: WsClient,
-	opts: { creatorUserId: string, kind: SessionKind, minutes: number, requestId?: string }
+	opts: {
+		creatorUserId: string,
+		kind: SessionKind,
+		minutes: number,
+		callModality?: CallModality,
+		requestId?: string,
+	}
 ): Promise<SessionsRequestResponse> {
 	const creatorUserId = assertDigitsOnly('creatorUserId', opts.creatorUserId);
 	const kind = assertKind(opts.kind);
 	const minutes = assertMinutes(opts.minutes);
 	const rid = assertRequestIdTag(opts.requestId);
-	return ws.request('sessions', 'request', [creatorUserId, kind, String(minutes)], rid).then(r => r as SessionsRequestResponse);
+	const args: string[] = [creatorUserId, kind];
+	if (kind === 'call' && opts.callModality) {
+		args.push(assertCallModality(opts.callModality));
+	}
+	args.push(String(minutes));
+	return ws.request('sessions', 'request', args, rid).then(r => {
+		const row = r && typeof r === 'object' ? r as Record<string, unknown> : {};
+		return {
+			...(row as unknown as SessionsRequestResponse),
+			call_modality: normalizeCallModality(row.call_modality, kind),
+		};
+	});
 }
 
 export function sessionsState(ws: WsClient, requestIdTag?: string): Promise<SessionsStateResponse> {
@@ -89,7 +115,12 @@ export function sessionsCancel(ws: WsClient, requestId: string, requestIdTag?: s
 export function sessionsComplete(ws: WsClient, requestId: string, requestIdTag?: string): Promise<SessionsCompleteResponse> {
 	const id = assertDigitsOnly('requestId', requestId);
 	const rid = assertRequestIdTag(requestIdTag);
-	return ws.request('sessions', 'complete', [id], rid).then(r => r as SessionsCompleteResponse);
+	return ws.request('sessions', 'complete', [id], rid).then(r => {
+		const row = r && typeof r === 'object' ? r as Record<string, unknown> : {};
+		const settlement = normalizeSessionsSettlement(row.settlement);
+		const base = r as SessionsCompleteResponse;
+		return settlement ? { ...base, settlement } : base;
+	});
 }
 
 export function sessionsEndSession(ws: WsClient, requestId: string, requestIdTag?: string): Promise<SessionsEndSessionResponse> {

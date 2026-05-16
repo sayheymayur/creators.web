@@ -16,11 +16,14 @@ import {
 	sessionsRequest,
 	sessionsState,
 } from '../services/sessionsWsService';
+import { normalizeCallModality } from '../services/sessionsWsMap';
 import type {
+	CallModality,
 	SessionKind,
 	SessionsAcceptedPayload,
 	SessionsCompleteResponse,
 	SessionsEndSessionResponse,
+	SessionsSettlement,
 	SessionsStateResponse,
 	SessionsBookingRow,
 	SessionsEndedEvent,
@@ -32,7 +35,8 @@ import type {
 	SessionsTimerEvent,
 } from '../services/sessionsWsTypes';
 
-export type SessionsUiCallType = 'audio' | 'video';
+/** @deprecated Use CallModality from sessionsWsTypes */
+export type SessionsUiCallType = CallModality;
 
 export type OutgoingRequestState =
 	| { state: 'idle' } |
@@ -49,11 +53,10 @@ export type ActiveBookingState = {
 	accepted: SessionsAcceptedPayload,
 	/** For chat sessions, used to drive a local countdown fallback and persist across reloads. */
 	minutes?: number,
-	/**
-	 * For `kind === "call"`, the UI needs to know whether to show audio vs video.
-	 * The server spec only distinguishes call vs chat, so we keep a local hint.
-	 */
-	uiCallType?: SessionsUiCallType,
+	/** v4 C2: server-authoritative call modality (audio vs video). */
+	callModality?: CallModality,
+	/** @deprecated Use callModality */
+	uiCallType?: CallModality,
 	otherDisplay?: { name: string, avatar: string },
 	/** From server booking row when syncing `/state`; used for name fallbacks (e.g. ContentContext). */
 	peerIds?: { fan_user_id: string, creator_user_id: string },
@@ -61,6 +64,7 @@ export type ActiveBookingState = {
 
 export type FeedbackPromptState = {
 	request_id: string,
+	settlement?: SessionsSettlement,
 };
 
 type EndedRoomsMap = Record<string, SessionsEndedEvent>;
@@ -161,7 +165,7 @@ type Action =
 	{ type: 'ENDED_SET', payload: SessionsEndedEvent } |
 	{ type: 'ENDED_CLEAR' } |
 	{ type: 'ENDED_ROOMS_MERGE', payload: EndedRoomsMap } |
-	{ type: 'FEEDBACK_PROMPT', payload: SessionsFeedbackPromptEvent } |
+	{ type: 'FEEDBACK_PROMPT', payload: FeedbackPromptState } |
 	{ type: 'FEEDBACK_RECEIVED', payload: SessionsFeedbackReceivedEvent } |
 	{ type: 'FEEDBACK_CLEAR' } |
 	{ type: 'HYDRATE_LOCAL', payload: LocalSessionsSnapshot } |
@@ -227,7 +231,7 @@ function sessionsReducer(state: SessionsState, action: Action): SessionsState {
 			return { ...state, endedRooms: next };
 		}
 		case 'FEEDBACK_PROMPT':
-			return { ...state, feedbackPrompt: { request_id: action.payload.request_id } };
+			return { ...state, feedbackPrompt: action.payload };
 		case 'FEEDBACK_RECEIVED':
 			return { ...state, feedbackReceived: action.payload };
 		case 'FEEDBACK_CLEAR':
@@ -253,7 +257,8 @@ function sessionsReducer(state: SessionsState, action: Action): SessionsState {
 					...p.active,
 					otherDisplay: p.active.otherDisplay?.name ? p.active.otherDisplay : state.active.otherDisplay,
 					peerIds: p.active.peerIds ?? state.active.peerIds,
-					uiCallType: p.active.uiCallType ?? state.active.uiCallType,
+					callModality: p.active.callModality ?? state.active.callModality,
+					uiCallType: p.active.callModality ?? p.active.uiCallType ?? state.active.callModality ?? state.active.uiCallType,
 					minutes: p.active.minutes ?? state.active.minutes,
 				};
 			}
@@ -278,10 +283,12 @@ type SessionsContextValue = {
 		creatorUserId: string,
 		kind: SessionKind,
 		minutes: number,
-		uiCallType?: SessionsUiCallType,
+		callModality?: CallModality,
+		/** @deprecated Use callModality */
+		uiCallType?: CallModality,
 		creatorDisplay?: { name: string, avatar: string },
 	}) => Promise<SessionsRequestResponse>,
-	acceptSession: (requestId: string, opts?: { uiCallType?: SessionsUiCallType }) => Promise<SessionsAcceptedPayload>,
+	acceptSession: (requestId: string) => Promise<SessionsAcceptedPayload>,
 	rejectSession: (requestId: string, message?: string) => Promise<SessionsRejectedPayload>,
 	cancelSession: (requestId: string) => Promise<{ ok: true }>,
 	completeSession: (requestId: string) => Promise<SessionsCompleteResponse>,
@@ -305,7 +312,8 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 	const [state, dispatch] = useReducer(sessionsReducer, initialState);
 	const callAgoraCredsByUserRef = useRef<CallAgoraCredsByUserMap>(loadCallAgoraCredsByUser());
 	const callAgoraCredsByRequestIdRef = useRef<CallAgoraCredsMap>({});
-	const uiCallTypeByRequestIdRef = useRef<Record<string, SessionsUiCallType>>({});
+	const callModalityByRequestIdRef = useRef<Record<string, CallModality>>({});
+	const settlementByRequestIdRef = useRef<Record<string, SessionsSettlement>>({});
 	const minutesByRequestIdRef = useRef<Record<string, number>>({});
 	const creatorMetaByRequestIdRef = useRef<Record<string, { userId: string, name: string, avatar: string }>>({});
 	const fanMetaByRequestIdRef = useRef<Record<string, { userId: string, name: string }>>({});
@@ -364,16 +372,24 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 			creatorUserId: string,
 			kind: SessionKind,
 			minutes: number,
-			uiCallType?: SessionsUiCallType,
+			callModality?: CallModality,
+			uiCallType?: CallModality,
 			creatorDisplay?: { name: string, avatar: string },
 		}) => {
+			const fanModality = opts.callModality ?? opts.uiCallType;
 			dispatch({ type: 'OUTGOING_REQUESTING', payload: { creatorUserId: opts.creatorUserId, kind: opts.kind } });
-			return sessionsRequest(ws, { creatorUserId: opts.creatorUserId, kind: opts.kind, minutes: opts.minutes })
+			return sessionsRequest(ws, {
+				creatorUserId: opts.creatorUserId,
+				kind: opts.kind,
+				minutes: opts.minutes,
+				callModality: opts.kind === 'call' ? fanModality : undefined,
+			})
 				.then(res => {
 					minutesByRequestIdRef.current[res.request_id] = opts.minutes;
 					lastOutgoingIntentRef.current = { requestId: res.request_id, atMs: Date.now(), kind: opts.kind };
-					if (opts.kind === 'call' && opts.uiCallType) {
-						uiCallTypeByRequestIdRef.current[res.request_id] = opts.uiCallType;
+					const modality = normalizeCallModality(res.call_modality, opts.kind) ?? fanModality;
+					if (opts.kind === 'call' && modality) {
+						callModalityByRequestIdRef.current[res.request_id] = modality;
 					}
 					if (opts.creatorDisplay) {
 						creatorMetaByRequestIdRef.current[res.request_id] = {
@@ -394,25 +410,28 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 	);
 
 	const acceptSession = useCallback(
-		(requestId: string, opts?: { uiCallType?: SessionsUiCallType }) => {
-			if (opts?.uiCallType) {
-				uiCallTypeByRequestIdRef.current[requestId] = opts.uiCallType;
-			}
+		(requestId: string) => {
+			const incomingReq = state.incoming.find(r => r.request.request_id === requestId)?.request;
 			return sessionsAccept(ws, { requestId }).then(res => {
 				dispatch({ type: 'INCOMING_REMOVE', payload: { request_id: requestId } });
 				const fan =
 					fanMetaByRequestIdRef.current[res.request_id] ??
 					(() => {
-						// After reload, meta refs can be empty; rely on restored incoming request payload.
 						const row = state.incoming.find(r => r.request.request_id === res.request_id)?.request;
 						return row ? { userId: row.fan_user_id, name: row.fan_display } : undefined;
 					})();
 				const me = authState.user;
+				const callModality =
+					normalizeCallModality(res.call_modality, res.kind) ??
+					normalizeCallModality(incomingReq?.call_modality, res.kind) ??
+					callModalityByRequestIdRef.current[res.request_id];
+				if (callModality) callModalityByRequestIdRef.current[res.request_id] = callModality;
 				dispatch({
 					type: 'ACTIVE_SET',
 					payload: {
 						accepted: res,
-						uiCallType: uiCallTypeByRequestIdRef.current[res.request_id],
+						callModality,
+						uiCallType: callModality,
 						otherDisplay: fan ? { name: fan.name, avatar: '' } : undefined,
 						peerIds: fan && me?.role === 'creator' ? { fan_user_id: fan.userId, creator_user_id: me.id } : undefined,
 					},
@@ -446,9 +465,11 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 	const completeSession = useCallback(
 		(requestId: string) =>
 			sessionsComplete(ws, requestId).then(res => {
+				if (res.settlement) {
+					settlementByRequestIdRef.current[requestId] = res.settlement;
+				}
 				const active = state.active?.accepted;
 				if (active?.request_id === requestId) {
-					// Optimistically reflect end immediately; backend will also push `sessions|ended`.
 					dispatch({
 						type: 'ENDED_SET',
 						payload: { request_id: requestId, room_id: active.room_id, reason: 'manual' },
@@ -497,6 +518,8 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 
 	const bookingRowToAccepted = (row: SessionsBookingRow): SessionsAcceptedPayload => {
 		const storedAgora = callAgoraCredsByRequestIdRef.current[row.id];
+		const callModality = normalizeCallModality(row.call_modality, row.kind);
+		if (callModality) callModalityByRequestIdRef.current[row.id] = callModality;
 		return {
 			request_id: row.id,
 			room_id: row.room_id ?? '',
@@ -508,6 +531,8 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 			ends_at: row.ends_at,
 			duration_minutes: row.duration_minutes,
 			price_cents: row.price_cents,
+			call_modality: callModality,
+			per_minute_rate_minor: row.per_minute_rate_minor,
 		};
 	};
 
@@ -544,22 +569,40 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 		const pendingOutgoing = outgoing.find(r => r.status === 'pending' || r.status === 'accepted') ?? null;
 		const nextOutgoing: OutgoingRequestState =
 			pendingOutgoing ?
-				{ state: 'pending', request: { request_id: pendingOutgoing.id, status: 'pending', price_cents: pendingOutgoing.price_cents, kind: pendingOutgoing.kind } } :
+				{
+					state: 'pending',
+					request: {
+						request_id: pendingOutgoing.id,
+						status: 'pending',
+						price_cents: pendingOutgoing.price_cents,
+						kind: pendingOutgoing.kind,
+						call_modality: normalizeCallModality(pendingOutgoing.call_modality, pendingOutgoing.kind),
+						duration_minutes: pendingOutgoing.duration_minutes,
+						per_minute_rate_minor: pendingOutgoing.per_minute_rate_minor,
+					},
+				} :
 				{ state: 'idle' };
 
 		const nextIncoming: IncomingRequestState[] = incomingRows
 			.filter(r => r.status === 'pending')
-			.map(r => ({
-				request: {
-					request_id: r.id,
-					fan_user_id: r.fan_user_id,
-					fan_display: `User ${r.fan_user_id}`,
-					kind: r.kind,
-					price_cents: r.price_cents,
-					created_at: r.created_at,
-					minutes: r.duration_minutes,
-				},
-			}));
+			.map(r => {
+				const callModality = normalizeCallModality(r.call_modality, r.kind);
+				if (callModality) callModalityByRequestIdRef.current[r.id] = callModality;
+				return {
+					request: {
+						request_id: r.id,
+						fan_user_id: r.fan_user_id,
+						fan_display: `User ${r.fan_user_id}`,
+						kind: r.kind,
+						price_cents: r.price_cents,
+						created_at: r.created_at,
+						minutes: r.duration_minutes,
+						call_modality: callModality,
+						duration_minutes: r.duration_minutes,
+						per_minute_rate_minor: r.per_minute_rate_minor,
+					},
+				};
+			});
 
 		const activeAccepted = activeRows.find(r => r.status === 'accepted' && !!r.room_id) ?? null;
 		let nextActive: ActiveBookingState | null = null;
@@ -596,12 +639,18 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 					}
 				}
 			}
+			const callModality =
+				normalizeCallModality(activeAccepted.call_modality, activeAccepted.kind) ??
+				(state.active?.accepted?.request_id === activeAccepted.id ?
+					(state.active.callModality ?? state.active.uiCallType) :
+					undefined) ??
+					callModalityByRequestIdRef.current[activeAccepted.id];
+			if (callModality) callModalityByRequestIdRef.current[activeAccepted.id] = callModality;
 			nextActive = {
 				accepted: bookingRowToAccepted(activeAccepted),
 				minutes: activeAccepted.duration_minutes,
-				uiCallType:
-					(state.active?.accepted?.request_id === activeAccepted.id ? state.active.uiCallType : undefined) ??
-					uiCallTypeByRequestIdRef.current[activeAccepted.id],
+				callModality,
+				uiCallType: callModality,
 				otherDisplay,
 				peerIds: {
 					fan_user_id: activeAccepted.fan_user_id,
@@ -720,7 +769,6 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 
 		const offReq = ws.on('sessions', 'request', data => {
 			const payloadBase = data as SessionsRequestEvent;
-			// Some backends include requested minutes; capture it if present so we can render a local timer.
 			const raw = (data && typeof data === 'object') ? (data as Record<string, unknown>) : {};
 			const minutesRaw =
 				typeof raw.minutes === 'number' ? raw.minutes :
@@ -732,7 +780,14 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 					Math.floor(minutesRaw) :
 					undefined;
 			if (minutes) minutesByRequestIdRef.current[payloadBase.request_id] = minutes;
-			const payload: SessionsRequestEvent & { minutes?: number } = { ...payloadBase, minutes };
+			const callModality = normalizeCallModality(raw.call_modality ?? payloadBase.call_modality, payloadBase.kind);
+			if (callModality) callModalityByRequestIdRef.current[payloadBase.request_id] = callModality;
+			const payload: SessionsRequestEvent & { minutes?: number } = {
+				...payloadBase,
+				minutes,
+				call_modality: callModality,
+				duration_minutes: minutes ?? payloadBase.duration_minutes,
+			};
 
 			fanMetaByRequestIdRef.current[payloadBase.request_id] = {
 				userId: payloadBase.fan_user_id,
@@ -770,12 +825,17 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 						{ fan_user_id: me.id, creator_user_id: creatorMeta.userId } :
 						undefined;
 			dispatch({ type: 'OUTGOING_ACCEPTED', payload });
+			const callModality =
+				normalizeCallModality(payload.call_modality, payload.kind) ??
+				callModalityByRequestIdRef.current[payload.request_id];
+			if (callModality) callModalityByRequestIdRef.current[payload.request_id] = callModality;
 			dispatch({
 				type: 'ACTIVE_SET',
 				payload: {
 					accepted: payload,
 					minutes: minutesByRequestIdRef.current[payload.request_id],
-					uiCallType: uiCallTypeByRequestIdRef.current[payload.request_id],
+					callModality,
+					uiCallType: callModality,
 					otherDisplay,
 					peerIds,
 				},
@@ -800,9 +860,12 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 			dispatch({ type: 'OUTGOING_REJECTED', payload });
 		});
 		const onFeedbackPrompt = (data: unknown) => {
-			const payload = data as SessionsFeedbackPromptEvent;
-			// Spec: prompt is driven by backend; we don't infer end here.
-			dispatch({ type: 'FEEDBACK_PROMPT', payload });
+			const ev = data as SessionsFeedbackPromptEvent;
+			const settlement = settlementByRequestIdRef.current[ev.request_id];
+			dispatch({
+				type: 'FEEDBACK_PROMPT',
+				payload: { request_id: ev.request_id, settlement },
+			});
 		};
 		const offPrompt = ws.on('sessions', 'feedbackprompt', onFeedbackPrompt);
 		const offPrompt2 = ws.on('session', 'feedbackprompt', onFeedbackPrompt);
@@ -1062,8 +1125,12 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 			const pending = pendingOpenBookedCallRequestIdRef.current === active.request_id;
 			if (pending) {
 				pendingOpenBookedCallRequestIdRef.current = null;
-				const uiCallType = state.active?.uiCallType ?? uiCallTypeByRequestIdRef.current[active.request_id] ?? 'video';
-				void ensureMediaPermissions({ audio: true, video: uiCallType === 'video' })
+				const callModality =
+					state.active?.callModality ??
+					state.active?.uiCallType ??
+					callModalityByRequestIdRef.current[active.request_id] ??
+					'video';
+				void ensureMediaPermissions({ audio: true, video: callModality === 'video' })
 					.catch(e => {
 						if (isDeviceInUseError(e)) return;
 						throw e;
@@ -1082,6 +1149,7 @@ export function SessionsProvider({ children }: { children: React.ReactNode }) {
 	}, [
 		state.active?.accepted?.request_id,
 		state.active?.accepted?.kind,
+		state.active?.callModality,
 		state.active?.uiCallType,
 		authState.user,
 		showToast,

@@ -7,16 +7,27 @@ import { MediaBanner } from '../../components/ui/MediaBanner';
 import { useAuth, useCurrentCreator } from '../../context/AuthContext';
 import { useContent } from '../../context/ContentContext';
 import { useNotifications } from '../../context/NotificationContext';
+import { useWallet } from '../../context/WalletContext';
 import { mockCreators } from '../../data/users';
 import { ApiError, creatorsApi } from '../../services/creatorsApi';
 import { uploadMediaAsset } from '../../services/mediaUpload';
 import { formatINR } from '../../services/razorpay';
 import { inrRupeesToMinor } from '../../utils/money';
 
+function perMinuteRateRupeesFromUser(
+	perMinuteRate: number | null | undefined,
+	dashboardCents: number | null | undefined,
+	fallback: number
+): number {
+	const minor = perMinuteRate ?? dashboardCents ?? null;
+	return minor != null ? Number(minor) / 100 : fallback;
+}
+
 export function ProfileEditor() {
 	const creator = useCurrentCreator();
-	const { state: authState, updateUser } = useAuth();
-	const { creatorWsUpsert } = useContent();
+	const { state: authState, updateUser, refreshMe } = useAuth();
+	const { creatorWsUpsert, userWsUpdateProfile } = useContent();
+	const { refreshBalance } = useWallet();
 	const { showToast } = useNotifications();
 
 	const creatorData = creator ?? mockCreators[0];
@@ -26,14 +37,22 @@ export function ProfileEditor() {
 		!authState.creatorProfiles[currentUser.id] &&
 		!mockCreators.some(c => c.id === currentUser.id);
 
+	const initialPerMinute = currentUser ?
+		perMinuteRateRupeesFromUser(
+			currentUser.perMinuteRate,
+			currentUser.creatorDashboard?.perMinuteRateCents,
+			creatorData.perMinuteRate
+		) :
+		creatorData.perMinuteRate;
+
 	const [name, setName] = useState(isNewGoogleCreator && currentUser ? currentUser.name : creatorData.name);
 	const [username, setUsername] = useState(isNewGoogleCreator && currentUser ? currentUser.username : creatorData.username);
-	const [bio, setBio] = useState(creatorData.bio);
+	const [bio, setBio] = useState(currentUser?.bio ?? creatorData.bio);
 	const [price, setPrice] = useState(String(creatorData.subscriptionPrice));
-	const [perMinuteRate, setPerMinuteRate] = useState(String(creatorData.perMinuteRate ?? 0));
-	const [category, setCategory] = useState(creatorData.category);
-	const [avatarUrl, setAvatarUrl] = useState(isNewGoogleCreator && currentUser ? currentUser.avatar : creatorData.avatar);
-	const [bannerUrl, setBannerUrl] = useState(creatorData.banner);
+	const [perMinuteRate, setPerMinuteRate] = useState(String(initialPerMinute));
+	const [category, setCategory] = useState(currentUser?.category ?? creatorData.category);
+	const [avatarUrl, setAvatarUrl] = useState(currentUser?.avatar ?? creatorData.avatar);
+	const [bannerUrl, setBannerUrl] = useState(currentUser?.banner ?? creatorData.banner);
 	const [isSaving, setIsSaving] = useState(false);
 	const [avatarFile, setAvatarFile] = useState<File | null>(null);
 	const [bannerFile, setBannerFile] = useState<File | null>(null);
@@ -63,6 +82,19 @@ export function ProfileEditor() {
 		};
 	}, [bannerPreviewUrl]);
 
+	useEffect(() => {
+		const u = authState.user;
+		if (u?.role !== 'creator') return;
+		setBio(u.bio ?? '');
+		setBannerUrl(u.banner ?? '');
+		setAvatarUrl(u.avatar ?? '');
+		setPerMinuteRate(String(perMinuteRateRupeesFromUser(
+			u.perMinuteRate,
+			u.creatorDashboard?.perMinuteRateCents,
+			creatorData.perMinuteRate
+		)));
+	}, [authState.user?.id, authState.user?.bio, authState.user?.banner, authState.user?.avatar, authState.user?.perMinuteRate, authState.user?.creatorDashboard?.perMinuteRateCents]);
+
 	const CATEGORIES = ['Fitness', 'Art', 'Tech', 'Travel', 'Music', 'Food', 'Gaming', 'Lifestyle'];
 
 	function handleSave() {
@@ -78,6 +110,9 @@ export function ProfileEditor() {
 		const perMinuteRateMinor =
 			/^\d+$/.test(perMinuteRateMinorStr) ? Number(perMinuteRateMinorStr) : undefined;
 
+		const avatarUrlSend = !avatarFile && avatarUrl.trim() ? avatarUrl.trim() : undefined;
+		const bannerUrlSend = !bannerFile && bannerUrl.trim() ? bannerUrl.trim() : undefined;
+
 		void Promise.all([avatarPromise, bannerPromise])
 			.then(([avatarAssetId, bannerAssetId]) =>
 				creatorsApi.me.updateProfile({
@@ -86,18 +121,35 @@ export function ProfileEditor() {
 					bio: bio.trim() || undefined,
 					category: category?.trim() || undefined,
 					avatarAssetId,
+					avatarUrl: avatarUrlSend,
 					bannerAssetId,
+					bannerUrl: bannerUrlSend,
 					subscriptionPriceMinor,
 					perMinuteRate: perMinuteRateMinor,
-				})
+				}).then(result => ({ ...result, avatarAssetId, bannerAssetId }))
 			)
-			.then(({ user }) => {
+			.then(({ user, bannerAssetId }) => {
 				updateUser(user);
-				void creatorWsUpsert(
-					username.trim() || creatorData.username,
-					name.trim() || creatorData.name,
-					bio.trim() || undefined
-				).catch(() => {});
+				setAvatarUrl(user.avatar || '');
+				setBannerUrl(user.banner || '');
+				const uname = username.trim() || creatorData.username;
+				const displayName = name.trim() || creatorData.name;
+				void creatorWsUpsert(uname, displayName, {
+					bio: bio.trim() || undefined,
+					bannerUrl: user.banner?.trim() || bannerUrlSend,
+					bannerAssetId,
+					avatarUrl: user.avatar?.trim() || avatarUrlSend,
+				}).catch(() => {});
+				void userWsUpdateProfile({
+					name: displayName,
+					username: uname,
+					bio: bio.trim() || undefined,
+					bannerUrl: user.banner?.trim() || bannerUrlSend,
+					avatarUrl: user.avatar?.trim() || avatarUrlSend,
+					perMinuteRate: perMinuteRateMinor,
+				}).catch(() => {});
+				void refreshMe();
+				void refreshBalance();
 				showToast('Profile updated!');
 				setAvatarFile(null);
 				setBannerFile(null);

@@ -5,7 +5,7 @@ import { mockCreators } from '../data/users';
 import { delayMs } from '../utils/delay';
 import { isFirebaseConfigured, firebaseMissingConfigKeys } from '../config/firebase';
 import { getFirebaseAuth, getGoogleProvider } from '../lib/firebaseClient';
-import { creatorsApi, ApiError } from '../services/creatorsApi';
+import { creatorsApi, ApiError, normalizeMeUser } from '../services/creatorsApi';
 import { clearSessionToken, getSessionToken } from '../services/sessionToken';
 import { clearStoredUser, setStoredUser } from '../services/sessionUser';
 import { clearPaymentGatewayCache } from '../services/payments';
@@ -43,32 +43,9 @@ const initialState: AuthState = {
 	creatorProfiles: {},
 };
 
-/** Ensure `walletBalanceMinor` and string `id` for API / mock user payloads. */
+/** Ensure Command V2 `/me` fields for API / mock user payloads. */
 function normalizeUserFromApi(payload: User): User {
-	const raw = payload as unknown as Record<string, unknown>;
-	const id =
-		typeof raw.id === 'string' ? raw.id :
-		typeof raw.id === 'number' ? String(raw.id) :
-		'';
-
-	let minor =
-		typeof raw.walletBalanceMinor === 'string' ? raw.walletBalanceMinor :
-		typeof raw.walletBalanceMinor === 'number' ? String(raw.walletBalanceMinor) :
-		'';
-	if (!minor && raw.walletBalance != null) {
-		// Spec (session user): walletBalance is minor units (e.g. INR paise) as number or digit string.
-		if (typeof raw.walletBalance === 'number') {
-			minor = String(Math.max(0, Math.round(raw.walletBalance)));
-		} else if (typeof raw.walletBalance === 'string' && /^\d+$/.test(raw.walletBalance.trim())) {
-			minor = raw.walletBalance.trim();
-		}
-	}
-	if (!minor) minor = ZERO_MINOR;
-	return {
-		...payload,
-		id,
-		walletBalanceMinor: /^\d+$/.test(minor) ? minor : ZERO_MINOR,
-	};
+	return normalizeMeUser(payload) ?? { ...payload, walletBalanceMinor: payload.walletBalanceMinor || ZERO_MINOR };
 }
 
 function createCreatorProfileFromUser(user: User): Creator {
@@ -136,13 +113,14 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
 				category: action.payload.category ?? undefined,
 				walletBalanceMinor: action.payload.walletBalanceMinor ?? undefined,
 			};
-			const maybePerMinuteRate = (action.payload as Partial<Creator>).perMinuteRate;
-			if (typeof maybePerMinuteRate === 'number') creatorPatch.perMinuteRate = maybePerMinuteRate;
+			if (typeof action.payload.perMinuteRate === 'number') {
+				creatorPatch.perMinuteRate = action.payload.perMinuteRate / 100;
+			}
 			const maybeLiveStreamEnabled = (action.payload as Partial<Creator>).liveStreamEnabled;
 			if (typeof maybeLiveStreamEnabled === 'boolean') creatorPatch.liveStreamEnabled = maybeLiveStreamEnabled;
 			return {
 				...state,
-				user: { ...state.user, ...action.payload },
+				user: normalizeUserFromApi({ ...state.user, ...action.payload }),
 				creatorProfiles: state.user.role === 'creator' && state.creatorProfiles[state.user.id] ?
 					{
 						...state.creatorProfiles,
@@ -544,6 +522,13 @@ export function useCurrentCreator(): Creator | null {
 	const creatorMatch = mockCreators.find(c => c.id === currentUser.id);
 	if (creatorMatch) return creatorMatch;
 
+	const rateMinor =
+		currentUser.perMinuteRate ??
+		currentUser.creatorDashboard?.perMinuteRateCents ??
+		null;
+	const perMinuteRate =
+		rateMinor != null ? Number(rateMinor) / 100 : mockCreators[0].perMinuteRate;
+
 	return {
 		...mockCreators[0],
 		id: currentUser.id,
@@ -557,5 +542,6 @@ export function useCurrentCreator(): Creator | null {
 		createdAt: currentUser.createdAt,
 		status: currentUser.status,
 		walletBalanceMinor: currentUser.walletBalanceMinor,
+		perMinuteRate,
 	};
 }

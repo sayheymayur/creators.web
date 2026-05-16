@@ -1,4 +1,5 @@
-import type { User } from '../types';
+import type { CreatorDashboard, User } from '../types';
+import { ZERO_MINOR } from '../utils/money';
 import { getSessionToken, setSessionToken } from './sessionToken';
 
 export type PreferredRole = 'fan' | 'creator';
@@ -14,12 +15,6 @@ function normalizeCreatorProfileResponse(json: unknown): CreatorProfileResponse 
 	const root = json as Record<string, unknown> | null;
 	const maybeWrapped = root && typeof root === 'object' && 'creator' in root ? root.creator : root;
 	const obj = (maybeWrapped ?? {}) as Record<string, unknown>;
-
-	const asString = (v: unknown): string => (
-		typeof v === 'string' ? v :
-		typeof v === 'number' ? String(v) :
-		''
-	);
 
 	const avatar =
 		(typeof obj.avatar === 'string' && obj.avatar) ||
@@ -41,6 +36,79 @@ function normalizeCreatorProfileResponse(json: unknown): CreatorProfileResponse 
 		bio: typeof obj.bio === 'string' ? obj.bio : undefined,
 		banner,
 		category: typeof obj.category === 'string' ? obj.category : undefined,
+	};
+}
+
+function asString(v: unknown): string {
+	return typeof v === 'string' ? v :
+		typeof v === 'number' ? String(v) :
+		'';
+}
+
+/** Normalize HTTP or WS `user /me` and profile responses to app `User`. */
+export function normalizeMeUser(raw: unknown): User | null {
+	if (raw == null) return null;
+	const root = raw as Record<string, unknown>;
+	const maybeUser = root.user !== undefined ? root.user : raw;
+	if (maybeUser == null || typeof maybeUser !== 'object') return null;
+	const obj = maybeUser as Record<string, unknown>;
+
+	const id = asString(obj.id ?? obj.user_id);
+	if (!id) return null;
+
+	let minor =
+		typeof obj.walletBalanceMinor === 'string' ? obj.walletBalanceMinor :
+		typeof obj.walletBalanceMinor === 'number' ? String(obj.walletBalanceMinor) :
+		'';
+	if (!minor && obj.walletBalance != null) {
+		if (typeof obj.walletBalance === 'number') {
+			minor = String(Math.max(0, Math.round(obj.walletBalance)));
+		} else if (typeof obj.walletBalance === 'string' && /^\d+$/.test(obj.walletBalance.trim())) {
+			minor = obj.walletBalance.trim();
+		}
+	}
+	if (!minor) minor = ZERO_MINOR;
+
+	const avatar =
+		(typeof obj.avatar === 'string' && obj.avatar) ||
+		(typeof obj.avatar_url === 'string' && obj.avatar_url) ||
+		'';
+	const banner =
+		(typeof obj.banner === 'string' && obj.banner) ||
+		(typeof obj.banner_url === 'string' && obj.banner_url) ||
+		undefined;
+
+	const perMinuteRaw = obj.perMinuteRate ?? obj.per_minute_rate;
+	const perMinuteRate =
+		typeof perMinuteRaw === 'number' ? perMinuteRaw :
+		typeof perMinuteRaw === 'string' && perMinuteRaw.trim() !== '' && !Number.isNaN(Number(perMinuteRaw)) ?
+			Number(perMinuteRaw) :
+			null;
+
+	const dash = obj.creatorDashboard ?? obj.creator_dashboard;
+	const creatorDashboard =
+		dash && typeof dash === 'object' ? dash as CreatorDashboard : undefined;
+
+	const base = obj as unknown as User;
+	return {
+		...base,
+		id,
+		email: asString(obj.email) || base.email,
+		name: asString(obj.name ?? obj.display_name) || base.name,
+		username: asString(obj.username) || base.username,
+		avatar,
+		banner,
+		bio: typeof obj.bio === 'string' ? obj.bio : base.bio,
+		category: typeof obj.category === 'string' ? obj.category : base.category,
+		role: (obj.role === 'fan' || obj.role === 'creator' || obj.role === 'admin') ? obj.role : base.role,
+		createdAt: asString(obj.createdAt ?? obj.created_at) || base.createdAt,
+		isAgeVerified: typeof obj.isAgeVerified === 'boolean' ? obj.isAgeVerified : base.isAgeVerified,
+		status: (obj.status === 'active' || obj.status === 'suspended' || obj.status === 'banned') ?
+			obj.status :
+			base.status,
+		walletBalanceMinor: /^\d+$/.test(minor) ? minor : ZERO_MINOR,
+		perMinuteRate,
+		creatorDashboard,
 	};
 }
 
@@ -340,7 +408,8 @@ export const creatorsApi = {
 				});
 		},
 		me(signal?: AbortSignal): Promise<MeResponse> {
-			return requestJson<MeResponse>('/me', { method: 'GET', auth: true, signal });
+			return requestJson<MeResponse>('/me', { method: 'GET', auth: true, signal })
+				.then(res => ({ user: res.user != null ? normalizeMeUser(res.user) : null }));
 		},
 		/** Caller must clear local session after this resolves (see AuthContext.logout). */
 		logout(): Promise<{ ok: true }> {
@@ -349,7 +418,12 @@ export const creatorsApi = {
 	},
 	me: {
 		updateProfile(body: UpdateMyProfileRequest): Promise<UpdateMyProfileResponse> {
-			return requestJson<UpdateMyProfileResponse>('/me/profile', { method: 'POST', body, auth: true });
+			return requestJson<UpdateMyProfileResponse>('/me/profile', { method: 'POST', body, auth: true })
+				.then(res => {
+					const user = normalizeMeUser(res.user);
+					if (!user) throw new Error('POST /me/profile returned no user');
+					return { user };
+				});
 		},
 		/** Spec: POST /me/password — Bearer; body { currentPassword, newPassword } (min 8). */
 		changePassword(body: { currentPassword: string, newPassword: string }): Promise<{ ok: true }> {

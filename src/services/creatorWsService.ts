@@ -52,12 +52,25 @@ export function buildCreatorListCommand(opts: {
 	return parts.join(' ');
 }
 
-export function buildCreatorUpsertCommand(username: string, name: string, bio?: string): string {
+export interface CreatorUpsertOpts {
+	bio?: string;
+	bannerUrl?: string;
+	bannerAssetId?: string;
+	avatarUrl?: string;
+}
+
+export function buildCreatorUpsertCommand(username: string, name: string, opts?: CreatorUpsertOpts): string {
 	const u = username.trim();
 	const n = name.trim();
-	const b = bio?.trim() ?? '';
 	if (!u || !n) throw new Error('username and name required for /upsertprofile');
 	let cmd = `/upsertprofile ${u} ${n}`;
+	const bannerUrl = opts?.bannerUrl?.trim();
+	if (bannerUrl) cmd += ` banner_url=${bannerUrl}`;
+	const bannerAssetId = opts?.bannerAssetId?.trim();
+	if (bannerAssetId) cmd += ` banner_asset_id=${bannerAssetId}`;
+	const avatarUrl = opts?.avatarUrl?.trim();
+	if (avatarUrl) cmd += ` avatar_url=${avatarUrl}`;
+	const b = opts?.bio?.trim() ?? '';
 	if (b) cmd += ` ${b}`;
 	return cmd;
 }
@@ -74,9 +87,9 @@ export function creatorWsUpsertProfile(
 	client: CreatorsMultiplexWs,
 	username: string,
 	name: string,
-	bio?: string
+	opts?: CreatorUpsertOpts
 ): Promise<CreatorUpsertResponse> {
-	return client.send('creator', buildCreatorUpsertCommand(username, name, bio)).then(json => json as CreatorUpsertResponse);
+	return client.send('creator', buildCreatorUpsertCommand(username, name, opts)).then(json => json as CreatorUpsertResponse);
 }
 
 /**

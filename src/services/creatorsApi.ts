@@ -1,4 +1,9 @@
 import type { User } from '../types';
+import {
+	normalizeCreatorListResponse,
+	normalizeCreatorTopResponse,
+} from './creatorWsService';
+import type { CreatorListResponse, CreatorTopResponse } from './creatorWsTypes';
 import { getSessionToken, setSessionToken } from './sessionToken';
 
 export type PreferredRole = 'fan' | 'creator';
@@ -412,9 +417,36 @@ export const creatorsApi = {
 		},
 	},
 	creators: {
-		// Public creator profile for display (not in the core HTTP doc; must exist on your API).
+		/** B1 mirror: GET /creators?q=&category=&limit=&cursor= */
+		list(
+			params: { q?: string, category?: string, limit?: number, cursor?: string } = {},
+			signal?: AbortSignal
+		): Promise<CreatorListResponse> {
+			const qs = new URLSearchParams();
+			if (params.q?.trim()) qs.set('q', params.q.trim());
+			if (params.category?.trim()) qs.set('category', params.category.trim());
+			if (params.limit != null) qs.set('limit', String(Math.min(50, Math.max(1, params.limit))));
+			if (params.cursor?.trim()) qs.set('cursor', params.cursor.trim());
+			const query = qs.toString();
+			const path = query ? `/creators?${query}` : '/creators';
+			return requestJson<unknown>(path, { method: 'GET', auth: true, signal })
+				.then(normalizeCreatorListResponse);
+		},
+		/** B4 mirror: GET /creators/top */
+		top(
+			params: { limit?: number, cursor?: string } = {},
+			signal?: AbortSignal
+		): Promise<CreatorTopResponse> {
+			const qs = new URLSearchParams();
+			if (params.limit != null) qs.set('limit', String(Math.min(50, Math.max(1, params.limit))));
+			if (params.cursor?.trim()) qs.set('cursor', params.cursor.trim());
+			const query = qs.toString();
+			const path = query ? `/creators/top?${query}` : '/creators/top';
+			return requestJson<unknown>(path, { method: 'GET', auth: true, signal })
+				.then(normalizeCreatorTopResponse);
+		},
 		getById(id: string, signal?: AbortSignal): Promise<CreatorProfileResponse> {
-			return requestJson<unknown>(`/creators/${encodeURIComponent(id)}`, { method: 'GET', signal })
+			return requestJson<unknown>(`/creators/${encodeURIComponent(id)}`, { method: 'GET', auth: true, signal })
 				.then(normalizeCreatorProfileResponse);
 		},
 	},

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Star, X } from '../icons';
 import { useSessions } from '../../context/SessionsContext';
 import { useNotifications } from '../../context/NotificationContext';
+import { formatINRFromMinor } from '../../utils/money';
 
 export function SessionFeedbackModal() {
 	const { state, submitFeedback, clearFeedback } = useSessions();
@@ -55,6 +56,20 @@ export function SessionFeedbackModal() {
 				</div>
 
 				<div className="p-5 space-y-4">
+					{prompt?.settlement && (
+						<div className="rounded-xl border border-border/20 bg-foreground/5 p-3 space-y-1.5 text-xs">
+							<p className="font-semibold text-foreground">Session settlement</p>
+							<p className="text-muted">
+								Escrow: {formatINRFromMinor(prompt.settlement.escrow_cents)}
+							</p>
+							<p className="text-muted">
+								Settled: {formatINRFromMinor(prompt.settlement.settled_cents)}
+							</p>
+							<p className="text-muted">
+								Refund: {formatINRFromMinor(prompt.settlement.refund_cents)}
+							</p>
+						</div>
+					)}
 					<div>
 						<p className="text-xs font-semibold text-muted uppercase tracking-widest mb-2">Rating</p>
 						<div className="flex gap-2">
